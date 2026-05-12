@@ -1,0 +1,4 @@
+Modules/
+config/
+*.log
+*.csv
