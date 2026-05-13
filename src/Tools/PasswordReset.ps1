@@ -464,7 +464,7 @@ $Script:PwResetXaml = @'
                   BorderThickness="0,0,0,1">
             <TabPanel IsItemsHost="True" Margin="8,0"/>
           </Border>
-          <ContentPresenter Grid.Row="1" ContentSource="SelectedContent" Background="#12121C"/>
+          <ContentPresenter Grid.Row="1" ContentSource="SelectedContent"/>
         </Grid>
       </ControlTemplate>
     </TabControl.Template>
@@ -549,7 +549,8 @@ $Script:PwResetXaml = @'
     </TabItem>
 
   </TabControl>
-</Grid>'@
+</Grid>
+'@
 
 # ── Initialize ─────────────────────────────────────────────────────────────────
 function Initialize-PasswordResetTool {
