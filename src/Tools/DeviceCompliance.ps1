@@ -22,19 +22,22 @@ function Write-DcLog {
 }
 
 function Get-DcStateLabel([string]$state) {
-    switch ($state) {
+    $s = ([string]$state).Trim()
+    switch ($s) {
         'noncompliant'   { 'Non-compliant' }
         'nonCompliant'   { 'Non-compliant' }
         'error'          { 'Error' }
         'inGracePeriod'  { 'Grace period' }
         'conflict'       { 'Conflict' }
         'unknown'        { 'Unknown' }
-        default          { $state }
+        ''               { '(blank)' }
+        default          { if ($s -match 'System\.|^@\{') { '(unknown)' } else { $s } }
     }
 }
 
 function Get-DcStateColor([string]$state) {
-    switch ($state) {
+    $s = ([string]$state).Trim()
+    switch ($s) {
         { $_ -in 'noncompliant','nonCompliant' } { (Get-ThemeHex 'Danger') }
         'error'         { (Get-ThemeHex 'Warning') }
         'inGracePeriod' { (Get-ThemeHex 'Warning') }
@@ -72,6 +75,7 @@ function Start-DcLoad {
     $ps.Runspace = $rs
     [void]$ps.AddScript({
         try {
+            # ── Phase 1: fetch non-compliant device list ──
             $devices = [System.Collections.Generic.List[object]]::new()
             $url = "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices" +
                    "?`$filter=complianceState ne 'compliant'" +
@@ -84,65 +88,123 @@ function Start-DcLoad {
                 $url = $resp.'@odata.nextLink'
             } while ($url)
 
-            $rows  = [System.Collections.Generic.List[object]]::new()
-            $total = $devices.Count
-            $i     = 0
+            if ($devices.Count -eq 0) {
+                $Ref['Rows'] = @()
+                $Ref['Done'] = $true
+                return
+            }
 
-            foreach ($d in $devices) {
-                $i++
-                $Ref['Progress'] = "Fetching device $i of $total`: $($d.deviceName)"
-                $osStr = "$($d.operatingSystem) $($d.osVersion)".Trim()
-                $user  = if ($d.userDisplayName) { $d.userDisplayName } else { '' }
+            $Ref['Progress'] = "$($devices.Count) non-compliant device(s). Fetching policy states (up to 10 in parallel)..."
 
+            # ── Phase 2: fetch all policy states in parallel ──
+            $devicePolicies = $devices | ForEach-Object -ThrottleLimit 10 -Parallel {
+                $d = $_
                 try {
-                    $pUrl  = "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices/$($d.id)/deviceCompliancePolicyStates"
+                    $pUrl = "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices/$($d.id)/deviceCompliancePolicyStates?`$select=id,displayName,state"
                     $pResp = Invoke-RestMethod -Uri $pUrl `
-                        -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-
-                    foreach ($policy in $pResp.value) {
-                        if ($policy.state -in @('compliant','notApplicable')) { continue }
-
-                        try {
-                            $sUrl  = "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices/$($d.id)" +
-                                     "/deviceCompliancePolicyStates/$($policy.id)/settingStates"
-                            $sResp = Invoke-RestMethod -Uri $sUrl `
-                                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-
-                            $addedSetting = $false
-                            foreach ($s in $sResp.value) {
-                                if ($s.state -in @('compliant','notApplicable','notEvaluated','remediated')) { continue }
-                                $rows.Add([PSCustomObject]@{
-                                    DeviceName = $d.deviceName; User = $user; OS = $osStr
-                                    Policy = $policy.displayName; Setting = $s.settingName
-                                    State = $s.state; Detail = $s.message
-                                })
-                                $addedSetting = $true
-                            }
-                            if (-not $addedSetting) {
-                                $rows.Add([PSCustomObject]@{
-                                    DeviceName = $d.deviceName; User = $user; OS = $osStr
-                                    Policy = $policy.displayName; Setting = '(policy level)'
-                                    State = $policy.state; Detail = ''
-                                })
-                            }
-                        } catch {
-                            $rows.Add([PSCustomObject]@{
-                                DeviceName = $d.deviceName; User = $user; OS = $osStr
-                                Policy = $policy.displayName; Setting = '(details unavailable)'
-                                State = $policy.state; Detail = $_.Exception.Message
-                            })
-                        }
+                        -Headers @{ Authorization = "Bearer $using:Token" } -Method GET -ErrorAction Stop
+                    [PSCustomObject]@{
+                        Device   = $d
+                        Policies = $pResp.value
+                        Error    = $null
                     }
                 } catch {
-                    $sc = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode.value__ } else { 0 }
-                    if ($sc -eq 401) { $Ref['Error'] = '401'; $Ref['Done'] = $true; return }
+                    [PSCustomObject]@{
+                        Device   = $d
+                        Policies = $null
+                        Error    = $_.Exception.Message
+                    }
+                }
+            }
+
+            # ── Phase 3: collect non-compliant policy queries ──
+            $rows = [System.Collections.Generic.List[object]]::new()
+            $settingsQueries = [System.Collections.Generic.List[object]]::new()
+            $totalPolicies = 0
+
+            foreach ($dp in $devicePolicies) {
+                if ($dp.Error) {
+                    $user  = if ($dp.Device.userDisplayName) { $dp.Device.userDisplayName } else { '' }
+                    $osStr = "$($dp.Device.operatingSystem) $($dp.Device.osVersion)".Trim()
+                    $rows.Add([PSCustomObject]@{
+                        DeviceName = $dp.Device.deviceName; User = $user; OS = $osStr
+                        Policy = '(error fetching policies)'; Setting = ''
+                        State = 'error'; Detail = $dp.Error
+                    })
+                    continue
+                }
+                if (-not $dp.Policies) { continue }
+                foreach ($policy in $dp.Policies) {
+                    if ([string]$policy.state -in @('compliant','notApplicable')) { continue }
+                    $totalPolicies++
+                    $settingsQueries.Add([PSCustomObject]@{ Device = $dp.Device; Policy = $policy })
+                }
+            }
+
+            $Ref['Progress'] = "$totalPolicies failing policy(ies). Fetching setting details (up to 15 in parallel)..."
+
+            # ── Phase 4: fetch all setting states in parallel ──
+            $settingResults = if ($settingsQueries.Count -gt 0) {
+                $settingsQueries | ForEach-Object -ThrottleLimit 15 -Parallel {
+                    $sq = $_
+                    try {
+                        $sUrl = "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices/$($sq.Device.id)/deviceCompliancePolicyStates/$($sq.Policy.id)/settingStates"
+                        $sResp = Invoke-RestMethod -Uri $sUrl `
+                            -Headers @{ Authorization = "Bearer $using:Token" } -Method GET -ErrorAction Stop
+                        [PSCustomObject]@{
+                            Device   = $sq.Device
+                            Policy   = $sq.Policy
+                            Settings = $sResp.value
+                            Error    = $null
+                        }
+                    } catch {
+                        [PSCustomObject]@{
+                            Device   = $sq.Device
+                            Policy   = $sq.Policy
+                            Settings = $null
+                            Error    = $_.Exception.Message
+                        }
+                    }
+                }
+            } else { @() }
+
+            # ── Phase 5: build flat rows ──
+            foreach ($sr in $settingResults) {
+                $d      = $sr.Device
+                $policy = $sr.Policy
+                $user   = if ($d.userDisplayName) { $d.userDisplayName } else { '' }
+                $osStr  = "$($d.operatingSystem) $($d.osVersion)".Trim()
+
+                if ($sr.Error) {
                     $rows.Add([PSCustomObject]@{
                         DeviceName = $d.deviceName; User = $user; OS = $osStr
-                        Policy = '(error fetching policies)'; Setting = ''
-                        State = 'error'; Detail = $_.Exception.Message
+                        Policy = [string]$policy.displayName; Setting = '(details unavailable)'
+                        State = [string]$policy.state; Detail = $sr.Error
+                    })
+                    continue
+                }
+
+                $addedSetting = $false
+                if ($sr.Settings) {
+                    foreach ($s in $sr.Settings) {
+                        if ([string]$s.state -in @('compliant','notApplicable','notEvaluated','remediated')) { continue }
+                        $rows.Add([PSCustomObject]@{
+                            DeviceName = $d.deviceName; User = $user; OS = $osStr
+                            Policy = [string]$policy.displayName; Setting = [string]$s.settingName
+                            State = [string]$s.state; Detail = if ($s.message) { [string]$s.message } else { '' }
+                        })
+                        $addedSetting = $true
+                    }
+                }
+                if (-not $addedSetting) {
+                    $rows.Add([PSCustomObject]@{
+                        DeviceName = $d.deviceName; User = $user; OS = $osStr
+                        Policy = [string]$policy.displayName; Setting = '(policy level)'
+                        State = [string]$policy.state; Detail = ''
                     })
                 }
             }
+
             $Ref['Rows'] = $rows.ToArray()
         } catch {
             $sc = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode.value__ } else { 0 }
@@ -151,7 +213,7 @@ function Start-DcLoad {
     })
     $ps.BeginInvoke() | Out-Null
 
-    $Script:DC_Timer          = [System.Windows.Threading.DispatcherTimer]::new()
+    $Script:DC_Timer = [System.Windows.Threading.DispatcherTimer]::new()
     $Script:DC_Timer.Interval = [TimeSpan]::FromMilliseconds(300)
     $Script:DC_Timer.Add_Tick({
         try {
