@@ -482,7 +482,7 @@ $Script:SlXaml = @'
 
 # ── Initialize ─────────────────────────────────────────────────────────────────
 function Initialize-SignInLogsTool {
-    $reader  = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new(Invoke-ThemeXaml $Script:SlXaml))
+    $reader  = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new((Invoke-ThemeXaml $Script:SlXaml)))
     $content = [System.Windows.Markup.XamlReader]::Load($reader)
 
     $Script:SL_UI = @{

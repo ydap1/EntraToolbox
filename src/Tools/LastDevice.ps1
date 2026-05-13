@@ -778,7 +778,7 @@ $Script:LastDeviceXaml = @'
 
 # ── Initialize ─────────────────────────────────────────────────────────────────
 function Initialize-LastDeviceTool {
-    $reader  = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new(Invoke-ThemeXaml $Script:LastDeviceXaml))
+    $reader  = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new((Invoke-ThemeXaml $Script:LastDeviceXaml)))
     $content = [System.Windows.Markup.XamlReader]::Load($reader)
 
     $Script:LD_UI = @{
