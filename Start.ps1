@@ -16,12 +16,22 @@ $vf = Join-Path $PSScriptRoot 'version.txt'
 $Global:AppVersion = if (Test-Path $vf) { (Get-Content $vf -Raw).Trim() } else { '' }
 
 $modulesPath = Join-Path $PSScriptRoot 'Modules'
-if (-not (Test-Path $modulesPath)) {
+$msalPath    = Join-Path $modulesPath 'MSAL.PS'
+
+if (-not (Test-Path $msalPath)) {
     Write-Host ''
-    Write-Host 'Modules folder not found.' -ForegroundColor Red
-    Write-Host "Run: powershell.exe -ExecutionPolicy Bypass -File `"$PSScriptRoot\Bootstrap.ps1`"" -ForegroundColor Yellow
-    Write-Host ''
-    exit 1
+    Write-Host 'First run — downloading MSAL.PS module...' -ForegroundColor Yellow
+    if (-not (Test-Path $modulesPath)) { New-Item -ItemType Directory -Path $modulesPath | Out-Null }
+    try {
+        Save-Module -Name MSAL.PS -Path $modulesPath -Repository PSGallery -Force
+        Write-Host 'MSAL.PS installed.' -ForegroundColor Green
+        Write-Host ''
+    } catch {
+        Write-Host "Failed to install MSAL.PS: $_" -ForegroundColor Red
+        Write-Host 'Check your internet connection and try again.' -ForegroundColor Yellow
+        Read-Host 'Press Enter to exit'
+        exit 1
+    }
 }
 
 $env:PSModulePath = $modulesPath + [System.IO.Path]::PathSeparator + $env:PSModulePath

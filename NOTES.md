@@ -13,16 +13,6 @@ Detailed usage notes, technical reference, and changelog. Not the public-facing 
 | **Last Device** | Three sub-tabs: **By User** — pick a user, see their Intune-managed devices sorted by most-recent check-in. **By Device** — pick any Intune device, see which users have signed into it. **Stale Devices** — filter devices by days since last check-in. |
 | **Sign-In Logs** | Search any user and view their last 50 Entra sign-ins — date/time, application, result (colour-coded), IP address, location, and device. |
 
-## Setup
-
-**One-time, per machine:**
-
-```batch
-powershell.exe -ExecutionPolicy Bypass -File ".\Bootstrap.ps1"
-```
-
-Downloads `MSAL.PS` into a local `Modules\` folder. No admin rights required.
-
 ## Launch
 
 ```batch
@@ -30,6 +20,8 @@ Launch.cmd
 ```
 
 Requires PowerShell 7 (`pwsh.exe`). If not installed, the launcher prints an error with a download link. Download PS7 from https://aka.ms/powershell
+
+On first run, `Start.ps1` detects that `Modules\MSAL.PS` is missing and downloads it automatically from PSGallery. No admin rights required, nothing installed system-wide.
 
 ## Adding a Tenant
 
@@ -94,8 +86,7 @@ Tenants can be removed with the **−** button.
 ```
 EntraToolbox\
 ├── Launch.cmd          launch script (requires PS7)
-├── Start.ps1           entry point
-├── Bootstrap.ps1       one-time module installer
+├── Start.ps1           entry point; auto-installs MSAL.PS on first run
 ├── version.txt         SemVer version
 ├── README.md           public-facing readme
 ├── NOTES.md            this file

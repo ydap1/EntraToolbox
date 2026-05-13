@@ -29,19 +29,11 @@ Multi-tenant: add as many tenants as you need, switch between them from the tool
 
 ## Setup
 
-**One-time, run once per machine:**
-
-```batch
-powershell.exe -ExecutionPolicy Bypass -File ".\Bootstrap.ps1"
-```
-
-This downloads the `MSAL.PS` module into a local `Modules\` folder. No admin rights needed, nothing is installed system-wide.
-
-**Then to launch:**
-
 ```batch
 Launch.cmd
 ```
+
+That's it. On first run it automatically downloads the `MSAL.PS` module into a local `Modules\` folder. No admin rights needed, nothing installed system-wide.
 
 ---
 
