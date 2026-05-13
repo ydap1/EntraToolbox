@@ -156,9 +156,9 @@ function New-DemoSignInLogs {
     if ($devNames.Count -eq 0) { $devNames = @('Unknown') }
 
     $greenBrush = [System.Windows.Media.SolidColorBrush]::new(
-        [System.Windows.Media.Color]::FromRgb(0x22, 0xC5, 0x5E))
+        [System.Windows.Media.ColorConverter]::ConvertFromString((Get-ThemeHex 'Success')))
     $redBrush   = [System.Windows.Media.SolidColorBrush]::new(
-        [System.Windows.Media.Color]::FromRgb(0xEF, 0x44, 0x44))
+        [System.Windows.Media.ColorConverter]::ConvertFromString((Get-ThemeHex 'Danger')))
     $greenBrush.Freeze(); $redBrush.Freeze()
 
     $base = [datetime]::new(2026, 5, 13, 8, 0, 0)
@@ -221,8 +221,8 @@ function Start-PwUserLoadDemo {
 
     $n = $Script:PwReset_GraphUsers.Count
     Write-Log "Demo: PwReset loaded $n users" 'INFO'
-    Write-PwLog "Loaded $n users (demo — Contoso Academy)." '#22C55E'
-    Set-MainStatus "Demo — $n users loaded." '#22C55E'
+    Write-PwLog "Loaded $n users (demo — Contoso Academy)." 'Success'
+    Set-MainStatus "Demo — $n users loaded." 'Success'
 }
 
 # ── Last Device demo loaders ───────────────────────────────────────────────────
@@ -233,14 +233,14 @@ function Start-LdUserLoadDemo {
     $Script:LD_UI.UserList.IsEnabled   = $true
     $n = $Script:LD_AllUsers.Count
     Write-Log "Demo: LastDevice loaded $n users" 'INFO'
-    Write-LdLog "Loaded $n users (demo — Contoso Academy)." '#22C55E'
-    Set-MainStatus "Demo — $n users loaded." '#22C55E'
+    Write-LdLog "Loaded $n users (demo — Contoso Academy)." 'Success'
+    Set-MainStatus "Demo — $n users loaded." 'Success'
 }
 
 function Start-LdAllDevicesLoadDemo {
     $Script:LD_AllDevices = @($Script:Demo_Devices | Sort-Object { $_.deviceName })
     Write-Log "Demo: LastDevice loaded $($Script:LD_AllDevices.Count) devices" 'INFO'
-    Write-LdLog "By Device: loaded $($Script:LD_AllDevices.Count) devices (demo)." '#22C55E'
+    Write-LdLog "By Device: loaded $($Script:LD_AllDevices.Count) devices (demo)." 'Success'
     Update-LdDevBrowserFilter
     Update-LdStaleFilter
     $Script:LD_UI.DevBrowserSearch.IsEnabled = $true
@@ -268,7 +268,7 @@ function Start-LdDeviceLoadDemo {
         $Script:LD_UI.DevPlaceholder.Text       = 'No devices found for this user.'
         $Script:LD_UI.DevPlaceholder.Visibility = 'Visible'
         $Script:LD_UI.DevList.Visibility        = 'Collapsed'
-        Set-MainStatus 'No devices found.' '#7878A0'
+        Set-MainStatus 'No devices found.' 'TextDim'
         return
     }
 
@@ -284,7 +284,7 @@ function Start-LdDeviceLoadDemo {
     }
     $Script:LD_UI.DevPlaceholder.Visibility = 'Collapsed'
     $Script:LD_UI.DevList.Visibility        = 'Visible'
-    Set-MainStatus "Loaded $($devices.Count) device$(if ($devices.Count -ne 1) { 's' })." '#22C55E'
+    Set-MainStatus "Loaded $($devices.Count) device$(if ($devices.Count -ne 1) { 's' })." 'Success'
 }
 
 # ── Sign-In Logs demo loaders ──────────────────────────────────────────────────
@@ -295,8 +295,8 @@ function Start-SlUserLoadDemo {
     $Script:SL_UI.UserList.IsEnabled   = $true
     $n = $Script:SL_AllUsers.Count
     Write-Log "Demo: SignInLogs loaded $n users" 'INFO'
-    Write-SlLog "Loaded $n users (demo — Contoso Academy)." '#22C55E'
-    Set-MainStatus "Demo — $n users loaded." '#22C55E'
+    Write-SlLog "Loaded $n users (demo — Contoso Academy)." 'Success'
+    Set-MainStatus "Demo — $n users loaded." 'Success'
 }
 
 function Start-SlLogsLoadDemo {
@@ -311,8 +311,8 @@ function Start-SlLogsLoadDemo {
     $Script:SL_UI.LogsPlaceholder.Visibility = 'Collapsed'
     $Script:SL_UI.LogsGrid.Visibility        = 'Visible'
     $n = $rows.Count
-    Write-SlLog "Loaded $n sign-in records (demo)." '#22C55E'
-    Set-MainStatus "Sign-in logs loaded ($n records)." '#22C55E'
+    Write-SlLog "Loaded $n sign-in records (demo)." 'Success'
+    Set-MainStatus "Sign-in logs loaded ($n records)." 'Success'
 }
 
 # ── User Password Reset demo loaders ──────────────────────────────────────────
@@ -323,13 +323,13 @@ function Start-UprUserLoadDemo {
     $Script:UPR_UI.UserList.IsEnabled   = $true
     $n = $Script:UPR_AllUsers.Count
     Write-Log "Demo: UPR loaded $n users" 'INFO'
-    Write-UprLog "Loaded $n users (demo — Contoso Academy)." '#22C55E'
-    Set-MainStatus "Demo — $n users loaded." '#22C55E'
+    Write-UprLog "Loaded $n users (demo — Contoso Academy)." 'Success'
+    Set-MainStatus "Demo — $n users loaded." 'Success'
 }
 
 function Start-UprProfileLoadDemo {
     $Script:UPR_UI.PromptStatus.Text       = 'Currently: no prompt required'
-    $Script:UPR_UI.PromptStatus.Foreground = '#22C55E'
+    $Script:UPR_UI.PromptStatus.Foreground = (Get-ThemeHex 'Success')
     $Script:UPR_UI.BtnReset.IsEnabled      = $true
 }
 
@@ -439,7 +439,7 @@ function Start-DcLoadDemo {
 
     if ($n -eq 0) {
         $Script:DC_UI.Placeholder.Text = 'All managed devices are compliant.'
-        Set-MainStatus 'All devices are compliant (demo).' '#22C55E'
+        Set-MainStatus 'All devices are compliant (demo).' 'Success'
         return
     }
 
@@ -447,6 +447,6 @@ function Start-DcLoadDemo {
     $Script:DC_UI.Placeholder.Visibility  = 'Collapsed'
     $Script:DC_UI.IssuesGrid.Visibility   = 'Visible'
     Write-Log "Demo: DevCompliance loaded $n issue(s) across $nd device(s)" 'INFO'
-    Write-DcLog "Found $n issue$(if ($n -ne 1) {'s'}) across $nd device$(if ($nd -ne 1) {'s'}) (demo — Contoso Academy)." '#22C55E'
-    Set-MainStatus "$n compliance issue$(if ($n -ne 1) {'s'}) across $nd device$(if ($nd -ne 1) {'s'}) (demo)." '#FBBF24'
+    Write-DcLog "Found $n issue$(if ($n -ne 1) {'s'}) across $nd device$(if ($nd -ne 1) {'s'}) (demo — Contoso Academy)." 'Success'
+    Set-MainStatus "$n compliance issue$(if ($n -ne 1) {'s'}) across $nd device$(if ($nd -ne 1) {'s'}) (demo)." 'Warning'
 }

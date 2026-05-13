@@ -10,11 +10,11 @@ $Script:DC_Ref   = $null
 $Script:DC_Timer = $null
 
 function Write-DcLog {
-    param([string]$Msg, [string]$Color = '#7878A0')
+    param([string]$Msg, [string]$Color = 'TextDim')
     $ts   = Get-Date -Format 'HH:mm:ss'
     $para = New-Object System.Windows.Documents.Paragraph
     $run  = New-Object System.Windows.Documents.Run "[$ts]  $Msg"
-    $run.Foreground = $Color
+    $run.Foreground = Get-ThemeHex $Color
     $para.Inlines.Add($run)
     $para.Margin = '0'
     $Script:DC_UI.LogBox.Document.Blocks.Add($para)
@@ -35,11 +35,11 @@ function Get-DcStateLabel([string]$state) {
 
 function Get-DcStateColor([string]$state) {
     switch ($state) {
-        { $_ -in 'noncompliant','nonCompliant' } { '#EF4444' }
-        'error'         { '#F97316' }
-        'inGracePeriod' { '#FBBF24' }
-        'conflict'      { '#A855F7' }
-        default         { '#7878A0' }
+        { $_ -in 'noncompliant','nonCompliant' } { (Get-ThemeHex 'Danger') }
+        'error'         { (Get-ThemeHex 'Warning') }
+        'inGracePeriod' { (Get-ThemeHex 'Warning') }
+        'conflict'      { (Get-ThemeHex 'Accent') }
+        default         { (Get-ThemeHex 'TextDim') }
     }
 }
 
@@ -55,8 +55,8 @@ function Start-DcLoad {
     $Script:DC_UI.Status.Text                   = ''
     $Script:DC_UI.BtnRefresh.IsEnabled          = $false
     $Script:DC_UI.LogBox.Document.Blocks.Clear()
-    Set-MainStatus 'Loading non-compliant devices...' '#7878A0'
-    Write-DcLog 'Fetching non-compliant devices from Intune...' '#7878A0'
+    Set-MainStatus 'Loading non-compliant devices...' 'TextDim'
+    Write-DcLog 'Fetching non-compliant devices from Intune...' 'TextDim'
 
     $Script:DC_Ref = [hashtable]::Synchronized(@{
         Done = $false; Rows = $null; Error = $null; Progress = ''
@@ -165,23 +165,23 @@ function Start-DcLoad {
 
             if ($Script:DC_Ref['Error'] -eq '401') {
                 $Script:DC_UI.Placeholder.Text = 'Session expired — reconnect via the tenant selector.'
-                Write-DcLog 'Session expired.' '#EF4444'
-                Set-MainStatus 'Session expired.' '#EF4444'
+                Write-DcLog 'Session expired.' 'Danger'
+                Set-MainStatus 'Session expired.' 'Danger'
                 return
             }
             if ($Script:DC_Ref['Error']) {
                 Write-Log "DevCompliance: load failed - $($Script:DC_Ref['Error'])" 'ERROR'
                 $Script:DC_UI.Placeholder.Text = "Error: $($Script:DC_Ref['Error'])"
-                Write-DcLog "Error: $($Script:DC_Ref['Error'])" '#EF4444'
-                Set-MainStatus 'Failed to load compliance data.' '#EF4444'
+                Write-DcLog "Error: $($Script:DC_Ref['Error'])" 'Danger'
+                Set-MainStatus 'Failed to load compliance data.' 'Danger'
                 return
             }
 
             $rawRows = $Script:DC_Ref['Rows']
             if (-not $rawRows -or $rawRows.Count -eq 0) {
                 $Script:DC_UI.Placeholder.Text = 'All managed devices are compliant.'
-                Write-DcLog 'No non-compliant devices found.' '#22C55E'
-                Set-MainStatus 'All devices are compliant.' '#22C55E'
+                Write-DcLog 'No non-compliant devices found.' 'Success'
+                Set-MainStatus 'All devices are compliant.' 'Success'
                 return
             }
 
@@ -202,8 +202,8 @@ function Start-DcLoad {
             $n  = $rawRows.Count
             $nd = ($rawRows | Select-Object -ExpandProperty DeviceName -Unique).Count
             Write-Log "DevCompliance: $n issue(s) across $nd device(s)" 'INFO'
-            Write-DcLog "Found $n issue$(if ($n -ne 1) {'s'}) across $nd device$(if ($nd -ne 1) {'s'})." '#22C55E'
-            Set-MainStatus "$n compliance issue$(if ($n -ne 1) {'s'}) across $nd device$(if ($nd -ne 1) {'s'})." '#FBBF24'
+            Write-DcLog "Found $n issue$(if ($n -ne 1) {'s'}) across $nd device$(if ($nd -ne 1) {'s'})." 'Success'
+            Set-MainStatus "$n compliance issue$(if ($n -ne 1) {'s'}) across $nd device$(if ($nd -ne 1) {'s'})." 'Warning'
         } catch {
             Write-Log "DevCompliance load timer error: $_" 'ERROR'
         }
