@@ -1,7 +1,7 @@
 <#
     Demo/showcase mode for Art's Entra Toolbox.
     Dot-sourced by Start.ps1 after Auth.ps1.
-    Provides a fake Oakfield Academy tenant so the app can be demonstrated
+    Provides a fake Contoso Academy tenant so the app can be demonstrated
     without connecting to a real tenant or exposing any real data.
 #>
 
@@ -10,115 +10,115 @@ $Script:DemoMode = $false
 # ── Fake users ─────────────────────────────────────────────────────────────────
 $Script:Demo_Users = @(
     # Year 10
-    [PSCustomObject]@{ id='u-y10-01'; displayName='Amara Osei';         userPrincipalName='amara.osei@oakfield.sch.uk';         department='10A'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y10-02'; displayName='Callum Reid';        userPrincipalName='callum.reid@oakfield.sch.uk';        department='10A'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y10-03'; displayName='Priya Sharma';       userPrincipalName='priya.sharma@oakfield.sch.uk';       department='10B'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y10-04'; displayName='Jake Morrison';      userPrincipalName='jake.morrison@oakfield.sch.uk';      department='10B'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y10-05'; displayName='Sophie Chen';        userPrincipalName='sophie.chen@oakfield.sch.uk';        department='10B'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y10-06'; displayName='Liam Walsh';         userPrincipalName='liam.walsh@oakfield.sch.uk';         department='10C'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y10-07'; displayName='Fatima Al-Hassan';   userPrincipalName='fatima.alhassan@oakfield.sch.uk';    department='10C'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y10-08'; displayName='Noah Clarke';        userPrincipalName='noah.clarke@oakfield.sch.uk';        department='10A'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y10-09'; displayName='Aisha Patel';        userPrincipalName='aisha.patel@oakfield.sch.uk';        department='10B'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y10-10'; displayName='Dylan Roberts';      userPrincipalName='dylan.roberts@oakfield.sch.uk';      department='10C'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y10-11'; displayName='Mia Thompson';       userPrincipalName='mia.thompson@oakfield.sch.uk';       department='10A'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y10-12'; displayName='Aaron Khan';         userPrincipalName='aaron.khan@oakfield.sch.uk';         department='10C'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y10-13'; displayName='Emma Wilson';        userPrincipalName='emma.wilson@oakfield.sch.uk';        department='10B'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y10-14'; displayName='Joshua Okafor';      userPrincipalName='joshua.okafor@oakfield.sch.uk';      department='10A'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y10-15'; displayName='Isabelle Martin';    userPrincipalName='isabelle.martin@oakfield.sch.uk';    department='10C'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y10-01'; displayName='Amara Osei';         userPrincipalName='amara.osei@contoso.sch.uk';         department='10A'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y10-02'; displayName='Callum Reid';        userPrincipalName='callum.reid@contoso.sch.uk';        department='10A'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y10-03'; displayName='Priya Sharma';       userPrincipalName='priya.sharma@contoso.sch.uk';       department='10B'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y10-04'; displayName='Jake Morrison';      userPrincipalName='jake.morrison@contoso.sch.uk';      department='10B'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y10-05'; displayName='Sophie Chen';        userPrincipalName='sophie.chen@contoso.sch.uk';        department='10B'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y10-06'; displayName='Liam Walsh';         userPrincipalName='liam.walsh@contoso.sch.uk';         department='10C'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y10-07'; displayName='Fatima Al-Hassan';   userPrincipalName='fatima.alhassan@contoso.sch.uk';    department='10C'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y10-08'; displayName='Noah Clarke';        userPrincipalName='noah.clarke@contoso.sch.uk';        department='10A'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y10-09'; displayName='Aisha Patel';        userPrincipalName='aisha.patel@contoso.sch.uk';        department='10B'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y10-10'; displayName='Dylan Roberts';      userPrincipalName='dylan.roberts@contoso.sch.uk';      department='10C'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y10-11'; displayName='Mia Thompson';       userPrincipalName='mia.thompson@contoso.sch.uk';       department='10A'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y10-12'; displayName='Aaron Khan';         userPrincipalName='aaron.khan@contoso.sch.uk';         department='10C'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y10-13'; displayName='Emma Wilson';        userPrincipalName='emma.wilson@contoso.sch.uk';        department='10B'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y10-14'; displayName='Joshua Okafor';      userPrincipalName='joshua.okafor@contoso.sch.uk';      department='10A'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y10-15'; displayName='Isabelle Martin';    userPrincipalName='isabelle.martin@contoso.sch.uk';    department='10C'; accountEnabled=$true },
     # Year 11
-    [PSCustomObject]@{ id='u-y11-01'; displayName='Tyler Hughes';       userPrincipalName='tyler.hughes@oakfield.sch.uk';       department='11A'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y11-02'; displayName='Zara Ahmed';         userPrincipalName='zara.ahmed@oakfield.sch.uk';         department='11B'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y11-03'; displayName='Connor Burke';       userPrincipalName='connor.burke@oakfield.sch.uk';       department='11A'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y11-04'; displayName='Leila Naseri';       userPrincipalName='leila.naseri@oakfield.sch.uk';       department='11B'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y11-05'; displayName='Marcus Johnson';     userPrincipalName='marcus.johnson@oakfield.sch.uk';     department='11C'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y11-06'; displayName='Hannah Lee';         userPrincipalName='hannah.lee@oakfield.sch.uk';         department='11A'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y11-07'; displayName='Ethan Nguyen';       userPrincipalName='ethan.nguyen@oakfield.sch.uk';       department='11C'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y11-08'; displayName='Chloe Dubois';       userPrincipalName='chloe.dubois@oakfield.sch.uk';       department='11B'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y11-09'; displayName='Ryan Cooper';        userPrincipalName='ryan.cooper@oakfield.sch.uk';        department='11A'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y11-10'; displayName='Nadia Kowalski';     userPrincipalName='nadia.kowalski@oakfield.sch.uk';     department='11C'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y11-11'; displayName='Samuel Osei';        userPrincipalName='samuel.osei@oakfield.sch.uk';        department='11B'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y11-12'; displayName='Bethany Ellis';      userPrincipalName='bethany.ellis@oakfield.sch.uk';      department='11A'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y11-13'; displayName='Kieran Murphy';      userPrincipalName='kieran.murphy@oakfield.sch.uk';      department='11C'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y11-14'; displayName='Anaya Singh';        userPrincipalName='anaya.singh@oakfield.sch.uk';        department='11B'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y11-15'; displayName='Leo Fernandez';      userPrincipalName='leo.fernandez@oakfield.sch.uk';      department='11A'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y11-01'; displayName='Tyler Hughes';       userPrincipalName='tyler.hughes@contoso.sch.uk';       department='11A'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y11-02'; displayName='Zara Ahmed';         userPrincipalName='zara.ahmed@contoso.sch.uk';         department='11B'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y11-03'; displayName='Connor Burke';       userPrincipalName='connor.burke@contoso.sch.uk';       department='11A'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y11-04'; displayName='Leila Naseri';       userPrincipalName='leila.naseri@contoso.sch.uk';       department='11B'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y11-05'; displayName='Marcus Johnson';     userPrincipalName='marcus.johnson@contoso.sch.uk';     department='11C'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y11-06'; displayName='Hannah Lee';         userPrincipalName='hannah.lee@contoso.sch.uk';         department='11A'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y11-07'; displayName='Ethan Nguyen';       userPrincipalName='ethan.nguyen@contoso.sch.uk';       department='11C'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y11-08'; displayName='Chloe Dubois';       userPrincipalName='chloe.dubois@contoso.sch.uk';       department='11B'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y11-09'; displayName='Ryan Cooper';        userPrincipalName='ryan.cooper@contoso.sch.uk';        department='11A'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y11-10'; displayName='Nadia Kowalski';     userPrincipalName='nadia.kowalski@contoso.sch.uk';     department='11C'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y11-11'; displayName='Samuel Osei';        userPrincipalName='samuel.osei@contoso.sch.uk';        department='11B'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y11-12'; displayName='Bethany Ellis';      userPrincipalName='bethany.ellis@contoso.sch.uk';      department='11A'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y11-13'; displayName='Kieran Murphy';      userPrincipalName='kieran.murphy@contoso.sch.uk';      department='11C'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y11-14'; displayName='Anaya Singh';        userPrincipalName='anaya.singh@contoso.sch.uk';        department='11B'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y11-15'; displayName='Leo Fernandez';      userPrincipalName='leo.fernandez@contoso.sch.uk';      department='11A'; accountEnabled=$true },
     # Year 12
-    [PSCustomObject]@{ id='u-y12-01'; displayName='Olivia Bennett';     userPrincipalName='olivia.bennett@oakfield.sch.uk';     department='12A'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y12-02'; displayName='James Carter';       userPrincipalName='james.carter@oakfield.sch.uk';       department='12A'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y12-03'; displayName='Maya Ramachandran';  userPrincipalName='maya.ramachandran@oakfield.sch.uk';  department='12B'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y12-04'; displayName='William Scott';      userPrincipalName='william.scott@oakfield.sch.uk';      department='12B'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y12-05'; displayName='Aria Delgado';       userPrincipalName='aria.delgado@oakfield.sch.uk';       department='12A'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y12-06'; displayName='Daniel Park';        userPrincipalName='daniel.park@oakfield.sch.uk';        department='12B'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y12-07'; displayName='Freya Johansson';    userPrincipalName='freya.johansson@oakfield.sch.uk';    department='12A'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y12-08'; displayName='Alex Mitchell';      userPrincipalName='alex.mitchell@oakfield.sch.uk';      department='12B'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y12-09'; displayName='Serena Ibrahim';     userPrincipalName='serena.ibrahim@oakfield.sch.uk';     department='12A'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y12-10'; displayName='Luke Petrov';        userPrincipalName='luke.petrov@oakfield.sch.uk';        department='12B'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y12-11'; displayName='Imogen Taylor';      userPrincipalName='imogen.taylor@oakfield.sch.uk';      department='12A'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-y12-12'; displayName='Ravi Krishnamurthy'; userPrincipalName='ravi.krishnamurthy@oakfield.sch.uk'; department='12B'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y12-01'; displayName='Olivia Bennett';     userPrincipalName='olivia.bennett@contoso.sch.uk';     department='12A'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y12-02'; displayName='James Carter';       userPrincipalName='james.carter@contoso.sch.uk';       department='12A'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y12-03'; displayName='Maya Ramachandran';  userPrincipalName='maya.ramachandran@contoso.sch.uk';  department='12B'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y12-04'; displayName='William Scott';      userPrincipalName='william.scott@contoso.sch.uk';      department='12B'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y12-05'; displayName='Aria Delgado';       userPrincipalName='aria.delgado@contoso.sch.uk';       department='12A'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y12-06'; displayName='Daniel Park';        userPrincipalName='daniel.park@contoso.sch.uk';        department='12B'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y12-07'; displayName='Freya Johansson';    userPrincipalName='freya.johansson@contoso.sch.uk';    department='12A'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y12-08'; displayName='Alex Mitchell';      userPrincipalName='alex.mitchell@contoso.sch.uk';      department='12B'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y12-09'; displayName='Serena Ibrahim';     userPrincipalName='serena.ibrahim@contoso.sch.uk';     department='12A'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y12-10'; displayName='Luke Petrov';        userPrincipalName='luke.petrov@contoso.sch.uk';        department='12B'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y12-11'; displayName='Imogen Taylor';      userPrincipalName='imogen.taylor@contoso.sch.uk';      department='12A'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-y12-12'; displayName='Ravi Krishnamurthy'; userPrincipalName='ravi.krishnamurthy@contoso.sch.uk'; department='12B'; accountEnabled=$true },
     # Staff
-    [PSCustomObject]@{ id='u-st-01'; displayName='Michael Graves';      userPrincipalName='m.graves@oakfield.sch.uk';           department='Staff'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-st-02'; displayName='Sarah Nkosi';         userPrincipalName='s.nkosi@oakfield.sch.uk';            department='Staff'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-st-03'; displayName='Tom Lawson';          userPrincipalName='t.lawson@oakfield.sch.uk';           department='Staff'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-st-04'; displayName='Claire Atkins';       userPrincipalName='c.atkins@oakfield.sch.uk';           department='Staff'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-st-05'; displayName='Paul Yeboah';         userPrincipalName='p.yeboah@oakfield.sch.uk';           department='Staff'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-st-06'; displayName='Helen Marsh';         userPrincipalName='h.marsh@oakfield.sch.uk';            department='Staff'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-st-07'; displayName='James Obrien';        userPrincipalName='j.obrien@oakfield.sch.uk';           department='Staff'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-st-08'; displayName='Priya Mehta';         userPrincipalName='p.mehta@oakfield.sch.uk';            department='Staff'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-st-09'; displayName='Dave Fowler';         userPrincipalName='d.fowler@oakfield.sch.uk';           department='Staff'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-st-10'; displayName='Rachel Green';        userPrincipalName='r.green@oakfield.sch.uk';            department='Staff'; accountEnabled=$true }
+    [PSCustomObject]@{ id='u-st-01'; displayName='Michael Graves';      userPrincipalName='m.graves@contoso.sch.uk';           department='Staff'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-st-02'; displayName='Sarah Nkosi';         userPrincipalName='s.nkosi@contoso.sch.uk';            department='Staff'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-st-03'; displayName='Tom Lawson';          userPrincipalName='t.lawson@contoso.sch.uk';           department='Staff'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-st-04'; displayName='Claire Atkins';       userPrincipalName='c.atkins@contoso.sch.uk';           department='Staff'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-st-05'; displayName='Paul Yeboah';         userPrincipalName='p.yeboah@contoso.sch.uk';           department='Staff'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-st-06'; displayName='Helen Marsh';         userPrincipalName='h.marsh@contoso.sch.uk';            department='Staff'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-st-07'; displayName='James Obrien';        userPrincipalName='j.obrien@contoso.sch.uk';           department='Staff'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-st-08'; displayName='Priya Mehta';         userPrincipalName='p.mehta@contoso.sch.uk';            department='Staff'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-st-09'; displayName='Dave Fowler';         userPrincipalName='d.fowler@contoso.sch.uk';           department='Staff'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-st-10'; displayName='Rachel Green';        userPrincipalName='r.green@contoso.sch.uk';            department='Staff'; accountEnabled=$true }
 )
 
 # ── Fake devices ───────────────────────────────────────────────────────────────
 # lastSyncDateTime strings are UTC (relative to 2026-05-13)
 $Script:Demo_Devices = @(
-    [PSCustomObject]@{ id='d-lt-001'; deviceName='OAKF-LT-001'; lastSyncDateTime='2026-05-12T09:14:00Z'
+    [PSCustomObject]@{ id='d-lt-001'; deviceName='CTX-LT-001'; lastSyncDateTime='2026-05-12T09:14:00Z'
         usersLoggedOn=@( @{userId='u-y10-01';lastLogOnDateTime='2026-05-12T08:55:00Z'}, @{userId='u-y10-02';lastLogOnDateTime='2026-05-10T13:22:00Z'} ) },
-    [PSCustomObject]@{ id='d-lt-002'; deviceName='OAKF-LT-002'; lastSyncDateTime='2026-05-10T11:30:00Z'
+    [PSCustomObject]@{ id='d-lt-002'; deviceName='CTX-LT-002'; lastSyncDateTime='2026-05-10T11:30:00Z'
         usersLoggedOn=@( @{userId='u-y10-03';lastLogOnDateTime='2026-05-10T11:00:00Z'}, @{userId='u-y10-04';lastLogOnDateTime='2026-05-09T14:10:00Z'} ) },
-    [PSCustomObject]@{ id='d-lt-003'; deviceName='OAKF-LT-003'; lastSyncDateTime='2026-05-08T08:00:00Z'
+    [PSCustomObject]@{ id='d-lt-003'; deviceName='CTX-LT-003'; lastSyncDateTime='2026-05-08T08:00:00Z'
         usersLoggedOn=@( @{userId='u-y10-05';lastLogOnDateTime='2026-05-08T07:45:00Z'}, @{userId='u-y10-06';lastLogOnDateTime='2026-05-07T15:30:00Z'} ) },
-    [PSCustomObject]@{ id='d-lt-004'; deviceName='OAKF-LT-004'; lastSyncDateTime='2026-04-25T14:00:00Z'
+    [PSCustomObject]@{ id='d-lt-004'; deviceName='CTX-LT-004'; lastSyncDateTime='2026-04-25T14:00:00Z'
         usersLoggedOn=@( @{userId='u-y10-07';lastLogOnDateTime='2026-04-25T13:50:00Z'}, @{userId='u-y10-08';lastLogOnDateTime='2026-04-24T09:20:00Z'} ) },
-    [PSCustomObject]@{ id='d-lt-005'; deviceName='OAKF-LT-005'; lastSyncDateTime='2026-04-20T10:45:00Z'
+    [PSCustomObject]@{ id='d-lt-005'; deviceName='CTX-LT-005'; lastSyncDateTime='2026-04-20T10:45:00Z'
         usersLoggedOn=@( @{userId='u-y10-09';lastLogOnDateTime='2026-04-20T10:30:00Z'}, @{userId='u-y10-10';lastLogOnDateTime='2026-04-18T12:00:00Z'} ) },
-    [PSCustomObject]@{ id='d-lt-006'; deviceName='OAKF-LT-006'; lastSyncDateTime='2026-05-02T09:00:00Z'
+    [PSCustomObject]@{ id='d-lt-006'; deviceName='CTX-LT-006'; lastSyncDateTime='2026-05-02T09:00:00Z'
         usersLoggedOn=@( @{userId='u-y11-01';lastLogOnDateTime='2026-05-02T08:45:00Z'}, @{userId='u-y11-02';lastLogOnDateTime='2026-04-30T16:00:00Z'} ) },
-    [PSCustomObject]@{ id='d-lt-007'; deviceName='OAKF-LT-007'; lastSyncDateTime='2026-03-30T08:30:00Z'
+    [PSCustomObject]@{ id='d-lt-007'; deviceName='CTX-LT-007'; lastSyncDateTime='2026-03-30T08:30:00Z'
         usersLoggedOn=@( @{userId='u-y11-03';lastLogOnDateTime='2026-03-30T08:20:00Z'}, @{userId='u-y11-04';lastLogOnDateTime='2026-03-28T14:15:00Z'} ) },
-    [PSCustomObject]@{ id='d-lt-008'; deviceName='OAKF-LT-008'; lastSyncDateTime='2026-03-15T12:00:00Z'
+    [PSCustomObject]@{ id='d-lt-008'; deviceName='CTX-LT-008'; lastSyncDateTime='2026-03-15T12:00:00Z'
         usersLoggedOn=@( @{userId='u-y11-05';lastLogOnDateTime='2026-03-15T11:50:00Z'}, @{userId='u-y11-06';lastLogOnDateTime='2026-03-14T09:30:00Z'} ) },
-    [PSCustomObject]@{ id='d-lt-009'; deviceName='OAKF-LT-009'; lastSyncDateTime='2026-02-20T09:00:00Z'
+    [PSCustomObject]@{ id='d-lt-009'; deviceName='CTX-LT-009'; lastSyncDateTime='2026-02-20T09:00:00Z'
         usersLoggedOn=@( @{userId='u-y12-01';lastLogOnDateTime='2026-02-20T08:50:00Z'}, @{userId='u-y12-02';lastLogOnDateTime='2026-02-18T15:00:00Z'} ) },
-    [PSCustomObject]@{ id='d-lt-010'; deviceName='OAKF-LT-010'; lastSyncDateTime='2025-11-10T10:00:00Z'
+    [PSCustomObject]@{ id='d-lt-010'; deviceName='CTX-LT-010'; lastSyncDateTime='2025-11-10T10:00:00Z'
         usersLoggedOn=@( @{userId='u-y12-03';lastLogOnDateTime='2025-11-10T09:45:00Z'}, @{userId='u-y12-04';lastLogOnDateTime='2025-11-08T13:00:00Z'} ) },
-    [PSCustomObject]@{ id='d-sp-001'; deviceName='OAKF-SP-001'; lastSyncDateTime='2026-05-13T07:30:00Z'
+    [PSCustomObject]@{ id='d-sp-001'; deviceName='CTX-SP-001'; lastSyncDateTime='2026-05-13T07:30:00Z'
         usersLoggedOn=@( @{userId='u-st-01';lastLogOnDateTime='2026-05-13T07:20:00Z'}, @{userId='u-y12-05';lastLogOnDateTime='2026-05-12T16:00:00Z'} ) },
-    [PSCustomObject]@{ id='d-sp-002'; deviceName='OAKF-SP-002'; lastSyncDateTime='2026-05-12T15:00:00Z'
+    [PSCustomObject]@{ id='d-sp-002'; deviceName='CTX-SP-002'; lastSyncDateTime='2026-05-12T15:00:00Z'
         usersLoggedOn=@( @{userId='u-st-02';lastLogOnDateTime='2026-05-12T14:50:00Z'}, @{userId='u-y12-06';lastLogOnDateTime='2026-05-11T10:30:00Z'} ) },
-    [PSCustomObject]@{ id='d-sp-003'; deviceName='OAKF-SP-003'; lastSyncDateTime='2026-05-11T11:00:00Z'
+    [PSCustomObject]@{ id='d-sp-003'; deviceName='CTX-SP-003'; lastSyncDateTime='2026-05-11T11:00:00Z'
         usersLoggedOn=@( @{userId='u-st-03';lastLogOnDateTime='2026-05-11T10:45:00Z'}, @{userId='u-y11-07';lastLogOnDateTime='2026-05-09T14:00:00Z'} ) },
-    [PSCustomObject]@{ id='d-sp-004'; deviceName='OAKF-SP-004'; lastSyncDateTime='2026-04-01T08:00:00Z'
+    [PSCustomObject]@{ id='d-sp-004'; deviceName='CTX-SP-004'; lastSyncDateTime='2026-04-01T08:00:00Z'
         usersLoggedOn=@( @{userId='u-st-04';lastLogOnDateTime='2026-04-01T07:55:00Z'}, @{userId='u-y11-08';lastLogOnDateTime='2026-03-31T16:30:00Z'} ) },
-    [PSCustomObject]@{ id='d-sp-005'; deviceName='OAKF-SP-005'; lastSyncDateTime='2026-05-13T08:45:00Z'
+    [PSCustomObject]@{ id='d-sp-005'; deviceName='CTX-SP-005'; lastSyncDateTime='2026-05-13T08:45:00Z'
         usersLoggedOn=@( @{userId='u-st-05';lastLogOnDateTime='2026-05-13T08:40:00Z'}, @{userId='u-y12-07';lastLogOnDateTime='2026-05-12T12:00:00Z'} ) },
-    [PSCustomObject]@{ id='d-sp-006'; deviceName='OAKF-SP-006'; lastSyncDateTime='2026-03-01T09:00:00Z'
+    [PSCustomObject]@{ id='d-sp-006'; deviceName='CTX-SP-006'; lastSyncDateTime='2026-03-01T09:00:00Z'
         usersLoggedOn=@( @{userId='u-st-06';lastLogOnDateTime='2026-03-01T08:55:00Z'}, @{userId='u-y10-11';lastLogOnDateTime='2026-02-28T15:00:00Z'} ) },
-    [PSCustomObject]@{ id='d-sp-007'; deviceName='OAKF-SP-007'; lastSyncDateTime='2026-05-12T13:00:00Z'
+    [PSCustomObject]@{ id='d-sp-007'; deviceName='CTX-SP-007'; lastSyncDateTime='2026-05-12T13:00:00Z'
         usersLoggedOn=@( @{userId='u-st-07';lastLogOnDateTime='2026-05-12T12:55:00Z'}, @{userId='u-y12-08';lastLogOnDateTime='2026-05-11T09:00:00Z'} ) },
-    [PSCustomObject]@{ id='d-sp-008'; deviceName='OAKF-SP-008'; lastSyncDateTime='2026-05-09T10:00:00Z'
+    [PSCustomObject]@{ id='d-sp-008'; deviceName='CTX-SP-008'; lastSyncDateTime='2026-05-09T10:00:00Z'
         usersLoggedOn=@( @{userId='u-st-08';lastLogOnDateTime='2026-05-09T09:50:00Z'}, @{userId='u-y11-09';lastLogOnDateTime='2026-05-08T14:00:00Z'} ) },
-    [PSCustomObject]@{ id='d-cb-001'; deviceName='OAKF-CB-001'; lastSyncDateTime='2026-05-10T08:00:00Z'
+    [PSCustomObject]@{ id='d-cb-001'; deviceName='CTX-CB-001'; lastSyncDateTime='2026-05-10T08:00:00Z'
         usersLoggedOn=@( @{userId='u-y10-12';lastLogOnDateTime='2026-05-10T07:50:00Z'} ) },
-    [PSCustomObject]@{ id='d-cb-002'; deviceName='OAKF-CB-002'; lastSyncDateTime='2026-05-07T09:30:00Z'
+    [PSCustomObject]@{ id='d-cb-002'; deviceName='CTX-CB-002'; lastSyncDateTime='2026-05-07T09:30:00Z'
         usersLoggedOn=@( @{userId='u-y10-13';lastLogOnDateTime='2026-05-07T09:20:00Z'} ) },
-    [PSCustomObject]@{ id='d-cb-003'; deviceName='OAKF-CB-003'; lastSyncDateTime='2026-04-28T08:15:00Z'
+    [PSCustomObject]@{ id='d-cb-003'; deviceName='CTX-CB-003'; lastSyncDateTime='2026-04-28T08:15:00Z'
         usersLoggedOn=@( @{userId='u-y10-14';lastLogOnDateTime='2026-04-28T08:05:00Z'} ) },
-    [PSCustomObject]@{ id='d-cb-004'; deviceName='OAKF-CB-004'; lastSyncDateTime='2025-12-15T10:00:00Z'
+    [PSCustomObject]@{ id='d-cb-004'; deviceName='CTX-CB-004'; lastSyncDateTime='2025-12-15T10:00:00Z'
         usersLoggedOn=@( @{userId='u-y10-15';lastLogOnDateTime='2025-12-15T09:45:00Z'} ) },
-    [PSCustomObject]@{ id='d-cb-005'; deviceName='OAKF-CB-005'; lastSyncDateTime='2026-05-05T11:00:00Z'
+    [PSCustomObject]@{ id='d-cb-005'; deviceName='CTX-CB-005'; lastSyncDateTime='2026-05-05T11:00:00Z'
         usersLoggedOn=@( @{userId='u-y11-10';lastLogOnDateTime='2026-05-05T10:50:00Z'} ) },
-    [PSCustomObject]@{ id='d-cb-006'; deviceName='OAKF-CB-006'; lastSyncDateTime='2026-01-08T09:00:00Z'
+    [PSCustomObject]@{ id='d-cb-006'; deviceName='CTX-CB-006'; lastSyncDateTime='2026-01-08T09:00:00Z'
         usersLoggedOn=@( @{userId='u-y11-11';lastLogOnDateTime='2026-01-08T08:55:00Z'} ) },
-    [PSCustomObject]@{ id='d-cb-007'; deviceName='OAKF-CB-007'; lastSyncDateTime=$null
+    [PSCustomObject]@{ id='d-cb-007'; deviceName='CTX-CB-007'; lastSyncDateTime=$null
         usersLoggedOn=@() }
 )
 
@@ -221,7 +221,7 @@ function Start-PwUserLoadDemo {
 
     $n = $Script:PwReset_GraphUsers.Count
     Write-Log "Demo: PwReset loaded $n users" 'INFO'
-    Write-PwLog "Loaded $n users (demo — Oakfield Academy)." '#22C55E'
+    Write-PwLog "Loaded $n users (demo — Contoso Academy)." '#22C55E'
     Set-MainStatus "Demo — $n users loaded." '#22C55E'
 }
 
@@ -233,7 +233,7 @@ function Start-LdUserLoadDemo {
     $Script:LD_UI.UserList.IsEnabled   = $true
     $n = $Script:LD_AllUsers.Count
     Write-Log "Demo: LastDevice loaded $n users" 'INFO'
-    Write-LdLog "Loaded $n users (demo — Oakfield Academy)." '#22C55E'
+    Write-LdLog "Loaded $n users (demo — Contoso Academy)." '#22C55E'
     Set-MainStatus "Demo — $n users loaded." '#22C55E'
 }
 
@@ -295,7 +295,7 @@ function Start-SlUserLoadDemo {
     $Script:SL_UI.UserList.IsEnabled   = $true
     $n = $Script:SL_AllUsers.Count
     Write-Log "Demo: SignInLogs loaded $n users" 'INFO'
-    Write-SlLog "Loaded $n users (demo — Oakfield Academy)." '#22C55E'
+    Write-SlLog "Loaded $n users (demo — Contoso Academy)." '#22C55E'
     Set-MainStatus "Demo — $n users loaded." '#22C55E'
 }
 
@@ -323,7 +323,7 @@ function Start-UprUserLoadDemo {
     $Script:UPR_UI.UserList.IsEnabled   = $true
     $n = $Script:UPR_AllUsers.Count
     Write-Log "Demo: UPR loaded $n users" 'INFO'
-    Write-UprLog "Loaded $n users (demo — Oakfield Academy)." '#22C55E'
+    Write-UprLog "Loaded $n users (demo — Contoso Academy)." '#22C55E'
     Set-MainStatus "Demo — $n users loaded." '#22C55E'
 }
 
