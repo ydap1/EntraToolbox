@@ -81,10 +81,9 @@ Tenants can be removed with the **−** button.
 2. Choose a threshold: 7 / 30 / 60 / 90 days
 3. Devices not checked in within that window are listed. Devices that have never been seen appear first.
 
-### Time Logs
-1. Select a tenant and connect — populated automatically once both user and device caches are loaded
-2. Shows every `usersLoggedOn` record across all Intune devices, resolved against the cached user list
-3. Sorted newest-first. No extra Graph calls — purely client-side from the existing caches.
+### Time Logs (detail panels)
+- **By User:** Click a device in the right panel to see a detail bar showing the last time that user signed into that specific device.
+- **By Device:** Click a user in the right panel to see a detail bar showing the last time that user signed into the selected device.
 
 ## Device Compliance — Usage
 1. Select a tenant and connect
@@ -149,7 +148,9 @@ Every WPF event handler is wrapped in `try/catch` so exceptions that WPF would o
 #### 2026-05-13
 - **Themes — live switching:** Five palettes (Default Dark, Gruvbox, Catppuccin Mocha, Nord, One Dark). Switch via the ⚙ Settings button. `Invoke-ThemeXaml` replaces 21 Default-Dark hex literals at parse time; `Get-ThemeHex` resolves semantic names (`Success`, `Danger`, `Warning`, `TextDim`, etc.) in code-behind so all UI elements (status pills, log text, brushes created at runtime) stay consistent.
 - **Themes — semantic colour system:** Added `SuccessBg`, `DangerBg`, and `WarnText` to every palette so status pills and warning panels adapt to the active theme.
-- **Last Device — Time Logs tab:** New sub-tab showing a chronological DataGrid of every `usersLoggedOn` record across all Intune devices. Columns: User (resolved from cached user list), Device, Last Logon. Sorted newest-first. Populated automatically once both user and device caches are loaded.
+- **Themes — preserve connection on switch:** `Apply-Theme` now re-fires all connect callbacks after re-parsing tabs, so switching themes no longer disconnects or clears loaded data.
+- **Themes — TextBox disabled styling:** Added explicit `IsEnabled` opacity triggers and ScrollViewer Background bindings to all tool TextBox templates so disabled search boxes no longer render with a white system background.
+- **Last Device — Time Logs (detail panels):** Clicking a device in By User or a user in By Device now reveals a detail bar below the list showing the exact last logon timestamp. This replaces the earlier separate Time Logs tab.
 - **Last Device — ComboBox style fix:** Added a custom dark ComboBox template to `LastDevice.ps1` Grid.Resources so the Stale Devices threshold dropdown uses the theme colours instead of the default white Aero style.
 - **Year Group Passwords — multi-select:** Rows in the grid can now be individually selected/deselected (Ctrl+click, Shift+click range, Ctrl+A). Generate/Reset only processes the selected rows. A live "X of Y selected" counter sits in the sidebar.
 - **Year Group Passwords — Select All / None:** Two compact buttons below "Load Students" instantly select or deselect all loaded rows. Students are auto-selected in full when a group is loaded.
