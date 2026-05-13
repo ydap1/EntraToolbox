@@ -11,7 +11,7 @@ WPF PowerShell GUI for Entra ID (Azure AD) tenant management. Requires Windows a
 | **Last Device** | Intune device lookup by user or by device. Includes stale-device filter (7 / 30 / 60 / 90 days). |
 | **Sign-In Logs** | Last 50 sign-ins for any user — app, result, IP, location, device. |
 
-Multi-tenant. Profiles saved locally, silent token refresh on subsequent launches. Five colour themes with live switching.
+Multi-tenant. Profiles saved locally, silent token refresh on subsequent launches.
 
 ## Usage
 

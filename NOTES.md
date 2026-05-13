@@ -85,12 +85,6 @@ Tenants can be removed with the **−** button.
 - **By User:** Click a device in the right panel to see a detail bar showing the last time that user signed into that specific device.
 - **By Device:** Click a user in the right panel to see a detail bar showing the last time that user signed into the selected device.
 
-## Device Compliance — Usage
-1. Select a tenant and connect
-2. All non-compliant Intune devices are fetched, then each device's compliance policy states and setting states are queried
-3. One flat row per failing setting: Device, User, OS, Policy, Setting, Status (colour-coded), Detail
-4. Click **Refresh** to re-fetch from Graph
-
 ## File Structure
 
 ```
@@ -107,14 +101,12 @@ EntraToolbox\
 │   └── MSAL.PS\
 └── src\
     ├── Auth.ps1        shared auth (MSAL), tenant config, Graph REST helpers, Get-ThemeHex
-    ├── Themes.ps1      theme palettes, Invoke-ThemeXaml, Apply-Theme
     ├── MainWindow.ps1  main shell window, tenant bar, tab host
     └── Tools\
         ├── PasswordReset.ps1       Year Group Passwords tab
         ├── UserPasswordReset.ps1   User Password Reset tab
         ├── LastDevice.ps1          Last Device tab (By User / By Device / Stale / Time Logs)
-        ├── SignInLogs.ps1          Sign-In Logs tab
-        └── DeviceCompliance.ps1    Device Compliance tab
+        └── SignInLogs.ps1          Sign-In Logs tab
 ```
 
 ## Technical Notes
@@ -146,14 +138,7 @@ Every WPF event handler is wrapped in `try/catch` so exceptions that WPF would o
 ### Unreleased
 
 #### 2026-05-13
-- **Themes — live switching:** Five palettes (Default Dark, Gruvbox, Catppuccin Mocha, Nord, One Dark). Switch via the ⚙ Settings button. `Invoke-ThemeXaml` replaces 21 Default-Dark hex literals at parse time; `Get-ThemeHex` resolves semantic names (`Success`, `Danger`, `Warning`, `TextDim`, etc.) in code-behind so all UI elements (status pills, log text, brushes created at runtime) stay consistent.
-- **Themes — semantic colour system:** Added `SuccessBg`, `DangerBg`, and `WarnText` to every palette so status pills and warning panels adapt to the active theme.
-- **Themes — preserve connection on switch:** `Apply-Theme` now re-fires all connect callbacks after re-parsing tabs, so switching themes no longer disconnects or clears loaded data.
-- **Themes — TextBox disabled styling:** Added explicit `IsEnabled` opacity triggers and ScrollViewer Background bindings to all tool TextBox templates so disabled search boxes no longer render with a white system background.
-- **Device Compliance — parallel fetching:** Policy states and setting details are now fetched in parallel (10 and 15 concurrent requests respectively). Previously every non-compliant device was processed sequentially, causing minutes-long waits on large tenants.
-- **Device Compliance — defensive string handling:** All `state`, `displayName`, `settingName`, and `message` fields are explicitly cast to `[string]`. This prevents Graph responses that deserialize as complex objects from displaying as "Object" in the Status column.
 - **Last Device — Time Logs (detail panels):** Clicking a device in By User or a user in By Device now reveals a detail bar below the list showing the exact last logon timestamp. This replaces the earlier separate Time Logs tab.
-- **Last Device — ComboBox style fix:** Added a custom dark ComboBox template to `LastDevice.ps1` Grid.Resources so the Stale Devices threshold dropdown uses the theme colours instead of the default white Aero style.
 - **Year Group Passwords — multi-select:** Rows in the grid can now be individually selected/deselected (Ctrl+click, Shift+click range, Ctrl+A). Generate/Reset only processes the selected rows. A live "X of Y selected" counter sits in the sidebar.
 - **Year Group Passwords — Select All / None:** Two compact buttons below "Load Students" instantly select or deselect all loaded rows. Students are auto-selected in full when a group is loaded.
 - **Year Group Passwords — sortable columns:** Click any column header to sort A→Z / Z→A (or by status/password value). Template columns (Password, Status) have explicit `SortMemberPath` bindings.
