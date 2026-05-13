@@ -10,7 +10,7 @@ Detailed usage notes, technical reference, and changelog. Not the public-facing 
 |-----|-------------|
 | **Year Group Passwords** | Reset passwords for a year group of students in bulk. Generates memorable passwords (e.g. `Tiger.flame.desk47!`). Select individual or all students. Dry-run mode previews without writing. Exports CSV. |
 | **User Password Reset** | Reset the password for any individual user. Control whether they are prompted to change it on next sign-in, and view the current prompt status before resetting. View the user's group memberships. |
-| **Last Device** | Three sub-tabs: **By User** — pick a user, see their Intune-managed devices sorted by most-recent check-in. **By Device** — pick any Intune device, see which users have signed into it. **Stale Devices** — filter devices by days since last check-in. |
+| **Last Device** | Four sub-tabs: **By User** — pick a user, see their Intune-managed devices sorted by most-recent check-in. **By Device** — pick any Intune device, see which users have signed into it. **Stale Devices** — filter devices by days since last check-in. **Time Logs** — chronological table of every user-device logon record across the tenant. |
 | **Sign-In Logs** | Search any user and view their last 50 Entra sign-ins — date/time, application, result (colour-coded), IP address, location, and device. |
 
 ## Launch
@@ -81,6 +81,17 @@ Tenants can be removed with the **−** button.
 2. Choose a threshold: 7 / 30 / 60 / 90 days
 3. Devices not checked in within that window are listed. Devices that have never been seen appear first.
 
+### Time Logs
+1. Select a tenant and connect — populated automatically once both user and device caches are loaded
+2. Shows every `usersLoggedOn` record across all Intune devices, resolved against the cached user list
+3. Sorted newest-first. No extra Graph calls — purely client-side from the existing caches.
+
+## Device Compliance — Usage
+1. Select a tenant and connect
+2. All non-compliant Intune devices are fetched, then each device's compliance policy states and setting states are queried
+3. One flat row per failing setting: Device, User, OS, Policy, Setting, Status (colour-coded), Detail
+4. Click **Refresh** to re-fetch from Graph
+
 ## File Structure
 
 ```
@@ -96,13 +107,15 @@ EntraToolbox\
 ├── Modules\            gitignored — populated by Bootstrap.ps1
 │   └── MSAL.PS\
 └── src\
-    ├── Auth.ps1        shared auth (MSAL), tenant config, Graph REST helpers
+    ├── Auth.ps1        shared auth (MSAL), tenant config, Graph REST helpers, Get-ThemeHex
+    ├── Themes.ps1      theme palettes, Invoke-ThemeXaml, Apply-Theme
     ├── MainWindow.ps1  main shell window, tenant bar, tab host
     └── Tools\
         ├── PasswordReset.ps1       Year Group Passwords tab
         ├── UserPasswordReset.ps1   User Password Reset tab
-        ├── LastDevice.ps1          Last Device tab (By User / By Device / Stale)
-        └── SignInLogs.ps1          Sign-In Logs tab
+        ├── LastDevice.ps1          Last Device tab (By User / By Device / Stale / Time Logs)
+        ├── SignInLogs.ps1          Sign-In Logs tab
+        └── DeviceCompliance.ps1    Device Compliance tab
 ```
 
 ## Technical Notes
@@ -134,6 +147,10 @@ Every WPF event handler is wrapped in `try/catch` so exceptions that WPF would o
 ### Unreleased
 
 #### 2026-05-13
+- **Themes — live switching:** Five palettes (Default Dark, Gruvbox, Catppuccin Mocha, Nord, One Dark). Switch via the ⚙ Settings button. `Invoke-ThemeXaml` replaces 21 Default-Dark hex literals at parse time; `Get-ThemeHex` resolves semantic names (`Success`, `Danger`, `Warning`, `TextDim`, etc.) in code-behind so all UI elements (status pills, log text, brushes created at runtime) stay consistent.
+- **Themes — semantic colour system:** Added `SuccessBg`, `DangerBg`, and `WarnText` to every palette so status pills and warning panels adapt to the active theme.
+- **Last Device — Time Logs tab:** New sub-tab showing a chronological DataGrid of every `usersLoggedOn` record across all Intune devices. Columns: User (resolved from cached user list), Device, Last Logon. Sorted newest-first. Populated automatically once both user and device caches are loaded.
+- **Last Device — ComboBox style fix:** Added a custom dark ComboBox template to `LastDevice.ps1` Grid.Resources so the Stale Devices threshold dropdown uses the theme colours instead of the default white Aero style.
 - **Year Group Passwords — multi-select:** Rows in the grid can now be individually selected/deselected (Ctrl+click, Shift+click range, Ctrl+A). Generate/Reset only processes the selected rows. A live "X of Y selected" counter sits in the sidebar.
 - **Year Group Passwords — Select All / None:** Two compact buttons below "Load Students" instantly select or deselect all loaded rows. Students are auto-selected in full when a group is loaded.
 - **Year Group Passwords — sortable columns:** Click any column header to sort A→Z / Z→A (or by status/password value). Template columns (Password, Status) have explicit `SortMemberPath` bindings.
