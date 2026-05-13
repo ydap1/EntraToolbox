@@ -60,11 +60,11 @@ function Update-PwSelectionLabel {
 
 # ── Log helper ─────────────────────────────────────────────────────────────────
 function Write-PwLog {
-    param([string]$Msg, [string]$Color = '#7878A0')
+    param([string]$Msg, [string]$Color = 'TextDim')
     $ts   = Get-Date -Format 'HH:mm:ss'
     $para = New-Object System.Windows.Documents.Paragraph
     $run  = New-Object System.Windows.Documents.Run "[$ts]  $Msg"
-    $run.Foreground  = $Color
+    $run.Foreground  = Get-ThemeHex $Color
     $para.Inlines.Add($run)
     $para.Margin = '0'
     $Script:PwReset_UI.LogBox.Document.Blocks.Add($para)
@@ -82,8 +82,8 @@ function Start-PwUserLoad {
     $Script:PwReset_UI.BtnLoad.IsEnabled   = $false
     $Script:PwReset_UI.BtnRun.IsEnabled    = $false
     $Script:PwReset_UI.BtnExport.IsEnabled = $false
-    Set-MainStatus 'Loading users...' '#7878A0'
-    Write-PwLog 'Fetching users from Entra ID...' '#7878A0'
+    Set-MainStatus 'Loading users...' 'TextDim'
+    Write-PwLog 'Fetching users from Entra ID...' 'TextDim'
 
     $Script:PwUserRef = [hashtable]::Synchronized(@{ Done = $false; Users = $null; Error = $null })
     $token = $Script:AccessToken
@@ -123,14 +123,14 @@ function Start-PwUserLoad {
 
             if ($Script:PwUserRef['Error']) {
                 Write-Log "PwReset: user load failed - $($Script:PwUserRef['Error'])" 'ERROR'
-                Write-PwLog "Failed to load users: $($Script:PwUserRef['Error'])" '#EF4444'
-                Set-MainStatus 'Failed to load users.' '#EF4444'
+                Write-PwLog "Failed to load users: $($Script:PwUserRef['Error'])" 'Danger'
+                Set-MainStatus 'Failed to load users.' 'Danger'
                 return
             }
 
             $Script:PwReset_GraphUsers = $Script:PwUserRef['Users']
             Write-Log "PwReset: loaded $($Script:PwReset_GraphUsers.Count) users" 'INFO'
-            Write-PwLog "Loaded $($Script:PwReset_GraphUsers.Count) enabled users with departments." '#22C55E'
+            Write-PwLog "Loaded $($Script:PwReset_GraphUsers.Count) enabled users with departments." 'Success'
 
             $allGroups = $Script:PwReset_GraphUsers |
                          ForEach-Object { Get-DeptGroup $_.department } |
@@ -150,7 +150,7 @@ function Start-PwUserLoad {
             if ($Script:PwReset_UI.CboYear.Items.Count -gt 0) { $Script:PwReset_UI.CboYear.SelectedIndex = 0 }
             $Script:PwReset_UI.CboYear.IsEnabled = $true
             $Script:PwReset_UI.BtnLoad.IsEnabled = $true
-            Set-MainStatus "Ready - $($Script:PwReset_GraphUsers.Count) users loaded." '#22C55E'
+            Set-MainStatus "Ready - $($Script:PwReset_GraphUsers.Count) users loaded." 'Success'
         } catch {
             Write-Log "PwReset user-load timer error: $_" 'ERROR'
         }
@@ -415,8 +415,8 @@ $Script:PwResetXaml = @'
         <RadioButton x:Name="PwRbLive" Content="Live Run  (reset passwords)"
                      Foreground="#EF4444" GroupName="pwmode"/>
 
-        <Border x:Name="PwPnlWarn" CornerRadius="6" Background="#2A1010"
-                BorderBrush="#5A2020" BorderThickness="1"
+        <Border x:Name="PwPnlWarn" CornerRadius="6" Background="#1A1A2C"
+                BorderBrush="#EF4444" BorderThickness="1"
                 Padding="10,8" Margin="0,8,0,0" Visibility="Collapsed">
           <StackPanel>
             <TextBlock Text="Warning" Foreground="#EF4444" FontWeight="Bold" FontSize="12"/>
@@ -602,7 +602,7 @@ function Initialize-PasswordResetTool {
             $Script:PwReset_UI.PnlWarn.Visibility = 'Visible'
             if ($Script:PwReset_UI.BtnRun.IsEnabled) {
                 $Script:PwReset_UI.BtnRun.Content    = 'Reset Passwords Now'
-                $Script:PwReset_UI.BtnRun.Background = '#EF4444'
+                $Script:PwReset_UI.BtnRun.Background = (Get-ThemeHex 'Danger')
             }
         } catch { Write-Log "RbLive Checked error: $_" 'ERROR' }
     })
@@ -612,7 +612,7 @@ function Initialize-PasswordResetTool {
             $Script:PwReset_UI.PnlWarn.Visibility = 'Collapsed'
             if ($Script:PwReset_UI.BtnRun.IsEnabled) {
                 $Script:PwReset_UI.BtnRun.Content    = 'Generate Passwords'
-                $Script:PwReset_UI.BtnRun.Background = '#6366F1'
+                $Script:PwReset_UI.BtnRun.Background = (Get-ThemeHex 'Accent')
             }
         } catch { Write-Log "RbDry Checked error: $_" 'ERROR' }
     })
@@ -649,13 +649,13 @@ function Initialize-PasswordResetTool {
             $Script:PwReset_UI.PnlStats.Visibility     = 'Collapsed'
             if ($Script:PwReset_UI.RbLive.IsChecked) {
                 $Script:PwReset_UI.BtnRun.Content    = 'Reset Passwords Now'
-                $Script:PwReset_UI.BtnRun.Background = '#EF4444'
+                $Script:PwReset_UI.BtnRun.Background = (Get-ThemeHex 'Danger')
             } else {
                 $Script:PwReset_UI.BtnRun.Content    = 'Generate Passwords'
-                $Script:PwReset_UI.BtnRun.Background = '#6366F1'
+                $Script:PwReset_UI.BtnRun.Background = (Get-ThemeHex 'Accent')
             }
-            Write-PwLog "Loaded $($students.Count) students for group: $selGroup" '#E2E2F0'
-            Set-MainStatus "Group $selGroup - $($students.Count) students loaded." '#E2E2F0'
+            Write-PwLog "Loaded $($students.Count) students for group: $selGroup" 'Text'
+            Set-MainStatus "Group $selGroup - $($students.Count) students loaded." 'Text'
         } catch {
             Write-Log "BtnLoad click error: $_" 'ERROR'
         }
@@ -699,7 +699,7 @@ function Initialize-PasswordResetTool {
                 if ($isLive) {
                     if ($Script:DemoMode) {
                         $row.Status = 'OK'; $ok++
-                        Write-PwLog "OK: $($row.DisplayName)  ($($row.UPN))  [DEMO]" '#22C55E'
+                        Write-PwLog "OK: $($row.DisplayName)  ($($row.UPN))  [DEMO]" 'Success'
                     } else {
                         try {
                             Invoke-GraphPatch -Path "/v1.0/users/$($row.Id)" -Body @{
@@ -709,16 +709,16 @@ function Initialize-PasswordResetTool {
                                 }
                             }
                             $row.Status = 'OK'; $ok++
-                            Write-PwLog "OK: $($row.DisplayName)  ($($row.UPN))" '#22C55E'
+                            Write-PwLog "OK: $($row.DisplayName)  ($($row.UPN))" 'Success'
                         } catch {
                             $row.Status = 'Failed'; $fail++
                             Write-Log "PwReset: PATCH failed for $($row.UPN) - $_" 'ERROR'
-                            Write-PwLog "FAILED: $($row.DisplayName) - $_" '#EF4444'
+                            Write-PwLog "FAILED: $($row.DisplayName) - $_" 'Danger'
                         }
                     }
                 } else {
                     $row.Status = 'OK'; $ok++
-                    Write-PwLog "[DRY RUN] $($row.DisplayName)  ->  $pw" '#7878A0'
+                    Write-PwLog "[DRY RUN] $($row.DisplayName)  ->  $pw" 'TextDim'
                 }
 
                 $Script:PwReset_UI.Grid.Items.Refresh()
@@ -737,11 +737,11 @@ function Initialize-PasswordResetTool {
             $Script:PwReset_UI.LblTotal.Text           = "Total  $($selected.Count)"
             $Script:PwReset_UI.LblOK.Text              = "OK     $ok"
             $Script:PwReset_UI.LblFailed.Text          = "Failed $fail"
-            $Script:PwReset_UI.LblFailed.Foreground    = if ($fail -gt 0) { '#EF4444' } else { '#7878A0' }
+            $Script:PwReset_UI.LblFailed.Foreground    = if ($fail -gt 0) { (Get-ThemeHex 'Danger') } else { (Get-ThemeHex 'TextDim') }
             Update-PwSelectionLabel
 
             $modeLabel = if ($isLive) { 'Live run' } else { 'Dry run' }
-            $col       = if ($fail -gt 0) { '#FBBF24' } else { '#22C55E' }
+            $col       = if ($fail -gt 0) { (Get-ThemeHex 'Warning') } else { (Get-ThemeHex 'Success') }
             Write-Log "PwReset: $modeLabel complete - $ok OK, $fail failed" 'INFO'
             Write-PwLog "$modeLabel complete - $ok OK, $fail failed." $col
             Set-MainStatus "$modeLabel complete - $ok OK, $fail failed." $col
@@ -761,8 +761,8 @@ function Initialize-PasswordResetTool {
             Write-Log "PwReset: exporting CSV to $($dlg.FileName)" 'INFO'
             $Script:PwReset_Rows | Select-Object DisplayName, UPN, Department, Password, Status |
                 Export-Csv -Path $dlg.FileName -NoTypeInformation -Encoding UTF8
-            Write-PwLog "CSV exported: $($dlg.FileName)" '#22C55E'
-            Set-MainStatus "Saved: $($dlg.FileName)" '#22C55E'
+            Write-PwLog "CSV exported: $($dlg.FileName)" 'Success'
+            Set-MainStatus "Saved: $($dlg.FileName)" 'Success'
             [System.Windows.MessageBox]::Show("Saved to:`n$($dlg.FileName)", 'Export Complete', 'OK', 'Information') | Out-Null
         } catch {
             Write-Log "BtnExport click error: $_" 'ERROR'
@@ -785,6 +785,6 @@ function Initialize-PasswordResetTool {
         $Script:PwReset_UI.PnlStats.Visibility      = 'Collapsed'
     })
 
-    Write-PwLog 'Password Reset ready. Select a tenant to begin.' '#50507A'
+    Write-PwLog 'Password Reset ready. Select a tenant to begin.' 'Muted'
     return $content
 }

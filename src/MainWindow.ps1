@@ -12,9 +12,9 @@ $Script:DlgOk   = $null
 $Script:DlgCancel = $null
 
 function Set-MainStatus {
-    param([string]$Text, [string]$Color = '#7878A0')
+    param([string]$Text, [string]$Color = 'TextDim')
     $Script:MainUI.Status.Text       = $Text
-    $Script:MainUI.Status.Foreground = $Color
+    $Script:MainUI.Status.Foreground = Get-ThemeHex $Color
 }
 
 $Script:MainXaml = @'
@@ -203,10 +203,10 @@ $Script:MainXaml = @'
           </StackPanel>
         </StackPanel>
         <Border Grid.Column="1" x:Name="TenantBadge" CornerRadius="4"
-                Background="#1A2A4A" Padding="10,5" VerticalAlignment="Center" Visibility="Collapsed">
+                Background="#242436" Padding="10,5" VerticalAlignment="Center" Visibility="Collapsed">
           <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
             <Ellipse Width="7" Height="7" Fill="#22C55E" Margin="0,0,6,0" VerticalAlignment="Center"/>
-            <TextBlock x:Name="LblTenantName" Foreground="#60A5FA" FontSize="11" FontWeight="SemiBold"
+            <TextBlock x:Name="LblTenantName" Foreground="#6366F1" FontSize="11" FontWeight="SemiBold"
                        VerticalAlignment="Center"/>
           </StackPanel>
         </Border>
