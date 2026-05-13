@@ -163,14 +163,15 @@ function New-DemoSignInLogs {
 
     $base = [datetime]::new(2026, 5, 13, 8, 0, 0)
     $seed = [System.Math]::Abs($UserId.GetHashCode())
+    $rows = [System.Collections.Generic.List[PSObject]]::new()
 
-    [object[]](for ($i = 0; $i -lt 50; $i++) {
+    for ($i = 0; $i -lt 50; $i++) {
         $appIdx  = ($seed + $i * 3)  % $apps.Count
         $locIdx  = ($seed + $i)      % $locations.Count
         $devIdx  = $i                % $devNames.Count
         $isFail  = (($seed + $i * 7) % 100) -lt 15
 
-        [PSCustomObject]@{
+        $rows.Add([PSCustomObject]@{
             DateTime    = $base.AddHours(-($i * 3 + ($seed % 7))).ToString('yyyy-MM-dd HH:mm')
             Application = $apps[$appIdx]
             Result      = if ($isFail) { 'Failure (50126)' } else { 'Success' }
@@ -178,8 +179,9 @@ function New-DemoSignInLogs {
             IpAddress   = "85.213.$(($seed + $i) % 100 + 100).$(($seed + $i * 3) % 200 + 20)"
             Location    = $locations[$locIdx]
             Device      = $devNames[$devIdx]
-        }
-    })
+        })
+    }
+    [object[]]$rows
 }
 
 function Get-DemoGroupsForUser {
