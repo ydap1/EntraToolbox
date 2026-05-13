@@ -339,6 +339,8 @@ $Script:UprXaml = @'
       <Setter Property="BorderThickness"          Value="1"/>
       <Setter Property="Padding"                  Value="8,4"/>
       <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="CaretBrush"               Value="#E2E2F0"/>
+      <Setter Property="FocusVisualStyle"         Value="{x:Null}"/>
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="TextBox">
@@ -351,7 +353,8 @@ $Script:UprXaml = @'
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsEnabled" Value="False">
-                <Setter TargetName="bd" Property="Opacity" Value="0.5"/>
+                <Setter TargetName="bd" Property="Background" Value="#1C1C2A"/>
+                <Setter Property="Foreground" Value="#3C3C5A"/>
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
@@ -365,7 +368,7 @@ $Script:UprXaml = @'
     </Style>
 
     <Style TargetType="ListBox">
-      <Setter Property="Background"      Value="Transparent"/>
+      <Setter Property="Background"      Value="#12121C"/>
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="Padding"         Value="0"/>
     </Style>
@@ -428,7 +431,8 @@ $Script:UprXaml = @'
 
   </Grid.Resources>
 
-  <Grid.ColumnDefinitions>
+  <Grid Background="#12121C">
+    <Grid.ColumnDefinitions>
     <ColumnDefinition Width="260" MinWidth="200"/>
     <ColumnDefinition Width="5"/>
     <ColumnDefinition Width="*"/>
@@ -470,7 +474,7 @@ $Script:UprXaml = @'
           <Border Grid.Row="0" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
             <TabPanel IsItemsHost="True" Margin="8,0"/>
           </Border>
-          <ContentPresenter Grid.Row="1" ContentSource="SelectedContent"/>
+          <ContentPresenter Grid.Row="1" ContentSource="SelectedContent" Background="#12121C"/>
         </Grid>
       </ControlTemplate>
     </TabControl.Template>
@@ -587,7 +591,7 @@ $Script:UprXaml = @'
     </TabItem>
 
   </TabControl>
-</Grid>
+  </Grid>
 '@
 
 # ── Initialize ─────────────────────────────────────────────────────────────────
