@@ -234,7 +234,7 @@ $Script:MainXaml = @'
     <TabControl x:Name="MainTabs" Grid.Row="2">
       <TabControl.Template>
         <ControlTemplate TargetType="TabControl">
-          <Grid>
+          <Grid Background="#12121C">
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto"/>
               <RowDefinition Height="*"/>
@@ -242,7 +242,7 @@ $Script:MainXaml = @'
             <Border Grid.Row="0" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
               <TabPanel IsItemsHost="True" Margin="4,0"/>
             </Border>
-            <ContentPresenter Grid.Row="1" ContentSource="SelectedContent" Background="#12121C"/>
+            <ContentPresenter Grid.Row="1" ContentSource="SelectedContent"/>
           </Grid>
         </ControlTemplate>
       </TabControl.Template>

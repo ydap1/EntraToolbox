@@ -409,7 +409,8 @@ function Show-LdDeviceUsers {
 # ── XAML ───────────────────────────────────────────────────────────────────────
 $Script:LastDeviceXaml = @'
 <Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      Background="#12121C">
   <Grid.Resources>
 
     <SolidColorBrush x:Key="Bg"      Color="#12121C"/>
@@ -658,15 +659,14 @@ $Script:LastDeviceXaml = @'
 
   </Grid.Resources>
 
-  <Grid Background="#12121C">
-    <Grid.RowDefinitions>
+  <Grid.RowDefinitions>
     <RowDefinition Height="*"/>
   </Grid.RowDefinitions>
 
   <TabControl>
     <TabControl.Template>
       <ControlTemplate TargetType="TabControl">
-        <Grid>
+        <Grid Background="#12121C">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -674,7 +674,7 @@ $Script:LastDeviceXaml = @'
           <Border Grid.Row="0" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
             <TabPanel IsItemsHost="True" Margin="8,0"/>
           </Border>
-          <ContentPresenter Grid.Row="1" ContentSource="SelectedContent" Background="#12121C"/>
+          <ContentPresenter Grid.Row="1" ContentSource="SelectedContent"/>
         </Grid>
       </ControlTemplate>
     </TabControl.Template>
