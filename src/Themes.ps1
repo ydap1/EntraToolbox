@@ -118,4 +118,9 @@ function Apply-Theme {
     $Script:MainUI.StatusBarBorder.BorderBrush = New-ThemeBrush $t.Border
     $Script:MainUI.Status.Foreground           = New-ThemeBrush $t.Muted
     $Script:MainUI.Version.Foreground          = New-ThemeBrush $t.Border
+
+    # If a tenant was already connected, re-fire connect callbacks so tools reload data
+    if ($Script:AccessToken -or $Script:DemoMode) {
+        foreach ($cb in $Script:ConnectCallbacks) { & $cb }
+    }
 }
