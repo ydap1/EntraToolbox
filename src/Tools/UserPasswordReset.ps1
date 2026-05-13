@@ -21,11 +21,11 @@ $Script:UPR_GrpTimer   = $null
 
 # ── Log helper ─────────────────────────────────────────────────────────────────
 function Write-UprLog {
-    param([string]$Msg, [string]$Color = '#7878A0')
+    param([string]$Msg, [string]$Color = 'TextDim')
     $ts   = Get-Date -Format 'HH:mm:ss'
     $para = New-Object System.Windows.Documents.Paragraph
     $run  = New-Object System.Windows.Documents.Run "[$ts]  $Msg"
-    $run.Foreground = $Color
+    $run.Foreground = Get-ThemeHex $Color
     $para.Inlines.Add($run)
     $para.Margin = '0'
     $Script:UPR_UI.LogBox.Document.Blocks.Add($para)
@@ -38,8 +38,8 @@ function Start-UprUserLoad {
     $Script:UPR_UI.UserSearch.IsEnabled = $false
     $Script:UPR_UI.UserList.IsEnabled   = $false
     $Script:UPR_UI.UserList.Items.Clear()
-    Set-MainStatus 'Loading users...' '#7878A0'
-    Write-UprLog 'Fetching users from Entra ID...' '#7878A0'
+    Set-MainStatus 'Loading users...' 'TextDim'
+    Write-UprLog 'Fetching users from Entra ID...' 'TextDim'
 
     $Script:UPR_UserRef = [hashtable]::Synchronized(@{ Done = $false; Users = $null; Error = $null })
     $token = $Script:AccessToken
@@ -80,14 +80,14 @@ function Start-UprUserLoad {
 
             if ($Script:UPR_UserRef['Error'] -eq '401') {
                 Write-Log 'UPR: user load 401 - session expired' 'ERROR'
-                Write-UprLog 'Session expired - reconnect via the tenant selector.' '#EF4444'
-                Set-MainStatus 'Session expired.' '#EF4444'
+                Write-UprLog 'Session expired - reconnect via the tenant selector.' 'Danger'
+                Set-MainStatus 'Session expired.' 'Danger'
                 return
             }
             if ($Script:UPR_UserRef['Error']) {
                 Write-Log "UPR: user load failed - $($Script:UPR_UserRef['Error'])" 'ERROR'
-                Write-UprLog "Error loading users: $($Script:UPR_UserRef['Error'])" '#EF4444'
-                Set-MainStatus 'Failed to load users.' '#EF4444'
+                Write-UprLog "Error loading users: $($Script:UPR_UserRef['Error'])" 'Danger'
+                Set-MainStatus 'Failed to load users.' 'Danger'
                 return
             }
 
@@ -97,8 +97,8 @@ function Start-UprUserLoad {
             $Script:UPR_UI.UserList.IsEnabled   = $true
             $n = $Script:UPR_AllUsers.Count
             Write-Log "UPR: loaded $n users" 'INFO'
-            Write-UprLog "Loaded $n users." '#22C55E'
-            Set-MainStatus "Loaded $n users." '#22C55E'
+            Write-UprLog "Loaded $n users." 'Success'
+            Set-MainStatus "Loaded $n users." 'Success'
         } catch {
             Write-Log "UPR user-load timer error: $_" 'ERROR'
         }
@@ -132,7 +132,7 @@ function Start-UprProfileLoad {
     if ($Script:DemoMode) { Start-UprProfileLoadDemo; return }
 
     $Script:UPR_UI.PromptStatus.Text       = 'Checking...'
-    $Script:UPR_UI.PromptStatus.Foreground = '#7878A0'
+    $Script:UPR_UI.PromptStatus.Foreground = (Get-ThemeHex 'TextDim')
     $Script:UPR_UI.BtnReset.IsEnabled      = $false
 
     $Script:UPR_ProfRef = [hashtable]::Synchronized(@{ Done = $false; Force = $null; Error = $null })
@@ -170,17 +170,17 @@ function Start-UprProfileLoad {
             if ($Script:UPR_ProfRef['Error']) {
                 Write-Log "UPR: passwordProfile fetch failed - $($Script:UPR_ProfRef['Error'])" 'WARN'
                 $Script:UPR_UI.PromptStatus.Text       = 'Could not read current status'
-                $Script:UPR_UI.PromptStatus.Foreground = '#7878A0'
+                $Script:UPR_UI.PromptStatus.Foreground = (Get-ThemeHex 'TextDim')
                 return
             }
 
             $force = $Script:UPR_ProfRef['Force']
             if ($force -eq $true) {
                 $Script:UPR_UI.PromptStatus.Text       = 'Currently: will prompt on next sign-in'
-                $Script:UPR_UI.PromptStatus.Foreground = '#FBBF24'
+                $Script:UPR_UI.PromptStatus.Foreground = (Get-ThemeHex 'Warning')
             } else {
                 $Script:UPR_UI.PromptStatus.Text       = 'Currently: no prompt required'
-                $Script:UPR_UI.PromptStatus.Foreground = '#22C55E'
+                $Script:UPR_UI.PromptStatus.Foreground = (Get-ThemeHex 'Success')
             }
         } catch {
             Write-Log "UPR profile timer error: $_" 'ERROR'
@@ -664,7 +664,7 @@ function Initialize-UserPasswordResetTool {
 
             if ([string]::IsNullOrWhiteSpace($pw)) {
                 $Script:UPR_UI.InlineStatus.Text       = 'Password cannot be empty.'
-                $Script:UPR_UI.InlineStatus.Foreground = '#EF4444'
+                $Script:UPR_UI.InlineStatus.Foreground = (Get-ThemeHex 'Danger')
                 $Script:UPR_UI.InlineStatus.Visibility = 'Visible'
                 return
             }
@@ -673,7 +673,7 @@ function Initialize-UserPasswordResetTool {
             $Script:UPR_UI.BtnReset.IsEnabled      = $false
             $Script:UPR_UI.BtnRegen.IsEnabled      = $false
             $Script:UPR_UI.InlineStatus.Visibility = 'Collapsed'
-            Set-MainStatus "Resetting password for $($user.displayName)..." '#7878A0'
+            Set-MainStatus "Resetting password for $($user.displayName)..." 'TextDim'
 
             try {
                 if (-not $Script:DemoMode) {
@@ -687,30 +687,30 @@ function Initialize-UserPasswordResetTool {
 
                 $forceLabel = if ($force) { 'will prompt on next sign-in' } else { 'no prompt required' }
                 Write-Log "UPR: password reset OK for $($user.userPrincipalName)" 'INFO'
-                Write-UprLog "OK: $($user.displayName) ($($user.userPrincipalName)) - $forceLabel" '#22C55E'
-                Set-MainStatus "Password reset for $($user.displayName)." '#22C55E'
+                Write-UprLog "OK: $($user.displayName) ($($user.userPrincipalName)) - $forceLabel" 'Success'
+                Set-MainStatus "Password reset for $($user.displayName)." 'Success'
 
                 $Script:UPR_UI.InlineStatus.Text       = "Password reset successfully. ($forceLabel)"
-                $Script:UPR_UI.InlineStatus.Foreground = '#22C55E'
+                $Script:UPR_UI.InlineStatus.Foreground = (Get-ThemeHex 'Success')
                 $Script:UPR_UI.InlineStatus.Visibility = 'Visible'
 
                 # Update the prompt status display to reflect the new state
                 if ($force) {
                     $Script:UPR_UI.PromptStatus.Text       = 'Currently: will prompt on next sign-in'
-                    $Script:UPR_UI.PromptStatus.Foreground = '#FBBF24'
+                    $Script:UPR_UI.PromptStatus.Foreground = (Get-ThemeHex 'Warning')
                 } else {
                     $Script:UPR_UI.PromptStatus.Text       = 'Currently: no prompt required'
-                    $Script:UPR_UI.PromptStatus.Foreground = '#22C55E'
+                    $Script:UPR_UI.PromptStatus.Foreground = (Get-ThemeHex 'Success')
                 }
 
                 # Pre-fill a fresh password ready for another reset
                 $Script:UPR_UI.PasswordBox.Text = New-Password
             } catch {
                 Write-Log "UPR: password reset FAILED for $($user.userPrincipalName) - $_" 'ERROR'
-                Write-UprLog "FAILED: $($user.displayName) - $_" '#EF4444'
-                Set-MainStatus "Reset failed for $($user.displayName)." '#EF4444'
+                Write-UprLog "FAILED: $($user.displayName) - $_" 'Danger'
+                Set-MainStatus "Reset failed for $($user.displayName)." 'Danger'
                 $Script:UPR_UI.InlineStatus.Text       = "Reset failed: $_"
-                $Script:UPR_UI.InlineStatus.Foreground = '#EF4444'
+                $Script:UPR_UI.InlineStatus.Foreground = (Get-ThemeHex 'Danger')
                 $Script:UPR_UI.InlineStatus.Visibility = 'Visible'
             }
 
@@ -741,6 +741,6 @@ function Initialize-UserPasswordResetTool {
         $Script:UPR_UI.GrpPlaceholder.Visibility = 'Collapsed'
     })
 
-    Write-UprLog 'User Password Reset ready. Select a tenant to begin.' '#50507A'
+    Write-UprLog 'User Password Reset ready. Select a tenant to begin.' 'Muted'
     return $content
 }

@@ -484,7 +484,7 @@ function Show-AddTenantDialog {
             $Script:DlgTid.IsEnabled    = $false
             $Script:DlgName.IsEnabled   = $false
             $Script:DlgStat.Visibility  = 'Collapsed'
-            Set-MainStatus 'Authenticating...' '#7878A0'
+            Set-MainStatus 'Authenticating...' 'TextDim'
 
             Start-TenantConnectAsync -TenantId $tid `
                 -OnSuccess {
@@ -511,7 +511,7 @@ function Show-AddTenantDialog {
                     $Script:DlgCancel.IsEnabled = $true
                     $Script:DlgTid.IsEnabled    = $true
                     $Script:DlgName.IsEnabled   = $true
-                    Set-MainStatus 'Authentication failed.' '#EF4444'
+                    Set-MainStatus 'Authentication failed.' 'Danger'
                 }
         } catch {
             Write-Log "DlgConnect click error: $_" 'ERROR'
@@ -576,7 +576,7 @@ function Invoke-PostConnect {
 
     # Fire all connect callbacks (each tool loads its data)
     foreach ($cb in $Script:ConnectCallbacks) { & $cb }
-    Set-MainStatus 'Connected.' '#22C55E'
+    Set-MainStatus 'Connected.' 'Success'
 }
 
 function Invoke-ResetTools {
@@ -675,7 +675,7 @@ function Show-MainWindow {
             Remove-SavedTenant -TenantId $tid
             Invoke-ResetTools
             Update-TenantCombo
-            Set-MainStatus 'Tenant removed.' '#7878A0'
+            Set-MainStatus 'Tenant removed.' 'TextDim'
         } catch {
             Write-Log "BtnRemove click error: $_" 'ERROR'
         }
@@ -693,7 +693,7 @@ function Show-MainWindow {
             $Script:MainUI.TenantCombo.IsEnabled    = $false
             $Script:MainUI.BtnAddTenant.IsEnabled   = $false
             $Script:MainUI.BtnRemove.IsEnabled      = $false
-            Set-MainStatus "Connecting to $($sel.Content)..." '#7878A0'
+            Set-MainStatus "Connecting to $($sel.Content)..." 'TextDim'
 
             Start-TenantConnectAsync -TenantId $sel.Tag.TenantId `
                 -OnSuccess {
@@ -709,7 +709,7 @@ function Show-MainWindow {
                     $Script:MainUI.TenantCombo.IsEnabled  = $true
                     $Script:MainUI.BtnAddTenant.IsEnabled = $true
                     $Script:MainUI.BtnRemove.IsEnabled    = $true
-                    Set-MainStatus "Authentication failed: $err" '#EF4444'
+                    Set-MainStatus "Authentication failed: $err" 'Danger'
                 }
         } catch {
             Write-Log "TenantCombo SelectionChanged error: $_" 'ERROR'
@@ -724,10 +724,10 @@ function Show-MainWindow {
             $tenants = @(Get-SavedTenants)
             Write-Log "Saved tenants: $($tenants.Count)" 'DEBUG'
             if ($tenants.Count -eq 0) {
-                Set-MainStatus 'No tenants saved. Click + to add one.' '#7878A0'
+                Set-MainStatus 'No tenants saved. Click + to add one.' 'TextDim'
                 Show-AddTenantDialog
             } else {
-                Set-MainStatus 'Select a tenant to begin.' '#7878A0'
+                Set-MainStatus 'Select a tenant to begin.' 'TextDim'
             }
         } catch {
             Write-Log "Window Loaded handler error: $_" 'ERROR'

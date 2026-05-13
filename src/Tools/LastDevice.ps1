@@ -99,6 +99,7 @@ function Start-LdUserLoad {
 
             $Script:LD_AllUsers = @($Script:LD_UserRef['Users'] | Sort-Object { $_.displayName })
             Update-LdUserFilter
+            Update-LdTimeLogs
             $Script:LD_UI.UserSearch.IsEnabled = $true
             $Script:LD_UI.UserList.IsEnabled   = $true
             $n = $Script:LD_AllUsers.Count
@@ -300,6 +301,7 @@ function Start-LdAllDevicesLoad {
             Write-LdLog "By Device: loaded $($Script:LD_AllDevices.Count) devices." 'Success'
             Update-LdDevBrowserFilter
             Update-LdStaleFilter
+            Update-LdTimeLogs
             $Script:LD_UI.DevBrowserSearch.IsEnabled = $true
             $Script:LD_UI.DevBrowserList.IsEnabled   = $true
         } catch {
@@ -906,6 +908,7 @@ function Initialize-LastDeviceTool {
         StaleDays         = $content.FindName('LdStaleDays')
         StaleGrid         = $content.FindName('LdStaleGrid')
         StaleCount        = $content.FindName('LdStaleCount')
+        TimeGrid          = $content.FindName('LdTimeGrid')
     }
 
     '7 days','30 days','60 days','90 days' | ForEach-Object {
@@ -1008,6 +1011,7 @@ function Initialize-LastDeviceTool {
         $Script:LD_UI.DevUserPlaceholder.Visibility  = 'Visible'
         $Script:LD_UI.StaleGrid.ItemsSource = $null
         $Script:LD_UI.StaleCount.Text = ''
+        $Script:LD_UI.TimeGrid.ItemsSource = $null
     })
 
     Write-LdLog 'Last Device ready. Select a tenant to begin.' 'Muted'

@@ -16,7 +16,7 @@ $Script:SL_LogsTimer = $null
 
 # ── Log helper ─────────────────────────────────────────────────────────────────
 function Write-SlLog {
-    param([string]$Msg, [string]$Color = '#7878A0')
+    param([string]$Msg, [string]$Color = 'TextDim')
     $ts   = Get-Date -Format 'HH:mm:ss'
     $para = New-Object System.Windows.Documents.Paragraph
     $run  = New-Object System.Windows.Documents.Run "[$ts]  $Msg"
@@ -33,8 +33,8 @@ function Start-SlUserLoad {
     $Script:SL_UI.UserSearch.IsEnabled = $false
     $Script:SL_UI.UserList.IsEnabled   = $false
     $Script:SL_UI.UserList.Items.Clear()
-    Set-MainStatus 'Loading users...' '#7878A0'
-    Write-SlLog 'Fetching users from Entra ID...' '#7878A0'
+    Set-MainStatus 'Loading users...' 'TextDim'
+    Write-SlLog 'Fetching users from Entra ID...' 'TextDim'
 
     $Script:SL_UserRef = [hashtable]::Synchronized(@{ Done = $false; Users = $null; Error = $null })
     $token = $Script:AccessToken
@@ -74,14 +74,14 @@ function Start-SlUserLoad {
 
             if ($Script:SL_UserRef['Error'] -eq '401') {
                 Write-Log 'SignInLogs: user load 401 - session expired' 'ERROR'
-                Write-SlLog 'Session expired - reconnect via the tenant selector.' '#EF4444'
-                Set-MainStatus 'Session expired.' '#EF4444'
+                Write-SlLog 'Session expired - reconnect via the tenant selector.' 'Danger'
+                Set-MainStatus 'Session expired.' 'Danger'
                 return
             }
             if ($Script:SL_UserRef['Error']) {
                 Write-Log "SignInLogs: user load failed - $($Script:SL_UserRef['Error'])" 'ERROR'
-                Write-SlLog "Error loading users: $($Script:SL_UserRef['Error'])" '#EF4444'
-                Set-MainStatus 'Failed to load users.' '#EF4444'
+                Write-SlLog "Error loading users: $($Script:SL_UserRef['Error'])" 'Danger'
+                Set-MainStatus 'Failed to load users.' 'Danger'
                 return
             }
 
@@ -91,8 +91,8 @@ function Start-SlUserLoad {
             $Script:SL_UI.UserList.IsEnabled   = $true
             $n = $Script:SL_AllUsers.Count
             Write-Log "SignInLogs: loaded $n users" 'INFO'
-            Write-SlLog "Loaded $n users." '#22C55E'
-            Set-MainStatus "Loaded $n users." '#22C55E'
+            Write-SlLog "Loaded $n users." 'Success'
+            Set-MainStatus "Loaded $n users." 'Success'
         } catch {
             Write-Log "SignInLogs user-load timer error: $_" 'ERROR'
         }
@@ -128,7 +128,7 @@ function Start-SlLogsLoad {
     $Script:SL_UI.LogsGrid.Visibility        = 'Collapsed'
     $Script:SL_UI.LogsPlaceholder.Text       = 'Loading sign-in logs...'
     $Script:SL_UI.LogsPlaceholder.Visibility = 'Visible'
-    Set-MainStatus 'Fetching sign-in logs...' '#7878A0'
+    Set-MainStatus 'Fetching sign-in logs...' 'TextDim'
 
     $Script:SL_LogsRef = [hashtable]::Synchronized(@{ Done = $false; Logs = $null; Error = $null })
     $token = $Script:AccessToken
@@ -169,22 +169,22 @@ function Start-SlLogsLoad {
 
             if ($Script:SL_LogsRef['Error'] -eq '403') {
                 Write-Log 'SignInLogs: 403 - AuditLog.Read.All not consented' 'ERROR'
-                Write-SlLog 'Permission denied. Reconnect the tenant to grant AuditLog.Read.All access.' '#EF4444'
+                Write-SlLog 'Permission denied. Reconnect the tenant to grant AuditLog.Read.All access.' 'Danger'
                 $Script:SL_UI.LogsPlaceholder.Text = 'Permission denied - reconnect the tenant to grant AuditLog.Read.All access.'
-                Set-MainStatus 'Permission denied.' '#EF4444'
+                Set-MainStatus 'Permission denied.' 'Danger'
                 return
             }
             if ($Script:SL_LogsRef['Error'] -eq '401') {
                 Write-Log 'SignInLogs: 401 - session expired' 'ERROR'
                 $Script:SL_UI.LogsPlaceholder.Text = 'Session expired - reconnect via the tenant selector.'
-                Set-MainStatus 'Session expired.' '#EF4444'
+                Set-MainStatus 'Session expired.' 'Danger'
                 return
             }
             if ($Script:SL_LogsRef['Error']) {
                 Write-Log "SignInLogs: log load failed - $($Script:SL_LogsRef['Error'])" 'ERROR'
-                Write-SlLog "Error fetching logs: $($Script:SL_LogsRef['Error'])" '#EF4444'
+                Write-SlLog "Error fetching logs: $($Script:SL_LogsRef['Error'])" 'Danger'
                 $Script:SL_UI.LogsPlaceholder.Text = "Error: $($Script:SL_LogsRef['Error'])"
-                Set-MainStatus 'Failed to load sign-in logs.' '#EF4444'
+                Set-MainStatus 'Failed to load sign-in logs.' 'Danger'
                 return
             }
 
@@ -193,16 +193,16 @@ function Start-SlLogsLoad {
 
             if (-not $logs -or $logs.Count -eq 0) {
                 $Script:SL_UI.LogsPlaceholder.Text = 'No sign-in records found for this user.'
-                Set-MainStatus 'No sign-in records found.' '#7878A0'
+                Set-MainStatus 'No sign-in records found.' 'TextDim'
                 return
             }
 
             $greenBrush = [System.Windows.Media.SolidColorBrush]::new(
-                [System.Windows.Media.Color]::FromRgb(0x22, 0xC5, 0x5E))
+                [System.Windows.Media.ColorConverter]::ConvertFromString((Get-ThemeHex 'Success')))
             $redBrush   = [System.Windows.Media.SolidColorBrush]::new(
-                [System.Windows.Media.Color]::FromRgb(0xEF, 0x44, 0x44))
+                [System.Windows.Media.ColorConverter]::ConvertFromString((Get-ThemeHex 'Danger')))
             $mutedBrush = [System.Windows.Media.SolidColorBrush]::new(
-                [System.Windows.Media.Color]::FromRgb(0x78, 0x78, 0xA0))
+                [System.Windows.Media.ColorConverter]::ConvertFromString((Get-ThemeHex 'TextDim')))
             $greenBrush.Freeze(); $redBrush.Freeze(); $mutedBrush.Freeze()
 
             $rows = foreach ($entry in $logs) {
@@ -227,8 +227,8 @@ function Start-SlLogsLoad {
             $Script:SL_UI.LogsPlaceholder.Visibility = 'Collapsed'
             $Script:SL_UI.LogsGrid.Visibility        = 'Visible'
             $n = $logs.Count
-            Write-SlLog "Loaded $n sign-in record$(if ($n -ne 1) { 's' })." '#22C55E'
-            Set-MainStatus "Sign-in logs loaded ($n records)." '#22C55E'
+            Write-SlLog "Loaded $n sign-in record$(if ($n -ne 1) { 's' })." 'Success'
+            Set-MainStatus "Sign-in logs loaded ($n records)." 'Success'
         } catch {
             Write-Log "SignInLogs logs-load timer error: $_" 'ERROR'
         }
@@ -521,6 +521,6 @@ function Initialize-SignInLogsTool {
         $Script:SL_UI.LogsPlaceholder.Visibility = 'Visible'
     })
 
-    Write-SlLog 'Sign-In Logs ready. Select a tenant to begin.' '#50507A'
+    Write-SlLog 'Sign-In Logs ready. Select a tenant to begin.' 'Muted'
     return $content
 }
