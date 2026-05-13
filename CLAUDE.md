@@ -5,14 +5,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 Art's Entra Toolbox — a WPF PowerShell GUI for school IT teams to manage Entra ID (Azure AD) tenants. No Azure app registration needed: it uses the well-known Microsoft Intune PowerShell public client ID (`14d82eec-204b-4c2f-b7e8-296a70dab67e`) with interactive MSAL auth.
-
+Its important to keep the version history, you are working in a live github repo. (https://github.com/ydap1/EntraToolbox.git)
+- Create commits after completing each logical unit of work.
+- Do not push to the remote repository unless asked.
+- Use conventional commit messages (e.g. "feat:", "fix:", "refactor:").
 ## Running the app
-
-**First time (one-time per machine):**
-```batch
-powershell.exe -ExecutionPolicy Bypass -File ".\Bootstrap.ps1"
-```
-Downloads `MSAL.PS` into `Modules\` — no admin rights needed.
 
 **Launch:**
 ```batch
