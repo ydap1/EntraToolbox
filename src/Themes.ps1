@@ -63,7 +63,7 @@ function Load-AppSettings {
         $raw = Get-Content -Path $p -Raw -ErrorAction Stop
         if ([string]::IsNullOrWhiteSpace($raw)) { return [PSCustomObject]@{ Theme = 'Default Dark' } }
         $s = $raw | ConvertFrom-Json
-        if (-not $s.Theme -or -not $Script:ThemePalettes.ContainsKey($s.Theme)) { $s.Theme = 'Default Dark' }
+        if (-not $s.Theme -or -not $Script:ThemePalettes.Contains($s.Theme)) { $s.Theme = 'Default Dark' }
         return $s
     } catch { return [PSCustomObject]@{ Theme = 'Default Dark' } }
 }
@@ -83,7 +83,7 @@ function New-ThemeBrush([string]$Hex) {
 
 function Apply-Theme {
     param([string]$ThemeName = 'Default Dark')
-    if (-not $Script:ThemePalettes.ContainsKey($ThemeName)) { $ThemeName = 'Default Dark' }
+    if (-not $Script:ThemePalettes.Contains($ThemeName)) { $ThemeName = 'Default Dark' }
     $Script:Theme            = $Script:ThemePalettes[$ThemeName]
     $Script:CurrentThemeName = $ThemeName
     Write-Log "Theme applied: $ThemeName" 'INFO'
