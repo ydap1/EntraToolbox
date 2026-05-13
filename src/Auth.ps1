@@ -23,6 +23,27 @@ function Write-Log {
     Write-Host "[$ts][$Level] $Message" -ForegroundColor $color
 }
 
+function Get-ThemeHex([string]$Semantic) {
+    $t = $Script:Theme
+    switch ($Semantic) {
+        'Text'      { $t.Text }
+        'TextDim'   { $t.TextDim }
+        'Muted'     { $t.Muted }
+        'Accent'    { $t.Accent }
+        'Success'   { $t.Success }
+        'Danger'    { $t.Danger }
+        'Warning'   { $t.Warning }
+        'Border'    { $t.Border }
+        'Card'      { $t.Card }
+        'Surface'   { $t.Surface }
+        'Bg'        { $t.Bg }
+        'SuccessBg' { $t.SuccessBg }
+        'DangerBg'  { $t.DangerBg }
+        'WarnText'  { $t.WarnText }
+        default     { $Semantic }
+    }
+}
+
 # ── Shared state ───────────────────────────────────────────────────────────────
 $Script:AccessToken       = $null
 $Script:CurrentTenantId   = $null
