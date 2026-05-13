@@ -1,5 +1,5 @@
 <#
-    Password Reset tab for Entra Tools.
+    Year Group Password Reset tab for Art's Entra Toolbox.
     Dot-sourced by Start.ps1.
     Exposes Initialize-PasswordResetTool.
 #>
@@ -42,6 +42,21 @@ function Get-DeptGroup([string]$d) {
 $Script:PwReset_UI         = $null
 $Script:PwReset_Rows       = New-Object System.Collections.ObjectModel.ObservableCollection[PSObject]
 $Script:PwReset_GraphUsers = @()
+$Script:PwReset_Running    = $false
+
+# ── Selection label helper ─────────────────────────────────────────────────────
+function Update-PwSelectionLabel {
+    $sel   = $Script:PwReset_UI.Grid.SelectedItems.Count
+    $total = $Script:PwReset_Rows.Count
+    if ($total -gt 0) {
+        $Script:PwReset_UI.LblSelection.Text = "$sel of $total selected"
+    } else {
+        $Script:PwReset_UI.LblSelection.Text = ''
+    }
+    if (-not $Script:PwReset_Running) {
+        $Script:PwReset_UI.BtnRun.IsEnabled = ($sel -gt 0)
+    }
+}
 
 # ── Log helper ─────────────────────────────────────────────────────────────────
 function Write-PwLog {
@@ -101,37 +116,43 @@ function Start-PwUserLoad {
     $Script:PwUserTimer          = [System.Windows.Threading.DispatcherTimer]::new()
     $Script:PwUserTimer.Interval = [TimeSpan]::FromMilliseconds(300)
     $Script:PwUserTimer.Add_Tick({
-        if (-not $Script:PwUserRef['Done']) { return }
-        $Script:PwUserTimer.Stop()
+        try {
+            if (-not $Script:PwUserRef['Done']) { return }
+            $Script:PwUserTimer.Stop()
 
-        if ($Script:PwUserRef['Error']) {
-            Write-PwLog "Failed to load users: $($Script:PwUserRef['Error'])" '#EF4444'
-            Set-MainStatus 'Failed to load users.' '#EF4444'
-            return
+            if ($Script:PwUserRef['Error']) {
+                Write-Log "PwReset: user load failed - $($Script:PwUserRef['Error'])" 'ERROR'
+                Write-PwLog "Failed to load users: $($Script:PwUserRef['Error'])" '#EF4444'
+                Set-MainStatus 'Failed to load users.' '#EF4444'
+                return
+            }
+
+            $Script:PwReset_GraphUsers = $Script:PwUserRef['Users']
+            Write-Log "PwReset: loaded $($Script:PwReset_GraphUsers.Count) users" 'INFO'
+            Write-PwLog "Loaded $($Script:PwReset_GraphUsers.Count) enabled users with departments." '#22C55E'
+
+            $allGroups = $Script:PwReset_GraphUsers |
+                         ForEach-Object { Get-DeptGroup $_.department } |
+                         Where-Object { $_ -ne $null } | Sort-Object -Unique
+            $numericGroups = @($allGroups | Where-Object { $_ -is [int] }    | Sort-Object)
+            $namedGroups   = @($allGroups | Where-Object { $_ -is [string] } | Sort-Object)
+
+            $Script:PwReset_UI.CboYear.Items.Clear()
+            foreach ($g in ($numericGroups + $namedGroups)) {
+                $cnt   = ($Script:PwReset_GraphUsers | Where-Object { (Get-DeptGroup $_.department) -eq $g }).Count
+                $label = if ($g -is [int]) { "Year $g  -  $cnt students" } else { "$g  -  $cnt students" }
+                $item  = New-Object System.Windows.Controls.ComboBoxItem
+                $item.Content = $label
+                $item.Tag     = $g
+                $Script:PwReset_UI.CboYear.Items.Add($item) | Out-Null
+            }
+            if ($Script:PwReset_UI.CboYear.Items.Count -gt 0) { $Script:PwReset_UI.CboYear.SelectedIndex = 0 }
+            $Script:PwReset_UI.CboYear.IsEnabled = $true
+            $Script:PwReset_UI.BtnLoad.IsEnabled = $true
+            Set-MainStatus "Ready - $($Script:PwReset_GraphUsers.Count) users loaded." '#22C55E'
+        } catch {
+            Write-Log "PwReset user-load timer error: $_" 'ERROR'
         }
-
-        $Script:PwReset_GraphUsers = $Script:PwUserRef['Users']
-        Write-PwLog "Loaded $($Script:PwReset_GraphUsers.Count) enabled users with departments." '#22C55E'
-
-        $allGroups = $Script:PwReset_GraphUsers |
-                     ForEach-Object { Get-DeptGroup $_.department } |
-                     Where-Object { $_ -ne $null } | Sort-Object -Unique
-        $numericGroups = @($allGroups | Where-Object { $_ -is [int] }    | Sort-Object)
-        $namedGroups   = @($allGroups | Where-Object { $_ -is [string] } | Sort-Object)
-
-        $Script:PwReset_UI.CboYear.Items.Clear()
-        foreach ($g in ($numericGroups + $namedGroups)) {
-            $cnt   = ($Script:PwReset_GraphUsers | Where-Object { (Get-DeptGroup $_.department) -eq $g }).Count
-            $label = if ($g -is [int]) { "Year $g  -  $cnt students" } else { "$g  -  $cnt students" }
-            $item  = New-Object System.Windows.Controls.ComboBoxItem
-            $item.Content = $label
-            $item.Tag     = $g
-            $Script:PwReset_UI.CboYear.Items.Add($item) | Out-Null
-        }
-        if ($Script:PwReset_UI.CboYear.Items.Count -gt 0) { $Script:PwReset_UI.CboYear.SelectedIndex = 0 }
-        $Script:PwReset_UI.CboYear.IsEnabled = $true
-        $Script:PwReset_UI.BtnLoad.IsEnabled = $true
-        Set-MainStatus "Ready - $($Script:PwReset_GraphUsers.Count) users loaded." '#22C55E'
     })
     $Script:PwUserTimer.Start()
 }
@@ -194,8 +215,61 @@ $Script:PwResetXaml = @'
       <Setter Property="Foreground"    Value="#E2E2F0"/>
       <Setter Property="BorderBrush"   Value="#3C3C5A"/>
       <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="Height"        Value="36"/>
+      <Setter Property="Height"        Value="32"/>
       <Setter Property="Padding"       Value="8,0"/>
+      <Setter Property="MaxDropDownHeight" Value="220"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ComboBox">
+            <Grid>
+              <Border x:Name="bd" CornerRadius="4"
+                      Background="{TemplateBinding Background}"
+                      BorderBrush="{TemplateBinding BorderBrush}"
+                      BorderThickness="{TemplateBinding BorderThickness}"/>
+              <ContentPresenter Margin="{TemplateBinding Padding}"
+                                VerticalAlignment="Center" HorizontalAlignment="Left"
+                                Content="{TemplateBinding SelectionBoxItem}"
+                                ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                                IsHitTestVisible="False"/>
+              <Path x:Name="arrow" Data="M0,0 L4,4 L8,0 Z" Fill="#7878A0"
+                    HorizontalAlignment="Right" VerticalAlignment="Center"
+                    Margin="0,0,10,0" IsHitTestVisible="False"/>
+              <ToggleButton Focusable="False" Cursor="Hand"
+                            IsChecked="{Binding IsDropDownOpen,
+                                        RelativeSource={RelativeSource TemplatedParent},
+                                        Mode=TwoWay}">
+                <ToggleButton.Template>
+                  <ControlTemplate TargetType="ToggleButton">
+                    <Rectangle Fill="Transparent"/>
+                  </ControlTemplate>
+                </ToggleButton.Template>
+              </ToggleButton>
+              <Popup x:Name="PART_Popup" AllowsTransparency="True"
+                     IsOpen="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}}"
+                     Placement="Bottom" PopupAnimation="Slide">
+                <Border Background="#242436" BorderBrush="#3C3C5A" BorderThickness="1"
+                        CornerRadius="0,0,4,4"
+                        MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                  <ScrollViewer><ItemsPresenter/></ScrollViewer>
+                </Border>
+              </Popup>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="bd" Property="BorderBrush" Value="#6366F1"/>
+              </Trigger>
+              <Trigger Property="IsDropDownOpen" Value="True">
+                <Setter TargetName="bd"    Property="CornerRadius" Value="4,4,0,0"/>
+                <Setter TargetName="arrow" Property="Fill"         Value="#E2E2F0"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="bd" Property="Background" Value="#1C1C2A"/>
+                <Setter Property="Foreground" Value="#3C3C5A"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
     </Style>
 
     <Style TargetType="RadioButton">
@@ -219,8 +293,9 @@ $Script:PwResetXaml = @'
       <Setter Property="CanUserAddRows"          Value="False"/>
       <Setter Property="CanUserDeleteRows"       Value="False"/>
       <Setter Property="IsReadOnly"              Value="True"/>
-      <Setter Property="SelectionMode"           Value="Single"/>
+      <Setter Property="SelectionMode"           Value="Extended"/>
       <Setter Property="SelectionUnit"           Value="FullRow"/>
+      <Setter Property="CanUserSortColumns"      Value="True"/>
       <Setter Property="FontSize"                Value="12"/>
     </Style>
 
@@ -232,6 +307,7 @@ $Script:PwResetXaml = @'
       <Setter Property="BorderBrush"     Value="#3C3C5A"/>
       <Setter Property="BorderThickness" Value="0,0,0,1"/>
       <Setter Property="FontSize"        Value="11"/>
+      <Setter Property="Cursor"          Value="Hand"/>
     </Style>
 
     <Style TargetType="DataGridRow">
@@ -293,13 +369,13 @@ $Script:PwResetXaml = @'
   </Grid.Resources>
 
   <Grid.ColumnDefinitions>
-    <ColumnDefinition Width="260" MinWidth="220"/>
-    <ColumnDefinition Width="1"/>
+    <ColumnDefinition Width="260" MinWidth="200"/>
+    <ColumnDefinition Width="5"/>
     <ColumnDefinition Width="*"/>
   </Grid.ColumnDefinitions>
 
-  <!-- Splitter chrome -->
-  <Border Grid.Column="1" Background="#3C3C5A"/>
+  <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch"
+                Background="#3C3C5A" Cursor="SizeWE" ResizeBehavior="PreviousAndNext"/>
 
   <!-- ── Sidebar ──────────────────────────────────────────────────── -->
   <Border Grid.Column="0" Background="#1C1C2A">
@@ -311,6 +387,25 @@ $Script:PwResetXaml = @'
         <Button x:Name="PwBtnLoad" Content="Load Students" IsEnabled="False"
                 Style="{StaticResource PrimaryBtn}" Background="#242436"
                 Foreground="#7878A0" Padding="0,10" Margin="0,8,0,0"/>
+
+        <!-- Selection controls -->
+        <Grid Margin="0,6,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="4"/>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="4"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+          <TextBlock x:Name="PwLblSelection" Grid.Column="0"
+                     Foreground="#50507A" FontSize="11" VerticalAlignment="Center"/>
+          <Button x:Name="PwBtnSelectAll" Grid.Column="2" Content="All"
+                  Style="{StaticResource PrimaryBtn}" Background="#242436"
+                  Foreground="#7878A0" Padding="8,4" FontSize="11" IsEnabled="False"/>
+          <Button x:Name="PwBtnSelectNone" Grid.Column="4" Content="None"
+                  Style="{StaticResource PrimaryBtn}" Background="#242436"
+                  Foreground="#7878A0" Padding="8,4" FontSize="11" IsEnabled="False"/>
+        </Grid>
 
         <Border Background="#3C3C5A" Height="1" Margin="0,14"/>
 
@@ -383,10 +478,10 @@ $Script:PwResetXaml = @'
                   VirtualizingPanel.IsVirtualizing="True"
                   VirtualizingPanel.VirtualizationMode="Recycling">
           <DataGrid.Columns>
-            <DataGridTextColumn Header="Display Name"    Binding="{Binding DisplayName}" Width="*"/>
-            <DataGridTextColumn Header="Username (UPN)"  Binding="{Binding UPN}"         Width="1.4*"/>
-            <DataGridTextColumn Header="Form"            Binding="{Binding Department}"  Width="70"/>
-            <DataGridTemplateColumn Header="Generated Password" Width="*">
+            <DataGridTextColumn Header="Display Name"    Binding="{Binding DisplayName}" Width="*"    SortMemberPath="DisplayName"/>
+            <DataGridTextColumn Header="Username (UPN)"  Binding="{Binding UPN}"         Width="1.4*" SortMemberPath="UPN"/>
+            <DataGridTextColumn Header="Form"            Binding="{Binding Department}"  Width="70"   SortMemberPath="Department"/>
+            <DataGridTemplateColumn Header="Generated Password" Width="*" SortMemberPath="Password">
               <DataGridTemplateColumn.CellTemplate>
                 <DataTemplate>
                   <TextBlock Text="{Binding Password}" FontFamily="Consolas" FontSize="12"
@@ -394,7 +489,7 @@ $Script:PwResetXaml = @'
                 </DataTemplate>
               </DataGridTemplateColumn.CellTemplate>
             </DataGridTemplateColumn>
-            <DataGridTemplateColumn Header="Status" Width="90">
+            <DataGridTemplateColumn Header="Status" Width="90" SortMemberPath="Status">
               <DataGridTemplateColumn.CellTemplate>
                 <DataTemplate>
                   <Border CornerRadius="4" Padding="6,2" HorizontalAlignment="Left"
@@ -461,152 +556,211 @@ function Initialize-PasswordResetTool {
     $content = [System.Windows.Markup.XamlReader]::Load($reader)
 
     $Script:PwReset_UI = @{
-        CboYear   = $content.FindName('PwCboYear')
-        BtnLoad   = $content.FindName('PwBtnLoad')
-        RbDry     = $content.FindName('PwRbDry')
-        RbLive    = $content.FindName('PwRbLive')
-        PnlWarn   = $content.FindName('PwPnlWarn')
-        BtnRun    = $content.FindName('PwBtnRun')
-        BtnExport = $content.FindName('PwBtnExport')
-        Grid      = $content.FindName('PwGrid')
-        Progress  = $content.FindName('PwProgress')
-        LogBox    = $content.FindName('PwLogBox')
-        PnlStats  = $content.FindName('PwPnlStats')
-        LblTotal  = $content.FindName('PwLblTotal')
-        LblOK     = $content.FindName('PwLblOK')
-        LblFailed = $content.FindName('PwLblFailed')
+        CboYear        = $content.FindName('PwCboYear')
+        BtnLoad        = $content.FindName('PwBtnLoad')
+        LblSelection   = $content.FindName('PwLblSelection')
+        BtnSelectAll   = $content.FindName('PwBtnSelectAll')
+        BtnSelectNone  = $content.FindName('PwBtnSelectNone')
+        RbDry          = $content.FindName('PwRbDry')
+        RbLive         = $content.FindName('PwRbLive')
+        PnlWarn        = $content.FindName('PwPnlWarn')
+        BtnRun         = $content.FindName('PwBtnRun')
+        BtnExport      = $content.FindName('PwBtnExport')
+        Grid           = $content.FindName('PwGrid')
+        Progress       = $content.FindName('PwProgress')
+        LogBox         = $content.FindName('PwLogBox')
+        PnlStats       = $content.FindName('PwPnlStats')
+        LblTotal       = $content.FindName('PwLblTotal')
+        LblOK          = $content.FindName('PwLblOK')
+        LblFailed      = $content.FindName('PwLblFailed')
     }
 
     $Script:PwReset_UI.Grid.ItemsSource = $Script:PwReset_Rows
 
+    # Selection changed -> update label and BtnRun
+    $Script:PwReset_UI.Grid.Add_SelectionChanged({
+        try { Update-PwSelectionLabel } catch { Write-Log "PwReset SelectionChanged error: $_" 'ERROR' }
+    })
+
+    # Select All / None
+    $Script:PwReset_UI.BtnSelectAll.Add_Click({
+        try {
+            $Script:PwReset_UI.Grid.SelectAll()
+        } catch { Write-Log "BtnSelectAll click error: $_" 'ERROR' }
+    })
+    $Script:PwReset_UI.BtnSelectNone.Add_Click({
+        try {
+            $Script:PwReset_UI.Grid.UnselectAll()
+        } catch { Write-Log "BtnSelectNone click error: $_" 'ERROR' }
+    })
+
     # Run-mode toggle
     $Script:PwReset_UI.RbLive.Add_Checked({
-        $Script:PwReset_UI.PnlWarn.Visibility = 'Visible'
-        if ($Script:PwReset_UI.BtnRun.IsEnabled) {
-            $Script:PwReset_UI.BtnRun.Content    = 'Reset Passwords Now'
-            $Script:PwReset_UI.BtnRun.Background = '#EF4444'
-        }
+        try {
+            Write-Log 'PwReset: mode -> Live' 'WARN'
+            $Script:PwReset_UI.PnlWarn.Visibility = 'Visible'
+            if ($Script:PwReset_UI.BtnRun.IsEnabled) {
+                $Script:PwReset_UI.BtnRun.Content    = 'Reset Passwords Now'
+                $Script:PwReset_UI.BtnRun.Background = '#EF4444'
+            }
+        } catch { Write-Log "RbLive Checked error: $_" 'ERROR' }
     })
     $Script:PwReset_UI.RbDry.Add_Checked({
-        $Script:PwReset_UI.PnlWarn.Visibility = 'Collapsed'
-        if ($Script:PwReset_UI.BtnRun.IsEnabled) {
-            $Script:PwReset_UI.BtnRun.Content    = 'Generate Passwords'
-            $Script:PwReset_UI.BtnRun.Background = '#6366F1'
-        }
+        try {
+            Write-Log 'PwReset: mode -> Dry Run' 'DEBUG'
+            $Script:PwReset_UI.PnlWarn.Visibility = 'Collapsed'
+            if ($Script:PwReset_UI.BtnRun.IsEnabled) {
+                $Script:PwReset_UI.BtnRun.Content    = 'Generate Passwords'
+                $Script:PwReset_UI.BtnRun.Background = '#6366F1'
+            }
+        } catch { Write-Log "RbDry Checked error: $_" 'ERROR' }
     })
 
     # Load Students
     $Script:PwReset_UI.BtnLoad.Add_Click({
-        $selItem = $Script:PwReset_UI.CboYear.SelectedItem
-        if (-not $selItem) { return }
-        $selGroup = $selItem.Tag
+        try {
+            $selItem = $Script:PwReset_UI.CboYear.SelectedItem
+            if (-not $selItem) { return }
+            $selGroup = $selItem.Tag
+            Write-Log "PwReset: loading students for group $selGroup" 'INFO'
 
-        $Script:PwReset_Rows.Clear()
-        $students = @($Script:PwReset_GraphUsers | Where-Object { (Get-DeptGroup $_.department) -eq $selGroup })
+            $Script:PwReset_Rows.Clear()
+            $students = @($Script:PwReset_GraphUsers | Where-Object { (Get-DeptGroup $_.department) -eq $selGroup })
 
-        foreach ($u in $students) {
-            $Script:PwReset_Rows.Add([PSCustomObject]@{
-                Id          = $u.id
-                DisplayName = $u.displayName
-                UPN         = $u.userPrincipalName
-                Department  = $u.department
-                Password    = ''
-                Status      = 'Pending'
-            })
+            foreach ($u in $students) {
+                $Script:PwReset_Rows.Add([PSCustomObject]@{
+                    Id          = $u.id
+                    DisplayName = $u.displayName
+                    UPN         = $u.userPrincipalName
+                    Department  = $u.department
+                    Password    = ''
+                    Status      = 'Pending'
+                })
+            }
+
+            # Auto-select all loaded rows
+            $Script:PwReset_UI.Grid.SelectAll()
+
+            Write-Log "PwReset: $($students.Count) students loaded for group $selGroup" 'INFO'
+            $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $true
+            $Script:PwReset_UI.BtnSelectNone.IsEnabled = $true
+            $Script:PwReset_UI.BtnExport.IsEnabled     = $false
+            $Script:PwReset_UI.PnlStats.Visibility     = 'Collapsed'
+            if ($Script:PwReset_UI.RbLive.IsChecked) {
+                $Script:PwReset_UI.BtnRun.Content    = 'Reset Passwords Now'
+                $Script:PwReset_UI.BtnRun.Background = '#EF4444'
+            } else {
+                $Script:PwReset_UI.BtnRun.Content    = 'Generate Passwords'
+                $Script:PwReset_UI.BtnRun.Background = '#6366F1'
+            }
+            Write-PwLog "Loaded $($students.Count) students for group: $selGroup" '#E2E2F0'
+            Set-MainStatus "Group $selGroup - $($students.Count) students loaded." '#E2E2F0'
+        } catch {
+            Write-Log "BtnLoad click error: $_" 'ERROR'
         }
-
-        $Script:PwReset_UI.BtnRun.IsEnabled    = $true
-        $Script:PwReset_UI.BtnExport.IsEnabled = $false
-        $Script:PwReset_UI.PnlStats.Visibility = 'Collapsed'
-        if ($Script:PwReset_UI.RbLive.IsChecked) {
-            $Script:PwReset_UI.BtnRun.Content    = 'Reset Passwords Now'
-            $Script:PwReset_UI.BtnRun.Background = '#EF4444'
-        } else {
-            $Script:PwReset_UI.BtnRun.Content    = 'Generate Passwords'
-            $Script:PwReset_UI.BtnRun.Background = '#6366F1'
-        }
-        Write-PwLog "Loaded $($students.Count) students for group: $selGroup" '#E2E2F0'
-        Set-MainStatus "Group $selGroup - $($students.Count) students loaded." '#E2E2F0'
     })
 
     # Generate / Reset
     $Script:PwReset_UI.BtnRun.Add_Click({
-        if ($Script:PwReset_Rows.Count -eq 0) { return }
-        $isLive = $Script:PwReset_UI.RbLive.IsChecked
+        try {
+            # Snapshot selection at click time
+            $selected = @($Script:PwReset_UI.Grid.SelectedItems)
+            if ($selected.Count -eq 0) { return }
 
-        if ($isLive) {
-            $confirm = [System.Windows.MessageBox]::Show(
-                "Reset passwords for $($Script:PwReset_Rows.Count) student(s)?`n`nThis cannot be undone.",
-                'Confirm Live Run', 'YesNo', 'Warning')
-            if ($confirm -ne 'Yes') { return }
-        }
-
-        $Script:PwReset_UI.BtnRun.IsEnabled    = $false
-        $Script:PwReset_UI.BtnLoad.IsEnabled   = $false
-        $Script:PwReset_UI.BtnExport.IsEnabled = $false
-        $Script:PwReset_UI.Progress.Visibility  = 'Visible'
-        $Script:PwReset_UI.Progress.Maximum     = $Script:PwReset_Rows.Count
-        $Script:PwReset_UI.Progress.Value       = 0
-
-        $ok = 0; $fail = 0
-
-        for ($i = 0; $i -lt $Script:PwReset_Rows.Count; $i++) {
-            $row = $Script:PwReset_Rows[$i]
-            $pw  = New-Password
-            $row.Password = $pw
+            $isLive = $Script:PwReset_UI.RbLive.IsChecked
+            $mode   = if ($isLive) { 'Live' } else { 'Dry' }
+            Write-Log "PwReset: starting $mode run for $($selected.Count) selected rows" 'INFO'
 
             if ($isLive) {
-                try {
-                    Invoke-GraphPatch -Path "/v1.0/users/$($row.Id)" -Body @{
-                        passwordProfile = @{
-                            password                      = $pw
-                            forceChangePasswordNextSignIn = $false
-                        }
-                    }
-                    $row.Status = 'OK'; $ok++
-                    Write-PwLog "OK: $($row.DisplayName)  ($($row.UPN))" '#22C55E'
-                } catch {
-                    $row.Status = 'Failed'; $fail++
-                    Write-PwLog "FAILED: $($row.DisplayName) - $_" '#EF4444'
-                }
-            } else {
-                $row.Status = 'OK'; $ok++
-                Write-PwLog "[DRY RUN] $($row.DisplayName)  ->  $pw" '#7878A0'
+                $confirm = [System.Windows.MessageBox]::Show(
+                    "Reset passwords for $($selected.Count) selected student(s)?`n`nThis cannot be undone.",
+                    'Confirm Live Run', 'YesNo', 'Warning')
+                if ($confirm -ne 'Yes') { Write-Log 'PwReset: live run cancelled' 'INFO'; return }
             }
 
-            $Script:PwReset_UI.Grid.Items.Refresh()
-            $Script:PwReset_UI.Progress.Value = $i + 1
-            $Script:MainUI.Window.Dispatcher.Invoke(
-                [System.Windows.Threading.DispatcherPriority]::Background, [Action]{})
+            $Script:PwReset_Running                    = $true
+            $Script:PwReset_UI.BtnRun.IsEnabled        = $false
+            $Script:PwReset_UI.BtnLoad.IsEnabled       = $false
+            $Script:PwReset_UI.BtnExport.IsEnabled     = $false
+            $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $false
+            $Script:PwReset_UI.BtnSelectNone.IsEnabled = $false
+            $Script:PwReset_UI.Progress.Visibility     = 'Visible'
+            $Script:PwReset_UI.Progress.Maximum        = $selected.Count
+            $Script:PwReset_UI.Progress.Value          = 0
+
+            $ok = 0; $fail = 0
+
+            for ($i = 0; $i -lt $selected.Count; $i++) {
+                $row = $selected[$i]
+                $pw  = New-Password
+                $row.Password = $pw
+
+                if ($isLive) {
+                    try {
+                        Invoke-GraphPatch -Path "/v1.0/users/$($row.Id)" -Body @{
+                            passwordProfile = @{
+                                password                      = $pw
+                                forceChangePasswordNextSignIn = $false
+                            }
+                        }
+                        $row.Status = 'OK'; $ok++
+                        Write-PwLog "OK: $($row.DisplayName)  ($($row.UPN))" '#22C55E'
+                    } catch {
+                        $row.Status = 'Failed'; $fail++
+                        Write-Log "PwReset: PATCH failed for $($row.UPN) - $_" 'ERROR'
+                        Write-PwLog "FAILED: $($row.DisplayName) - $_" '#EF4444'
+                    }
+                } else {
+                    $row.Status = 'OK'; $ok++
+                    Write-PwLog "[DRY RUN] $($row.DisplayName)  ->  $pw" '#7878A0'
+                }
+
+                $Script:PwReset_UI.Grid.Items.Refresh()
+                $Script:PwReset_UI.Progress.Value = $i + 1
+                $Script:MainUI.Window.Dispatcher.Invoke(
+                    [System.Windows.Threading.DispatcherPriority]::Background, [Action]{})
+            }
+
+            $Script:PwReset_Running                    = $false
+            $Script:PwReset_UI.Progress.Visibility     = 'Collapsed'
+            $Script:PwReset_UI.BtnLoad.IsEnabled       = $true
+            $Script:PwReset_UI.BtnExport.IsEnabled     = $true
+            $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $true
+            $Script:PwReset_UI.BtnSelectNone.IsEnabled = $true
+            $Script:PwReset_UI.PnlStats.Visibility     = 'Visible'
+            $Script:PwReset_UI.LblTotal.Text           = "Total  $($selected.Count)"
+            $Script:PwReset_UI.LblOK.Text              = "OK     $ok"
+            $Script:PwReset_UI.LblFailed.Text          = "Failed $fail"
+            $Script:PwReset_UI.LblFailed.Foreground    = if ($fail -gt 0) { '#EF4444' } else { '#7878A0' }
+            Update-PwSelectionLabel
+
+            $modeLabel = if ($isLive) { 'Live run' } else { 'Dry run' }
+            $col       = if ($fail -gt 0) { '#FBBF24' } else { '#22C55E' }
+            Write-Log "PwReset: $modeLabel complete - $ok OK, $fail failed" 'INFO'
+            Write-PwLog "$modeLabel complete - $ok OK, $fail failed." $col
+            Set-MainStatus "$modeLabel complete - $ok OK, $fail failed." $col
+        } catch {
+            $Script:PwReset_Running = $false
+            Write-Log "BtnRun click error: $_" 'ERROR'
         }
-
-        $Script:PwReset_UI.Progress.Visibility  = 'Collapsed'
-        $Script:PwReset_UI.BtnRun.IsEnabled     = $true
-        $Script:PwReset_UI.BtnLoad.IsEnabled    = $true
-        $Script:PwReset_UI.BtnExport.IsEnabled  = $true
-        $Script:PwReset_UI.PnlStats.Visibility  = 'Visible'
-        $Script:PwReset_UI.LblTotal.Text        = "Total  $($Script:PwReset_Rows.Count)"
-        $Script:PwReset_UI.LblOK.Text           = "OK     $ok"
-        $Script:PwReset_UI.LblFailed.Text       = "Failed $fail"
-        $Script:PwReset_UI.LblFailed.Foreground = if ($fail -gt 0) { '#EF4444' } else { '#7878A0' }
-
-        $mode = if ($isLive) { 'Live run' } else { 'Dry run' }
-        $col  = if ($fail -gt 0) { '#FBBF24' } else { '#22C55E' }
-        Write-PwLog "$mode complete - $ok OK, $fail failed." $col
-        Set-MainStatus "$mode complete - $ok OK, $fail failed." $col
     })
 
     # Export CSV
     $Script:PwReset_UI.BtnExport.Add_Click({
-        $dlg = New-Object Microsoft.Win32.SaveFileDialog
-        $dlg.Filter   = 'CSV files (*.csv)|*.csv'
-        $dlg.FileName = "PasswordReset_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
-        if (-not $dlg.ShowDialog()) { return }
-        $Script:PwReset_Rows | Select-Object DisplayName, UPN, Department, Password, Status |
-            Export-Csv -Path $dlg.FileName -NoTypeInformation -Encoding UTF8
-        Write-PwLog "CSV exported: $($dlg.FileName)" '#22C55E'
-        Set-MainStatus "Saved: $($dlg.FileName)" '#22C55E'
-        [System.Windows.MessageBox]::Show("Saved to:`n$($dlg.FileName)", 'Export Complete', 'OK', 'Information') | Out-Null
+        try {
+            $dlg = New-Object Microsoft.Win32.SaveFileDialog
+            $dlg.Filter   = 'CSV files (*.csv)|*.csv'
+            $dlg.FileName = "PasswordReset_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+            if (-not $dlg.ShowDialog()) { return }
+            Write-Log "PwReset: exporting CSV to $($dlg.FileName)" 'INFO'
+            $Script:PwReset_Rows | Select-Object DisplayName, UPN, Department, Password, Status |
+                Export-Csv -Path $dlg.FileName -NoTypeInformation -Encoding UTF8
+            Write-PwLog "CSV exported: $($dlg.FileName)" '#22C55E'
+            Set-MainStatus "Saved: $($dlg.FileName)" '#22C55E'
+            [System.Windows.MessageBox]::Show("Saved to:`n$($dlg.FileName)", 'Export Complete', 'OK', 'Information') | Out-Null
+        } catch {
+            Write-Log "BtnExport click error: $_" 'ERROR'
+        }
     })
 
     # Register with the global connect/reset hooks
@@ -615,11 +769,14 @@ function Initialize-PasswordResetTool {
         $Script:PwReset_Rows.Clear()
         $Script:PwReset_GraphUsers = @()
         $Script:PwReset_UI.CboYear.Items.Clear()
-        $Script:PwReset_UI.CboYear.IsEnabled   = $false
-        $Script:PwReset_UI.BtnLoad.IsEnabled   = $false
-        $Script:PwReset_UI.BtnRun.IsEnabled    = $false
-        $Script:PwReset_UI.BtnExport.IsEnabled = $false
-        $Script:PwReset_UI.PnlStats.Visibility = 'Collapsed'
+        $Script:PwReset_UI.CboYear.IsEnabled        = $false
+        $Script:PwReset_UI.BtnLoad.IsEnabled        = $false
+        $Script:PwReset_UI.BtnRun.IsEnabled         = $false
+        $Script:PwReset_UI.BtnExport.IsEnabled      = $false
+        $Script:PwReset_UI.BtnSelectAll.IsEnabled   = $false
+        $Script:PwReset_UI.BtnSelectNone.IsEnabled  = $false
+        $Script:PwReset_UI.LblSelection.Text        = ''
+        $Script:PwReset_UI.PnlStats.Visibility      = 'Collapsed'
     })
 
     Write-PwLog 'Password Reset ready. Select a tenant to begin.' '#50507A'
