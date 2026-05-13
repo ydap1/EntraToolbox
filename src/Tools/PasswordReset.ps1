@@ -161,7 +161,8 @@ function Start-PwUserLoad {
 # ── XAML ───────────────────────────────────────────────────────────────────────
 $Script:PwResetXaml = @'
 <Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      Background="#12121C">
   <Grid.Resources>
 
     <SolidColorBrush x:Key="Bg"       Color="#12121C"/>
@@ -463,7 +464,7 @@ $Script:PwResetXaml = @'
                   BorderThickness="0,0,0,1">
             <TabPanel IsItemsHost="True" Margin="8,0"/>
           </Border>
-          <ContentPresenter Grid.Row="1" ContentSource="SelectedContent"/>
+          <ContentPresenter Grid.Row="1" ContentSource="SelectedContent" Background="#12121C"/>
         </Grid>
       </ControlTemplate>
     </TabControl.Template>
@@ -548,8 +549,7 @@ $Script:PwResetXaml = @'
     </TabItem>
 
   </TabControl>
-</Grid>
-'@
+</Grid>'@
 
 # ── Initialize ─────────────────────────────────────────────────────────────────
 function Initialize-PasswordResetTool {

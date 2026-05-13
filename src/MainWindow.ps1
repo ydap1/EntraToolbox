@@ -242,7 +242,7 @@ $Script:MainXaml = @'
             <Border Grid.Row="0" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
               <TabPanel IsItemsHost="True" Margin="4,0"/>
             </Border>
-            <ContentPresenter Grid.Row="1" ContentSource="SelectedContent"/>
+            <ContentPresenter Grid.Row="1" ContentSource="SelectedContent" Background="#12121C"/>
           </Grid>
         </ControlTemplate>
       </TabControl.Template>
@@ -308,11 +308,27 @@ $Script:AddTenantXaml = @'
       <Setter Property="Height"          Value="32"/>
       <Setter Property="Padding"         Value="8,0"/>
       <Setter Property="VerticalContentAlignment" Value="Center"/>
-      <Style.Triggers>
-        <Trigger Property="IsEnabled" Value="False">
-          <Setter Property="Opacity" Value="0.5"/>
-        </Trigger>
-      </Style.Triggers>
+      <Setter Property="CaretBrush"      Value="#E2E2F0"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TextBox">
+            <Border x:Name="bd" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="4">
+              <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                            Background="{TemplateBinding Background}"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="bd" Property="Background" Value="#1C1C2A"/>
+                <Setter Property="Foreground" Value="#3C3C5A"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
     </Style>
     <Style TargetType="TextBlock">
       <Setter Property="Foreground" Value="#7878A0"/>
