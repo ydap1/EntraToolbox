@@ -312,6 +312,11 @@ $Script:AddTenantXaml = @'
       <Setter Property="Height"          Value="32"/>
       <Setter Property="Padding"         Value="8,0"/>
       <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Style.Triggers>
+        <Trigger Property="IsEnabled" Value="False">
+          <Setter Property="Opacity" Value="0.5"/>
+        </Trigger>
+      </Style.Triggers>
     </Style>
     <Style TargetType="TextBlock">
       <Setter Property="Foreground" Value="#7878A0"/>

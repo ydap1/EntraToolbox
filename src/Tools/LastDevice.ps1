@@ -99,7 +99,6 @@ function Start-LdUserLoad {
 
             $Script:LD_AllUsers = @($Script:LD_UserRef['Users'] | Sort-Object { $_.displayName })
             Update-LdUserFilter
-            Update-LdTimeLogs
             $Script:LD_UI.UserSearch.IsEnabled = $true
             $Script:LD_UI.UserList.IsEnabled   = $true
             $n = $Script:LD_AllUsers.Count
@@ -301,7 +300,6 @@ function Start-LdAllDevicesLoad {
             Write-LdLog "By Device: loaded $($Script:LD_AllDevices.Count) devices." 'Success'
             Update-LdDevBrowserFilter
             Update-LdStaleFilter
-            Update-LdTimeLogs
             $Script:LD_UI.DevBrowserSearch.IsEnabled = $true
             $Script:LD_UI.DevBrowserList.IsEnabled   = $true
         } catch {
@@ -376,32 +374,6 @@ function Update-LdStaleFilter {
     $Script:LD_UI.StaleGrid.ItemsSource = $sorted
     $n = $rows.Count
     $Script:LD_UI.StaleCount.Text = "$n device$(if ($n -ne 1) { 's' }) stale"
-}
-
-function Update-LdTimeLogs {
-    if (-not $Script:LD_UI -or -not $Script:LD_UI.TimeGrid) { return }
-    if ($Script:LD_AllUsers.Count -eq 0 -or $Script:LD_AllDevices.Count -eq 0) { return }
-
-    $rows = [System.Collections.Generic.List[PSObject]]::new()
-    foreach ($d in $Script:LD_AllDevices) {
-        if (-not $d.usersLoggedOn) { continue }
-        foreach ($logon in $d.usersLoggedOn) {
-            $user = $Script:LD_AllUsers | Where-Object { $_.id -eq $logon.userId } | Select-Object -First 1
-            $userName = if ($user) { $user.displayName } else { $logon.userId }
-            $logonTime = if ($logon.lastLogOnDateTime) {
-                ([datetime]$logon.lastLogOnDateTime).ToLocalTime().ToString('yyyy-MM-dd HH:mm')
-            } else { 'Unknown' }
-            $rows.Add([PSCustomObject]@{
-                UserName   = $userName
-                DeviceName = $d.deviceName
-                LastLogon  = $logonTime
-                _Sort      = if ($logon.lastLogOnDateTime) { [datetime]$logon.lastLogOnDateTime } else { [datetime]::MinValue }
-            })
-        }
-    }
-
-    $sorted = [object[]]($rows | Sort-Object { $_._Sort } -Descending)
-    $Script:LD_UI.TimeGrid.ItemsSource = $sorted
 }
 
 function Show-LdDeviceUsers {
@@ -485,12 +457,18 @@ $Script:LastDeviceXaml = @'
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="TextBox">
-            <Border Background="{TemplateBinding Background}"
+            <Border x:Name="bd" Background="{TemplateBinding Background}"
                     BorderBrush="{TemplateBinding BorderBrush}"
                     BorderThickness="{TemplateBinding BorderThickness}"
                     CornerRadius="4">
-              <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
+              <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                            Background="{TemplateBinding Background}"/>
             </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="bd" Property="Opacity" Value="0.5"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
           </ControlTemplate>
         </Setter.Value>
       </Setter>
@@ -738,6 +716,7 @@ $Script:LastDeviceXaml = @'
               <RowDefinition Height="Auto"/>
               <RowDefinition Height="*"/>
               <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
             <Border Grid.Row="0" Background="#1C1C2A" Padding="12,10"
                     BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
@@ -753,7 +732,11 @@ $Script:LastDeviceXaml = @'
                      VirtualizingPanel.IsVirtualizing="True"
                      VirtualizingPanel.VirtualizationMode="Recycling"
                      Margin="0,2,0,2" Visibility="Collapsed"/>
-            <Border Grid.Row="2" Background="#1C1C2A" Padding="10,8"
+            <Border x:Name="LdDevDetailPanel" Grid.Row="2" Background="#1C1C2A" Padding="10,6"
+                    BorderBrush="#3C3C5A" BorderThickness="0,1,0,0" Visibility="Collapsed">
+              <TextBlock x:Name="LdDevDetail" Foreground="#7878A0" FontSize="11" TextWrapping="Wrap"/>
+            </Border>
+            <Border Grid.Row="3" Background="#1C1C2A" Padding="10,8"
                     BorderBrush="#3C3C5A" BorderThickness="0,1,0,0">
               <Button x:Name="LdBtnCopy" Content="Copy Device Name" IsEnabled="False"
                       Style="{StaticResource PrimaryBtn}" Background="#6366F1" Padding="14,7"
@@ -804,6 +787,7 @@ $Script:LastDeviceXaml = @'
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto"/>
               <RowDefinition Height="*"/>
+              <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
             <Border Grid.Row="0" Background="#1C1C2A" Padding="12,10"
                     BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
@@ -819,6 +803,10 @@ $Script:LastDeviceXaml = @'
                      VirtualizingPanel.IsVirtualizing="True"
                      VirtualizingPanel.VirtualizationMode="Recycling"
                      Margin="0,2,0,2" Visibility="Collapsed"/>
+            <Border x:Name="LdDevUserDetailPanel" Grid.Row="2" Background="#1C1C2A" Padding="10,6"
+                    BorderBrush="#3C3C5A" BorderThickness="0,1,0,0" Visibility="Collapsed">
+              <TextBlock x:Name="LdDevUserDetail" Foreground="#7878A0" FontSize="11" TextWrapping="Wrap"/>
+            </Border>
           </Grid>
         </Border>
       </Grid>
@@ -854,29 +842,6 @@ $Script:LastDeviceXaml = @'
       </Grid>
     </TabItem>
 
-    <!-- Time Logs tab -->
-    <TabItem Header="Time Logs">
-      <Grid Background="#12121C">
-        <Grid.RowDefinitions>
-          <RowDefinition Height="Auto"/>
-          <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
-        <Border Grid.Row="0" Background="#1C1C2A" Padding="12,10"
-                BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
-          <TextBlock Text="USER-DEVICE LOGON HISTORY" Foreground="#50507A" FontSize="10" FontWeight="Bold"/>
-        </Border>
-        <DataGrid x:Name="LdTimeGrid" Grid.Row="1" CanUserSortColumns="True"
-                  VirtualizingPanel.IsVirtualizing="True"
-                  VirtualizingPanel.VirtualizationMode="Recycling">
-          <DataGrid.Columns>
-            <DataGridTextColumn Header="User"       Binding="{Binding UserName}"    Width="*"/>
-            <DataGridTextColumn Header="Device"     Binding="{Binding DeviceName}"  Width="*"/>
-            <DataGridTextColumn Header="Last Logon" Binding="{Binding LastLogon}"   Width="180"/>
-          </DataGrid.Columns>
-        </DataGrid>
-      </Grid>
-    </TabItem>
-
     <!-- Log tab -->
     <TabItem Header="Log">
       <RichTextBox x:Name="LdLogBox" Background="#12121C" Foreground="#7878A0"
@@ -899,16 +864,19 @@ function Initialize-LastDeviceTool {
         UserList          = $content.FindName('LdUserList')
         DevPlaceholder    = $content.FindName('LdDevPlaceholder')
         DevList           = $content.FindName('LdDevList')
+        DevDetail         = $content.FindName('LdDevDetail')
+        DevDetailPanel    = $content.FindName('LdDevDetailPanel')
         BtnCopy           = $content.FindName('LdBtnCopy')
         DevBrowserSearch  = $content.FindName('LdDevBrowserSearch')
         DevBrowserList    = $content.FindName('LdDevBrowserList')
         DevUserList       = $content.FindName('LdDevUserList')
+        DevUserDetail     = $content.FindName('LdDevUserDetail')
+        DevUserDetailPanel= $content.FindName('LdDevUserDetailPanel')
         DevUserPlaceholder= $content.FindName('LdDevUserPlaceholder')
         LogBox            = $content.FindName('LdLogBox')
         StaleDays         = $content.FindName('LdStaleDays')
         StaleGrid         = $content.FindName('LdStaleGrid')
         StaleCount        = $content.FindName('LdStaleCount')
-        TimeGrid          = $content.FindName('LdTimeGrid')
     }
 
     '7 days','30 days','60 days','90 days' | ForEach-Object {
@@ -938,15 +906,32 @@ function Initialize-LastDeviceTool {
         }
     })
 
-    # Device selection -> copy to clipboard
+    # Device selection -> copy to clipboard + show timestamp
     $Script:LD_UI.DevList.Add_SelectionChanged({
         try {
             $sel = $Script:LD_UI.DevList.SelectedItem
-            if (-not $sel) { $Script:LD_UI.BtnCopy.IsEnabled = $false; return }
+            if (-not $sel) { 
+                $Script:LD_UI.BtnCopy.IsEnabled = $false
+                $Script:LD_UI.DevDetailPanel.Visibility = 'Collapsed'
+                return 
+            }
             Write-Log "LastDevice: device selected '$($sel.Content)'" 'DEBUG'
             [System.Windows.Clipboard]::SetText($sel.Content)
             Set-MainStatus "Copied: $($sel.Content)" 'Success'
             $Script:LD_UI.BtnCopy.IsEnabled = $true
+
+            $userSel = $Script:LD_UI.UserList.SelectedItem
+            if ($userSel) {
+                $userId = $userSel.Tag.id
+                $entry = $sel.Tag.usersLoggedOn | Where-Object { $_.userId -eq $userId } | Select-Object -First 1
+                if ($entry -and $entry.lastLogOnDateTime) {
+                    $dt = ([datetime]$entry.lastLogOnDateTime).ToLocalTime().ToString('yyyy-MM-dd HH:mm')
+                    $Script:LD_UI.DevDetail.Text = "Last used by $($userSel.Content) on this device: $dt"
+                    $Script:LD_UI.DevDetailPanel.Visibility = 'Visible'
+                } else {
+                    $Script:LD_UI.DevDetailPanel.Visibility = 'Collapsed'
+                }
+            }
         } catch {
             Write-Log "DevList SelectionChanged error: $_" 'ERROR'
         }
@@ -975,12 +960,36 @@ function Initialize-LastDeviceTool {
     $Script:LD_UI.DevBrowserList.Add_SelectionChanged({
         try {
             $sel = $Script:LD_UI.DevBrowserList.SelectedItem
-            if (-not $sel) { return }
+            if (-not $sel) { 
+                $Script:LD_UI.DevUserDetailPanel.Visibility = 'Collapsed'
+                return 
+            }
             Write-Log "LastDevice/ByDevice: selected device '$($sel.Content)'" 'DEBUG'
             Show-LdDeviceUsers -Device $sel.Tag
             Set-MainStatus "Device: $($sel.Content)" 'TextDim'
         } catch {
             Write-Log "DevBrowserList SelectionChanged error: $_" 'ERROR'
+        }
+    })
+
+    # By Device: user selected -> show timestamp
+    $Script:LD_UI.DevUserList.Add_SelectionChanged({
+        try {
+            $sel = $Script:LD_UI.DevUserList.SelectedItem
+            if (-not $sel) { 
+                $Script:LD_UI.DevUserDetailPanel.Visibility = 'Collapsed'
+                return 
+            }
+            $logon = $sel.Tag
+            if ($logon -and $logon.lastLogOnDateTime) {
+                $dt = ([datetime]$logon.lastLogOnDateTime).ToLocalTime().ToString('yyyy-MM-dd HH:mm')
+                $Script:LD_UI.DevUserDetail.Text = "Last sign-in on this device: $dt"
+                $Script:LD_UI.DevUserDetailPanel.Visibility = 'Visible'
+            } else {
+                $Script:LD_UI.DevUserDetailPanel.Visibility = 'Collapsed'
+            }
+        } catch {
+            Write-Log "DevUserList SelectionChanged error: $_" 'ERROR'
         }
     })
 
@@ -1009,9 +1018,10 @@ function Initialize-LastDeviceTool {
         $Script:LD_UI.DevUserList.Visibility         = 'Collapsed'
         $Script:LD_UI.DevUserPlaceholder.Text        = 'Select a device to see who signed into it'
         $Script:LD_UI.DevUserPlaceholder.Visibility  = 'Visible'
+        $Script:LD_UI.DevUserDetailPanel.Visibility   = 'Collapsed'
         $Script:LD_UI.StaleGrid.ItemsSource = $null
         $Script:LD_UI.StaleCount.Text = ''
-        $Script:LD_UI.TimeGrid.ItemsSource = $null
+        $Script:LD_UI.DevDetailPanel.Visibility = 'Collapsed'
     })
 
     Write-LdLog 'Last Device ready. Select a tenant to begin.' 'Muted'
