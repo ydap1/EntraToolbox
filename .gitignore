@@ -2,3 +2,12 @@ Modules/
 config/
 *.log
 *.csv
+
+*.bak
+
+# Scratch / local-only files
+Reset-YearGroupPasswords.ps1
+initial.md
+
+# Claude Code dev tooling
+.claude/
