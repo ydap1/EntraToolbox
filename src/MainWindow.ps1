@@ -1,5 +1,5 @@
 <#
-    Main shell window for Entra Tools.
+    Main shell window for Art's Entra Toolbox.
     Dot-sourced by Start.ps1. Exposes Show-MainWindow.
 #>
 
@@ -20,7 +20,7 @@ function Set-MainStatus {
 $Script:MainXaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Entra Tools" Width="1200" Height="780"
+        Title="Art's Entra Toolbox" Width="1200" Height="780"
         MinWidth="900" MinHeight="600"
         Background="#12121C" FontFamily="Segoe UI" FontSize="13"
         WindowStartupLocation="CenterScreen">
@@ -91,12 +91,68 @@ $Script:MainXaml = @'
     </Style>
 
     <Style TargetType="ComboBox">
-      <Setter Property="Background"      Value="#242436"/>
-      <Setter Property="Foreground"      Value="#E2E2F0"/>
-      <Setter Property="BorderBrush"     Value="#3C3C5A"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="Height"          Value="32"/>
-      <Setter Property="Padding"         Value="8,0"/>
+      <Setter Property="Background"        Value="#242436"/>
+      <Setter Property="Foreground"        Value="#E2E2F0"/>
+      <Setter Property="BorderBrush"       Value="#3C3C5A"/>
+      <Setter Property="BorderThickness"   Value="1"/>
+      <Setter Property="Height"            Value="32"/>
+      <Setter Property="Padding"           Value="8,0"/>
+      <Setter Property="MaxDropDownHeight" Value="220"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ComboBox">
+            <Grid>
+              <Border x:Name="bd" CornerRadius="4"
+                      Background="{TemplateBinding Background}"
+                      BorderBrush="{TemplateBinding BorderBrush}"
+                      BorderThickness="{TemplateBinding BorderThickness}"/>
+              <ContentPresenter Margin="{TemplateBinding Padding}"
+                                VerticalAlignment="Center" HorizontalAlignment="Left"
+                                Content="{TemplateBinding SelectionBoxItem}"
+                                ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                                IsHitTestVisible="False"/>
+              <Path x:Name="arrow" Data="M0,0 L4,4 L8,0 Z" Fill="#7878A0"
+                    HorizontalAlignment="Right" VerticalAlignment="Center"
+                    Margin="0,0,10,0" IsHitTestVisible="False"/>
+              <ToggleButton Focusable="False" Cursor="Hand"
+                            IsChecked="{Binding IsDropDownOpen,
+                                        RelativeSource={RelativeSource TemplatedParent},
+                                        Mode=TwoWay}">
+                <ToggleButton.Template>
+                  <ControlTemplate TargetType="ToggleButton">
+                    <Rectangle Fill="Transparent"/>
+                  </ControlTemplate>
+                </ToggleButton.Template>
+              </ToggleButton>
+              <Popup x:Name="PART_Popup" AllowsTransparency="True"
+                     IsOpen="{Binding IsDropDownOpen,
+                              RelativeSource={RelativeSource TemplatedParent}}"
+                     Placement="Bottom" PopupAnimation="Slide">
+                <Border Background="#242436" BorderBrush="#3C3C5A" BorderThickness="1"
+                        CornerRadius="0,0,4,4"
+                        MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                  <ScrollViewer>
+                    <ItemsPresenter/>
+                  </ScrollViewer>
+                </Border>
+              </Popup>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="bd" Property="BorderBrush" Value="#6366F1"/>
+              </Trigger>
+              <Trigger Property="IsDropDownOpen" Value="True">
+                <Setter TargetName="bd"    Property="CornerRadius" Value="4,4,0,0"/>
+                <Setter TargetName="arrow" Property="Fill"         Value="#E2E2F0"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="bd" Property="Background" Value="#1C1C2A"/>
+                <Setter Property="Foreground" Value="#3C3C5A"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
     </Style>
 
     <Style TargetType="ComboBoxItem">
@@ -141,7 +197,7 @@ $Script:MainXaml = @'
                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
           </Border>
           <StackPanel VerticalAlignment="Center">
-            <TextBlock Text="Entra Tools" Foreground="White" FontSize="15" FontWeight="Bold"/>
+            <TextBlock Text="Art's Entra Toolbox" Foreground="White" FontSize="15" FontWeight="Bold"/>
             <TextBlock Text="Tenant management toolkit"
                        Foreground="#50507A" FontSize="11"/>
           </StackPanel>
@@ -186,8 +242,10 @@ $Script:MainXaml = @'
           </Grid>
         </ControlTemplate>
       </TabControl.Template>
-      <TabItem x:Name="TabPwReset"    Header="Password Reset"/>
+      <TabItem x:Name="TabPwReset"    Header="Year Group Passwords"/>
+      <TabItem x:Name="TabPwUser"     Header="User Password Reset"/>
       <TabItem x:Name="TabLastDevice" Header="Last Device"/>
+      <TabItem x:Name="TabSignIn"     Header="Sign-In Logs"/>
     </TabControl>
 
     <!-- Status bar -->
@@ -299,8 +357,8 @@ function Update-TenantCombo {
         $item.Tag     = $t
         $Script:MainUI.TenantCombo.Items.Add($item) | Out-Null
     }
-    $Script:MainUI.TenantCombo.IsEnabled         = $tenants.Count -gt 0
-    $Script:MainUI.BtnRemoveTenant.IsEnabled      = $tenants.Count -gt 0
+    $Script:MainUI.TenantCombo.IsEnabled  = $tenants.Count -gt 0
+    $Script:MainUI.BtnRemove.IsEnabled    = $tenants.Count -gt 0
 }
 
 function Show-AddTenantDialog {
@@ -313,51 +371,60 @@ function Show-AddTenantDialog {
     $Script:DlgOk      = $Script:DlgWin.FindName('DlgConnect')
     $Script:DlgCancel  = $Script:DlgWin.FindName('DlgCancel')
 
-    $Script:DlgCancel.Add_Click({ $Script:DlgWin.Close() })
+    $Script:DlgCancel.Add_Click({
+        try { $Script:DlgWin.Close() }
+        catch { Write-Log "DlgCancel click error: $_" 'ERROR' }
+    })
 
     $Script:DlgOk.Add_Click({
-        $tid   = $Script:DlgTid.Text.Trim()
-        $dname = $Script:DlgName.Text.Trim()
+        try {
+            $tid   = $Script:DlgTid.Text.Trim()
+            $dname = $Script:DlgName.Text.Trim()
+            Write-Log "DlgConnect: attempting tenant $tid" 'INFO'
 
-        if ([string]::IsNullOrWhiteSpace($tid)) {
-            $Script:DlgStat.Text       = 'Tenant ID is required.'
-            $Script:DlgStat.Visibility = 'Visible'
-            return
-        }
-
-        $Script:DlgOk.IsEnabled     = $false
-        $Script:DlgCancel.IsEnabled = $false
-        $Script:DlgTid.IsEnabled    = $false
-        $Script:DlgName.IsEnabled   = $false
-        $Script:DlgStat.Visibility  = 'Collapsed'
-        Set-MainStatus 'Authenticating...' '#7878A0'
-
-        Start-TenantConnectAsync -TenantId $tid `
-            -OnSuccess {
-                Save-Tenant -TenantId $Script:DlgTid.Text.Trim() `
-                            -DisplayName $Script:DlgName.Text.Trim()
-                Update-TenantCombo
-
-                # Select the new item in the combo
-                for ($i = 0; $i -lt $Script:MainUI.TenantCombo.Items.Count; $i++) {
-                    if ($Script:MainUI.TenantCombo.Items[$i].Tag.TenantId -eq $Script:DlgTid.Text.Trim()) {
-                        $Script:MainUI.TenantCombo.SelectedIndex = $i
-                        break
-                    }
-                }
-                $Script:DlgWin.Close()
-                Invoke-PostConnect
-            } `
-            -OnFailure {
-                param($err)
-                $Script:DlgStat.Text        = "Failed: $err"
-                $Script:DlgStat.Visibility  = 'Visible'
-                $Script:DlgOk.IsEnabled     = $true
-                $Script:DlgCancel.IsEnabled = $true
-                $Script:DlgTid.IsEnabled    = $true
-                $Script:DlgName.IsEnabled   = $true
-                Set-MainStatus 'Authentication failed.' '#EF4444'
+            if ([string]::IsNullOrWhiteSpace($tid)) {
+                $Script:DlgStat.Text       = 'Tenant ID is required.'
+                $Script:DlgStat.Visibility = 'Visible'
+                return
             }
+
+            $Script:DlgOk.IsEnabled     = $false
+            $Script:DlgCancel.IsEnabled = $false
+            $Script:DlgTid.IsEnabled    = $false
+            $Script:DlgName.IsEnabled   = $false
+            $Script:DlgStat.Visibility  = 'Collapsed'
+            Set-MainStatus 'Authenticating...' '#7878A0'
+
+            Start-TenantConnectAsync -TenantId $tid `
+                -OnSuccess {
+                    Write-Log "DlgConnect: auth succeeded for $($Script:DlgTid.Text.Trim())" 'INFO'
+                    Save-Tenant -TenantId $Script:DlgTid.Text.Trim() `
+                                -DisplayName $Script:DlgName.Text.Trim()
+                    Update-TenantCombo
+
+                    for ($i = 0; $i -lt $Script:MainUI.TenantCombo.Items.Count; $i++) {
+                        if ($Script:MainUI.TenantCombo.Items[$i].Tag.TenantId -eq $Script:DlgTid.Text.Trim()) {
+                            $Script:MainUI.TenantCombo.SelectedIndex = $i
+                            break
+                        }
+                    }
+                    $Script:DlgWin.Close()
+                    Invoke-PostConnect
+                } `
+                -OnFailure {
+                    param($err)
+                    Write-Log "DlgConnect: auth failed - $err" 'ERROR'
+                    $Script:DlgStat.Text        = "Failed: $err"
+                    $Script:DlgStat.Visibility  = 'Visible'
+                    $Script:DlgOk.IsEnabled     = $true
+                    $Script:DlgCancel.IsEnabled = $true
+                    $Script:DlgTid.IsEnabled    = $true
+                    $Script:DlgName.IsEnabled   = $true
+                    Set-MainStatus 'Authentication failed.' '#EF4444'
+                }
+        } catch {
+            Write-Log "DlgConnect click error: $_" 'ERROR'
+        }
     })
 
     $Script:DlgWin.Show()
@@ -390,10 +457,12 @@ function Invoke-ResetTools {
 function Show-MainWindow {
     param([string]$AppVersion = '')
 
+    Write-Log 'MainWindow: loading WPF assemblies' 'DEBUG'
     Add-Type -AssemblyName PresentationFramework
     Add-Type -AssemblyName PresentationCore
     Add-Type -AssemblyName WindowsBase
 
+    Write-Log 'MainWindow: parsing XAML' 'DEBUG'
     $reader = New-Object System.Xml.XmlNodeReader ([xml]$Script:MainXaml)
     $window = [System.Windows.Markup.XamlReader]::Load($reader)
 
@@ -406,71 +475,100 @@ function Show-MainWindow {
         TenantName    = $window.FindName('LblTenantName')
         Tabs          = $window.FindName('MainTabs')
         TabPwReset    = $window.FindName('TabPwReset')
+        TabPwUser     = $window.FindName('TabPwUser')
         TabLastDevice = $window.FindName('TabLastDevice')
+        TabSignIn     = $window.FindName('TabSignIn')
         Status        = $window.FindName('MainStatus')
         Version       = $window.FindName('MainVersion')
     }
 
     if ($AppVersion) { $Script:MainUI.Version.Text = "v$AppVersion" }
 
-    # Wire tool content into tabs
+    Write-Log 'MainWindow: initializing Year Group Passwords tool' 'DEBUG'
     $Script:MainUI.TabPwReset.Content    = Initialize-PasswordResetTool
+    Write-Log 'MainWindow: initializing User Password Reset tool' 'DEBUG'
+    $Script:MainUI.TabPwUser.Content     = Initialize-UserPasswordResetTool
+    Write-Log 'MainWindow: initializing Last Device tool' 'DEBUG'
     $Script:MainUI.TabLastDevice.Content = Initialize-LastDeviceTool
+    Write-Log 'MainWindow: initializing Sign-In Logs tool' 'DEBUG'
+    $Script:MainUI.TabSignIn.Content     = Initialize-SignInLogsTool
+    Write-Log 'MainWindow: tools initialized' 'INFO'
 
     # Add Tenant button
-    $Script:MainUI.BtnAddTenant.Add_Click({ Show-AddTenantDialog })
+    $Script:MainUI.BtnAddTenant.Add_Click({
+        try { Show-AddTenantDialog }
+        catch { Write-Log "BtnAddTenant click error: $_" 'ERROR' }
+    })
 
     # Remove tenant
     $Script:MainUI.BtnRemove.Add_Click({
-        $sel = $Script:MainUI.TenantCombo.SelectedItem
-        if (-not $sel) { return }
-        $tid = $sel.Tag.TenantId
-        $confirm = [System.Windows.MessageBox]::Show(
-            "Remove tenant '$($sel.Content)'?",
-            'Remove Tenant', 'YesNo', 'Question')
-        if ($confirm -ne 'Yes') { return }
-        Remove-SavedTenant -TenantId $tid
-        Invoke-ResetTools
-        Update-TenantCombo
-        Set-MainStatus 'Tenant removed.' '#7878A0'
+        try {
+            $sel = $Script:MainUI.TenantCombo.SelectedItem
+            if (-not $sel) { return }
+            $tid = $sel.Tag.TenantId
+            Write-Log "BtnRemove: removing tenant $tid" 'DEBUG'
+            $confirm = [System.Windows.MessageBox]::Show(
+                "Remove tenant '$($sel.Content)'?",
+                'Remove Tenant', 'YesNo', 'Question')
+            if ($confirm -ne 'Yes') { return }
+            Remove-SavedTenant -TenantId $tid
+            Invoke-ResetTools
+            Update-TenantCombo
+            Set-MainStatus 'Tenant removed.' '#7878A0'
+        } catch {
+            Write-Log "BtnRemove click error: $_" 'ERROR'
+        }
     })
 
     # Tenant combo selection -> authenticate
     $Script:MainUI.TenantCombo.Add_SelectionChanged({
-        $sel = $Script:MainUI.TenantCombo.SelectedItem
-        if (-not $sel) { return }
+        try {
+            $sel = $Script:MainUI.TenantCombo.SelectedItem
+            if (-not $sel) { return }
 
-        Invoke-ResetTools
-        $Script:MainUI.TenantCombo.IsEnabled    = $false
-        $Script:MainUI.BtnAddTenant.IsEnabled   = $false
-        $Script:MainUI.BtnRemove.IsEnabled      = $false
-        Set-MainStatus "Connecting to $($sel.Content)..." '#7878A0'
+            Write-Log "TenantCombo: selected '$($sel.Content)'" 'INFO'
+            Invoke-ResetTools
+            $Script:MainUI.TenantCombo.IsEnabled    = $false
+            $Script:MainUI.BtnAddTenant.IsEnabled   = $false
+            $Script:MainUI.BtnRemove.IsEnabled      = $false
+            Set-MainStatus "Connecting to $($sel.Content)..." '#7878A0'
 
-        Start-TenantConnectAsync -TenantId $sel.Tag.TenantId `
-            -OnSuccess {
-                $Script:MainUI.TenantCombo.IsEnabled  = $true
-                $Script:MainUI.BtnAddTenant.IsEnabled = $true
-                $Script:MainUI.BtnRemove.IsEnabled    = $true
-                Invoke-PostConnect
-            } `
-            -OnFailure {
-                param($err)
-                $Script:MainUI.TenantCombo.IsEnabled  = $true
-                $Script:MainUI.BtnAddTenant.IsEnabled = $true
-                $Script:MainUI.BtnRemove.IsEnabled    = $true
-                Set-MainStatus "Authentication failed: $err" '#EF4444'
-            }
+            Start-TenantConnectAsync -TenantId $sel.Tag.TenantId `
+                -OnSuccess {
+                    Write-Log 'TenantCombo: connect succeeded' 'INFO'
+                    $Script:MainUI.TenantCombo.IsEnabled  = $true
+                    $Script:MainUI.BtnAddTenant.IsEnabled = $true
+                    $Script:MainUI.BtnRemove.IsEnabled    = $true
+                    Invoke-PostConnect
+                } `
+                -OnFailure {
+                    param($err)
+                    Write-Log "TenantCombo: connect failed - $err" 'ERROR'
+                    $Script:MainUI.TenantCombo.IsEnabled  = $true
+                    $Script:MainUI.BtnAddTenant.IsEnabled = $true
+                    $Script:MainUI.BtnRemove.IsEnabled    = $true
+                    Set-MainStatus "Authentication failed: $err" '#EF4444'
+                }
+        } catch {
+            Write-Log "TenantCombo SelectionChanged error: $_" 'ERROR'
+        }
     })
 
     # On load: populate tenant combo
     $window.Add_Loaded({
-        Update-TenantCombo
-        $tenants = @(Get-SavedTenants)
-        if ($tenants.Count -eq 0) {
-            Set-MainStatus 'No tenants saved. Click + to add one.' '#7878A0'
-            Show-AddTenantDialog
-        } else {
-            Set-MainStatus 'Select a tenant to begin.' '#7878A0'
+        try {
+            Write-Log 'Window loaded - populating tenant combo' 'INFO'
+            Update-TenantCombo
+            $tenants = @(Get-SavedTenants)
+            Write-Log "Saved tenants: $($tenants.Count)" 'DEBUG'
+            if ($tenants.Count -eq 0) {
+                Set-MainStatus 'No tenants saved. Click + to add one.' '#7878A0'
+                Show-AddTenantDialog
+            } else {
+                Set-MainStatus 'Select a tenant to begin.' '#7878A0'
+            }
+        } catch {
+            Write-Log "Window Loaded handler error: $_" 'ERROR'
         }
     })
 

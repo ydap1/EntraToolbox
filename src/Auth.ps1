@@ -1,11 +1,27 @@
 <#
-    Shared authentication and Graph REST helpers for Entra Tools.
+    Shared authentication and Graph REST helpers for Art's Entra Toolbox.
     Dot-sourced by Start.ps1.
 
     Auth strategy: MSAL.PS acquires the token interactively once, then silently from
     its in-memory cache. Token stored in $Script:AccessToken.
     All Graph calls use Invoke-RestMethod with a Bearer header - no Graph SDK needed.
 #>
+
+# ── Debug logger ───────────────────────────────────────────────────────────────
+function Write-Log {
+    param(
+        [string]$Message,
+        [ValidateSet('INFO','WARN','ERROR','DEBUG')][string]$Level = 'INFO'
+    )
+    $ts = Get-Date -Format 'HH:mm:ss.fff'
+    $color = switch ($Level) {
+        'INFO'  { 'Cyan' }
+        'WARN'  { 'Yellow' }
+        'ERROR' { 'Red' }
+        'DEBUG' { 'DarkGray' }
+    }
+    Write-Host "[$ts][$Level] $Message" -ForegroundColor $color
+}
 
 # ── Shared state ───────────────────────────────────────────────────────────────
 $Script:AccessToken       = $null
@@ -17,7 +33,9 @@ $Script:GraphClientId = '14d82eec-204b-4c2f-b7e8-296a70dab67e'
 # Combined scopes for all tools
 $Script:GraphScopes = @(
     'https://graph.microsoft.com/User.ReadWrite.All',
-    'https://graph.microsoft.com/DeviceManagementManagedDevices.Read.All'
+    'https://graph.microsoft.com/DeviceManagementManagedDevices.Read.All',
+    'https://graph.microsoft.com/AuditLog.Read.All',
+    'https://graph.microsoft.com/GroupMember.Read.All'
 )
 
 # Per-tool callbacks fired after a new tenant connects (token ready) or before reset (token null)
@@ -72,6 +90,7 @@ function Start-TenantConnectAsync {
         [Parameter(Mandatory)][scriptblock]$OnFailure
     )
 
+    Write-Log "Auth: starting interactive token acquisition for tenant $TenantId" 'DEBUG'
     $Script:AuthRef     = [hashtable]::Synchronized(@{ Done = $false; Token = $null; Error = $null })
     $Script:AuthSuccess = $OnSuccess
     $Script:AuthFailure = $OnFailure
@@ -117,14 +136,20 @@ function Start-TenantConnectAsync {
     $Script:AuthTimer          = [System.Windows.Threading.DispatcherTimer]::new()
     $Script:AuthTimer.Interval = [TimeSpan]::FromMilliseconds(500)
     $Script:AuthTimer.Add_Tick({
-        if (-not $Script:AuthRef['Done']) { return }
-        $Script:AuthTimer.Stop()
-        if ($Script:AuthRef['Error']) {
-            & $Script:AuthFailure $Script:AuthRef['Error']
-            return
+        try {
+            if (-not $Script:AuthRef['Done']) { return }
+            $Script:AuthTimer.Stop()
+            if ($Script:AuthRef['Error']) {
+                Write-Log "Auth failed: $($Script:AuthRef['Error'])" 'ERROR'
+                & $Script:AuthFailure $Script:AuthRef['Error']
+                return
+            }
+            Write-Log 'Auth succeeded - token acquired' 'INFO'
+            $Script:AccessToken = $Script:AuthRef['Token']
+            & $Script:AuthSuccess
+        } catch {
+            Write-Log "Auth timer tick error: $_" 'ERROR'
         }
-        $Script:AccessToken = $Script:AuthRef['Token']
-        & $Script:AuthSuccess
     })
     $Script:AuthTimer.Start()
 }

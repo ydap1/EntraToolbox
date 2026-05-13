@@ -10,7 +10,7 @@ $ErrorActionPreference = 'Stop'
 $ModulesPath = Join-Path $PSScriptRoot 'Modules'
 
 Write-Host ''
-Write-Host '=== Entra Tools - Bootstrap ===' -ForegroundColor Cyan
+Write-Host "=== Art's Entra Toolbox - Bootstrap ===" -ForegroundColor Cyan
 Write-Host "Modules folder: $ModulesPath"
 Write-Host ''
 

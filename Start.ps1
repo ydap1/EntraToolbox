@@ -1,7 +1,7 @@
-#Requires -Version 5.1
+#Requires -Version 7.0
 <#
 .SYNOPSIS
-    Entry point for Entra Tools. Always launch via Launch.cmd.
+    Entry point for Art's Entra Toolbox. Always launch via Launch.cmd.
 #>
 $ErrorActionPreference = 'Stop'
 
@@ -27,12 +27,23 @@ if (-not (Test-Path $modulesPath)) {
 $env:PSModulePath = $modulesPath + [System.IO.Path]::PathSeparator + $env:PSModulePath
 
 if (-not (Get-Module MSAL.PS -ErrorAction SilentlyContinue)) {
+    Write-Host '[startup] Importing MSAL.PS...' -ForegroundColor DarkGray
     Import-Module MSAL.PS -ErrorAction Stop
 }
 
 . (Join-Path $PSScriptRoot 'src\Auth.ps1')
 . (Join-Path $PSScriptRoot 'src\Tools\PasswordReset.ps1')
+. (Join-Path $PSScriptRoot 'src\Tools\UserPasswordReset.ps1')
 . (Join-Path $PSScriptRoot 'src\Tools\LastDevice.ps1')
+. (Join-Path $PSScriptRoot 'src\Tools\SignInLogs.ps1')
 . (Join-Path $PSScriptRoot 'src\MainWindow.ps1')
 
-Show-MainWindow -AppVersion $Global:AppVersion
+Write-Log "Art's Entra Toolbox $Global:AppVersion starting (PS $($PSVersionTable.PSVersion))" 'INFO'
+
+try {
+    Show-MainWindow -AppVersion $Global:AppVersion
+} catch {
+    Write-Log "Fatal error in Show-MainWindow: $_" 'ERROR'
+    Write-Log $_.ScriptStackTrace 'ERROR'
+    Read-Host 'Press Enter to exit'
+}

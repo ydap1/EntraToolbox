@@ -1,5 +1,5 @@
 <#
-    Last Device tab for Entra Tools.
+    Last Device tab for Art's Entra Toolbox.
     Shows a searchable user list; selecting a user shows their Intune-managed devices.
     Dot-sourced by Start.ps1.
     Exposes Initialize-LastDeviceTool.
@@ -9,12 +9,15 @@
 #>
 
 # ── Script-level state ─────────────────────────────────────────────────────────
-$Script:LD_UI        = $null
-$Script:LD_AllUsers  = @()
-$Script:LD_UserRef   = $null
-$Script:LD_UserTimer = $null
-$Script:LD_DevRef    = $null
-$Script:LD_DevTimer  = $null
+$Script:LD_UI          = $null
+$Script:LD_AllUsers    = @()
+$Script:LD_UserRef     = $null
+$Script:LD_UserTimer   = $null
+$Script:LD_DevRef      = $null
+$Script:LD_DevTimer    = $null
+$Script:LD_AllDevices  = @()
+$Script:LD_AllDevRef   = $null
+$Script:LD_AllDevTimer = $null
 
 # ── Log helper ─────────────────────────────────────────────────────────────────
 function Write-LdLog {
@@ -76,27 +79,34 @@ function Start-LdUserLoad {
     $Script:LD_UserTimer          = [System.Windows.Threading.DispatcherTimer]::new()
     $Script:LD_UserTimer.Interval = [TimeSpan]::FromMilliseconds(300)
     $Script:LD_UserTimer.Add_Tick({
-        if (-not $Script:LD_UserRef['Done']) { return }
-        $Script:LD_UserTimer.Stop()
+        try {
+            if (-not $Script:LD_UserRef['Done']) { return }
+            $Script:LD_UserTimer.Stop()
 
-        if ($Script:LD_UserRef['Error'] -eq '401') {
-            Write-LdLog 'Session expired - reconnect via the tenant selector.' '#EF4444'
-            Set-MainStatus 'Session expired.' '#EF4444'
-            return
-        }
-        if ($Script:LD_UserRef['Error']) {
-            Write-LdLog "Error loading users: $($Script:LD_UserRef['Error'])" '#EF4444'
-            Set-MainStatus 'Failed to load users.' '#EF4444'
-            return
-        }
+            if ($Script:LD_UserRef['Error'] -eq '401') {
+                Write-Log 'LastDevice: user load 401 - session expired' 'ERROR'
+                Write-LdLog 'Session expired - reconnect via the tenant selector.' '#EF4444'
+                Set-MainStatus 'Session expired.' '#EF4444'
+                return
+            }
+            if ($Script:LD_UserRef['Error']) {
+                Write-Log "LastDevice: user load failed - $($Script:LD_UserRef['Error'])" 'ERROR'
+                Write-LdLog "Error loading users: $($Script:LD_UserRef['Error'])" '#EF4444'
+                Set-MainStatus 'Failed to load users.' '#EF4444'
+                return
+            }
 
-        $Script:LD_AllUsers = @($Script:LD_UserRef['Users'] | Sort-Object { $_.displayName })
-        Update-LdUserFilter
-        $Script:LD_UI.UserSearch.IsEnabled = $true
-        $Script:LD_UI.UserList.IsEnabled   = $true
-        $n = $Script:LD_AllUsers.Count
-        Write-LdLog "Loaded $n users." '#22C55E'
-        Set-MainStatus "Loaded $n users." '#22C55E'
+            $Script:LD_AllUsers = @($Script:LD_UserRef['Users'] | Sort-Object { $_.displayName })
+            Update-LdUserFilter
+            $Script:LD_UI.UserSearch.IsEnabled = $true
+            $Script:LD_UI.UserList.IsEnabled   = $true
+            $n = $Script:LD_AllUsers.Count
+            Write-Log "LastDevice: loaded $n users" 'INFO'
+            Write-LdLog "Loaded $n users." '#22C55E'
+            Set-MainStatus "Loaded $n users." '#22C55E'
+        } catch {
+            Write-Log "LastDevice user-load timer error: $_" 'ERROR'
+        }
     })
     $Script:LD_UserTimer.Start()
 }
@@ -172,51 +182,225 @@ function Start-LdDeviceLoad {
     $Script:LD_DevTimer          = [System.Windows.Threading.DispatcherTimer]::new()
     $Script:LD_DevTimer.Interval = [TimeSpan]::FromMilliseconds(300)
     $Script:LD_DevTimer.Add_Tick({
-        if (-not $Script:LD_DevRef['Done']) { return }
-        $Script:LD_DevTimer.Stop()
+        try {
+            if (-not $Script:LD_DevRef['Done']) { return }
+            $Script:LD_DevTimer.Stop()
 
-        if ($Script:LD_DevRef['Error'] -eq '401') {
-            $Script:LD_UI.DevPlaceholder.Text = 'Session expired - reconnect.'
-            Set-MainStatus 'Session expired.' '#EF4444'
-            return
-        }
-        if ($Script:LD_DevRef['Error']) {
-            $Script:LD_UI.DevPlaceholder.Text = 'Failed to load devices.'
-            Set-MainStatus "Error: $($Script:LD_DevRef['Error'])" '#EF4444'
-            return
-        }
-
-        $userId  = $Script:LD_UI.UserList.SelectedItem.Tag.id
-        $devices = @($Script:LD_DevRef['Devices'] | Sort-Object {
-            $entry = $_.usersLoggedOn | Where-Object { $_.userId -eq $userId } | Select-Object -First 1
-            if ($entry -and $entry.lastLogOnDateTime) { [datetime]$entry.lastLogOnDateTime }
-            else { [datetime]::MinValue }
-        } -Descending)
-
-        if ($devices.Count -eq 0) {
-            $Script:LD_UI.DevPlaceholder.Text       = 'No devices found for this user.'
-            $Script:LD_UI.DevPlaceholder.Visibility = 'Visible'
-            $Script:LD_UI.DevList.Visibility        = 'Collapsed'
-            Set-MainStatus 'No devices found.' '#7878A0'
-            return
-        }
-
-        foreach ($d in $devices) {
-            $lbi         = [System.Windows.Controls.ListBoxItem]::new()
-            $lbi.Content = $d.deviceName
-            $lbi.Tag     = $d
-            $entry = $d.usersLoggedOn | Where-Object { $_.userId -eq $userId } | Select-Object -First 1
-            if ($entry -and $entry.lastLogOnDateTime) {
-                $lbi.ToolTip = "Last check-in: $([datetime]$entry.lastLogOnDateTime)"
+            if ($Script:LD_DevRef['Error'] -eq '401') {
+                Write-Log 'LastDevice: device load 401 - session expired' 'ERROR'
+                $Script:LD_UI.DevPlaceholder.Text = 'Session expired - reconnect.'
+                Set-MainStatus 'Session expired.' '#EF4444'
+                return
             }
-            [void]$Script:LD_UI.DevList.Items.Add($lbi)
+            if ($Script:LD_DevRef['Error']) {
+                Write-Log "LastDevice: device load failed - $($Script:LD_DevRef['Error'])" 'ERROR'
+                $Script:LD_UI.DevPlaceholder.Text = 'Failed to load devices.'
+                Set-MainStatus "Error: $($Script:LD_DevRef['Error'])" '#EF4444'
+                return
+            }
+
+            $userId  = $Script:LD_UI.UserList.SelectedItem.Tag.id
+            $devices = @($Script:LD_DevRef['Devices'] | Sort-Object {
+                $entry = $_.usersLoggedOn | Where-Object { $_.userId -eq $userId } | Select-Object -First 1
+                if ($entry -and $entry.lastLogOnDateTime) { [datetime]$entry.lastLogOnDateTime }
+                else { [datetime]::MinValue }
+            } -Descending)
+
+            Write-Log "LastDevice: $($devices.Count) device(s) found for user $userId" 'INFO'
+
+            if ($devices.Count -eq 0) {
+                $Script:LD_UI.DevPlaceholder.Text       = 'No devices found for this user.'
+                $Script:LD_UI.DevPlaceholder.Visibility = 'Visible'
+                $Script:LD_UI.DevList.Visibility        = 'Collapsed'
+                Set-MainStatus 'No devices found.' '#7878A0'
+                return
+            }
+
+            foreach ($d in $devices) {
+                $lbi         = [System.Windows.Controls.ListBoxItem]::new()
+                $lbi.Content = $d.deviceName
+                $lbi.Tag     = $d
+                $entry = $d.usersLoggedOn | Where-Object { $_.userId -eq $userId } | Select-Object -First 1
+                if ($entry -and $entry.lastLogOnDateTime) {
+                    $lbi.ToolTip = "Last check-in: $([datetime]$entry.lastLogOnDateTime)"
+                }
+                [void]$Script:LD_UI.DevList.Items.Add($lbi)
+            }
+            $Script:LD_UI.DevPlaceholder.Visibility = 'Collapsed'
+            $Script:LD_UI.DevList.Visibility        = 'Visible'
+            $n = $devices.Count
+            Set-MainStatus "Loaded $n device$(if ($n -ne 1) { 's' })." '#22C55E'
+        } catch {
+            Write-Log "LastDevice device-load timer error: $_" 'ERROR'
         }
-        $Script:LD_UI.DevPlaceholder.Visibility = 'Collapsed'
-        $Script:LD_UI.DevList.Visibility        = 'Visible'
-        $n = $devices.Count
-        Set-MainStatus "Loaded $n device$(if ($n -ne 1) { 's' })." '#22C55E'
     })
     $Script:LD_DevTimer.Start()
+}
+
+# ── Async all-devices load (for "By Device" tab) ──────────────────────────────
+function Start-LdAllDevicesLoad {
+    $Script:LD_UI.DevBrowserSearch.IsEnabled = $false
+    $Script:LD_UI.DevBrowserList.IsEnabled   = $false
+    $Script:LD_UI.DevBrowserList.Items.Clear()
+    Write-LdLog 'By Device: fetching all Intune devices...' '#7878A0'
+
+    $Script:LD_AllDevRef = [hashtable]::Synchronized(@{ Done = $false; Devices = $null; Error = $null })
+    $token = $Script:AccessToken
+
+    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
+    $rs.Open()
+    $rs.SessionStateProxy.SetVariable('Ref',   $Script:LD_AllDevRef)
+    $rs.SessionStateProxy.SetVariable('Token', $token)
+
+    $ps = [System.Management.Automation.PowerShell]::Create()
+    $ps.Runspace = $rs
+    [void]$ps.AddScript({
+        try {
+            $devices = [System.Collections.Generic.List[object]]::new()
+            $url = 'https://graph.microsoft.com/beta/deviceManagement/managedDevices?$select=id,deviceName,usersLoggedOn,lastSyncDateTime&$top=999'
+            do {
+                $resp = Invoke-RestMethod -Uri $url `
+                    -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
+                foreach ($d in $resp.value) { $devices.Add($d) }
+                $url = $resp.'@odata.nextLink'
+            } while ($url)
+            $Ref['Devices'] = $devices.ToArray()
+        } catch {
+            if ($_.Exception.Response -and $_.Exception.Response.StatusCode.value__ -eq 401) {
+                $Ref['Error'] = '401'
+            } else { $Ref['Error'] = $_.Exception.Message }
+        } finally { $Ref['Done'] = $true }
+    })
+    $ps.BeginInvoke() | Out-Null
+
+    if ($Script:LD_AllDevTimer) { $Script:LD_AllDevTimer.Stop() }
+    $Script:LD_AllDevTimer          = [System.Windows.Threading.DispatcherTimer]::new()
+    $Script:LD_AllDevTimer.Interval = [TimeSpan]::FromMilliseconds(300)
+    $Script:LD_AllDevTimer.Add_Tick({
+        try {
+            if (-not $Script:LD_AllDevRef['Done']) { return }
+            $Script:LD_AllDevTimer.Stop()
+
+            if ($Script:LD_AllDevRef['Error'] -eq '401') {
+                Write-Log 'LastDevice/ByDevice: device load 401 - session expired' 'ERROR'
+                Write-LdLog 'By Device: session expired - reconnect.' '#EF4444'
+                return
+            }
+            if ($Script:LD_AllDevRef['Error']) {
+                Write-Log "LastDevice/ByDevice: device load failed - $($Script:LD_AllDevRef['Error'])" 'ERROR'
+                Write-LdLog "By Device: failed to load devices - $($Script:LD_AllDevRef['Error'])" '#EF4444'
+                return
+            }
+
+            $Script:LD_AllDevices = @($Script:LD_AllDevRef['Devices'] | Sort-Object { $_.deviceName })
+            Write-Log "LastDevice/ByDevice: loaded $($Script:LD_AllDevices.Count) devices" 'INFO'
+            Write-LdLog "By Device: loaded $($Script:LD_AllDevices.Count) devices." '#22C55E'
+            Update-LdDevBrowserFilter
+            Update-LdStaleFilter
+            $Script:LD_UI.DevBrowserSearch.IsEnabled = $true
+            $Script:LD_UI.DevBrowserList.IsEnabled   = $true
+        } catch {
+            Write-Log "LastDevice all-devices timer error: $_" 'ERROR'
+        }
+    })
+    $Script:LD_AllDevTimer.Start()
+}
+
+function Update-LdDevBrowserFilter {
+    $filter = $Script:LD_UI.DevBrowserSearch.Text.Trim()
+    $Script:LD_UI.DevBrowserList.Items.Clear()
+    $list = if ([string]::IsNullOrWhiteSpace($filter)) {
+        $Script:LD_AllDevices
+    } else {
+        $Script:LD_AllDevices | Where-Object { $_.deviceName -like "*$filter*" }
+    }
+    foreach ($d in $list) {
+        $lbi         = [System.Windows.Controls.ListBoxItem]::new()
+        $lbi.Content = $d.deviceName
+        $lbi.Tag     = $d
+        [void]$Script:LD_UI.DevBrowserList.Items.Add($lbi)
+    }
+}
+
+function Update-LdStaleFilter {
+    if (-not $Script:LD_UI -or -not $Script:LD_UI.StaleGrid) { return }
+    $thresholdMap = @{ 0 = 7; 1 = 30; 2 = 60; 3 = 90 }
+    $days   = $thresholdMap[$Script:LD_UI.StaleDays.SelectedIndex]
+    $now    = [datetime]::Now
+    $cutoff = $now.AddDays(-$days)
+    $rows   = [System.Collections.Generic.List[PSObject]]::new()
+
+    foreach ($d in $Script:LD_AllDevices) {
+        # lastSyncDateTime is when the device last checked in with Intune (UTC string ending in Z)
+        $syncDate = $null
+        if ($d.lastSyncDateTime) {
+            try {
+                $parsed = [datetime]::Parse($d.lastSyncDateTime,
+                    [System.Globalization.CultureInfo]::InvariantCulture,
+                    [System.Globalization.DateTimeStyles]::RoundtripKind)
+                # Convert to local time; treat Intune sentinel 0001-01-01 as "never synced"
+                if ($parsed.Year -gt 1) { $syncDate = $parsed.ToLocalTime() }
+            } catch {}
+        }
+        if ($syncDate -and $syncDate -gt $cutoff) { continue }
+
+        # Derive last user from usersLoggedOn (separate from check-in date)
+        $lastEntry = $d.usersLoggedOn |
+            Sort-Object {
+                if ($_.lastLogOnDateTime) { [datetime]$_.lastLogOnDateTime } else { [datetime]::MinValue }
+            } -Descending |
+            Select-Object -First 1
+        $lastUser = if ($lastEntry) {
+            $u = $Script:LD_AllUsers | Where-Object { $_.id -eq $lastEntry.userId } | Select-Object -First 1
+            if ($u) { $u.displayName } else { $lastEntry.userId }
+        } else { '(none)' }
+
+        $checkinStr = if ($syncDate) { $syncDate.ToString('yyyy-MM-dd HH:mm') } else { 'Never' }
+        $sortNum    = if ($syncDate) { [int]($now - $syncDate).TotalDays } else { [int]::MaxValue }
+
+        $rows.Add([PSCustomObject]@{
+            DeviceName  = $d.deviceName
+            LastUser    = $lastUser
+            LastCheckin = $checkinStr
+            DaysSince   = if ($sortNum -eq [int]::MaxValue) { 'Never' } else { "$sortNum" }
+            _Sort       = $sortNum
+        })
+    }
+
+    $sorted = [object[]]($rows | Sort-Object { $_._Sort } -Descending)
+    $Script:LD_UI.StaleGrid.ItemsSource = $sorted
+    $n = $rows.Count
+    $Script:LD_UI.StaleCount.Text = "$n device$(if ($n -ne 1) { 's' }) stale"
+}
+
+function Show-LdDeviceUsers {
+    param($Device)
+    $Script:LD_UI.DevUserList.Items.Clear()
+    $Script:LD_UI.DevUserList.Visibility        = 'Collapsed'
+    $Script:LD_UI.DevUserPlaceholder.Visibility = 'Visible'
+
+    $logons = @($Device.usersLoggedOn | Sort-Object {
+        if ($_.lastLogOnDateTime) { [datetime]$_.lastLogOnDateTime } else { [datetime]::MinValue }
+    } -Descending)
+
+    if ($logons.Count -eq 0) {
+        $Script:LD_UI.DevUserPlaceholder.Text = 'No sign-in records for this device.'
+        return
+    }
+
+    foreach ($logon in $logons) {
+        $user = $Script:LD_AllUsers | Where-Object { $_.id -eq $logon.userId } | Select-Object -First 1
+        $lbi         = [System.Windows.Controls.ListBoxItem]::new()
+        $lbi.Content = if ($user) { $user.displayName } else { $logon.userId }
+        $lbi.ToolTip = if ($user) {
+            "$($user.userPrincipalName)$(if ($logon.lastLogOnDateTime) { " — last sign-in: $([datetime]$logon.lastLogOnDateTime)" })"
+        } else { $logon.userId }
+        $lbi.Tag     = $logon
+        [void]$Script:LD_UI.DevUserList.Items.Add($lbi)
+    }
+
+    $Script:LD_UI.DevUserPlaceholder.Visibility = 'Collapsed'
+    $Script:LD_UI.DevUserList.Visibility        = 'Visible'
 }
 
 # ── XAML ───────────────────────────────────────────────────────────────────────
@@ -265,7 +449,7 @@ $Script:LastDeviceXaml = @'
       <Setter Property="Foreground"               Value="#E2E2F0"/>
       <Setter Property="BorderBrush"              Value="#3C3C5A"/>
       <Setter Property="BorderThickness"          Value="1"/>
-      <Setter Property="Padding"                  Value="8,6"/>
+      <Setter Property="Padding"                  Value="8,4"/>
       <Setter Property="VerticalContentAlignment" Value="Center"/>
       <Setter Property="Template">
         <Setter.Value>
@@ -308,6 +492,61 @@ $Script:LastDeviceXaml = @'
                 <Setter TargetName="bd" Property="Background" Value="#2A2A50"/>
               </Trigger>
             </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style TargetType="DataGrid">
+      <Setter Property="Background"               Value="#12121C"/>
+      <Setter Property="Foreground"               Value="#E2E2F0"/>
+      <Setter Property="BorderThickness"          Value="0"/>
+      <Setter Property="GridLinesVisibility"      Value="Horizontal"/>
+      <Setter Property="HorizontalGridLinesBrush" Value="#1E1E32"/>
+      <Setter Property="RowBackground"            Value="#12121C"/>
+      <Setter Property="AlternatingRowBackground" Value="#181826"/>
+      <Setter Property="ColumnHeaderHeight"       Value="34"/>
+      <Setter Property="RowHeight"                Value="28"/>
+      <Setter Property="AutoGenerateColumns"      Value="False"/>
+      <Setter Property="CanUserAddRows"           Value="False"/>
+      <Setter Property="CanUserDeleteRows"        Value="False"/>
+      <Setter Property="IsReadOnly"               Value="True"/>
+      <Setter Property="SelectionMode"            Value="Single"/>
+      <Setter Property="SelectionUnit"            Value="FullRow"/>
+      <Setter Property="FontSize"                 Value="12"/>
+    </Style>
+
+    <Style TargetType="DataGridColumnHeader">
+      <Setter Property="Background"      Value="#1C1C2A"/>
+      <Setter Property="Foreground"      Value="#7878A0"/>
+      <Setter Property="FontWeight"      Value="SemiBold"/>
+      <Setter Property="Padding"         Value="12,0"/>
+      <Setter Property="BorderBrush"     Value="#3C3C5A"/>
+      <Setter Property="BorderThickness" Value="0,0,0,1"/>
+      <Setter Property="FontSize"        Value="11"/>
+    </Style>
+
+    <Style TargetType="DataGridRow">
+      <Setter Property="Background" Value="Transparent"/>
+      <Style.Triggers>
+        <Trigger Property="IsSelected"  Value="True">
+          <Setter Property="Background" Value="#2A2A50"/>
+        </Trigger>
+        <Trigger Property="IsMouseOver" Value="True">
+          <Setter Property="Background" Value="#1E1E38"/>
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+
+    <Style TargetType="DataGridCell">
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding"         Value="12,0"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="DataGridCell">
+            <Border Padding="{TemplateBinding Padding}" Background="{TemplateBinding Background}">
+              <ContentPresenter VerticalAlignment="Center"/>
+            </Border>
           </ControlTemplate>
         </Setter.Value>
       </Setter>
@@ -365,17 +604,20 @@ $Script:LastDeviceXaml = @'
       </ControlTemplate>
     </TabControl.Template>
 
-    <!-- Lookup tab -->
-    <TabItem Header="Device Lookup">
+    <!-- By User tab: pick a user, see their devices -->
+    <TabItem Header="By User">
       <Grid Background="#12121C">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" MinWidth="200"/>
-          <ColumnDefinition Width="8"/>
+          <ColumnDefinition Width="5"/>
           <ColumnDefinition Width="*" MinWidth="200"/>
         </Grid.ColumnDefinitions>
 
+        <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch"
+                      Background="#3C3C5A" Cursor="SizeWE" ResizeBehavior="PreviousAndNext"/>
+
         <!-- Users panel -->
-        <Border Grid.Column="0" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,0,1,0">
+        <Border Grid.Column="0" Background="#1C1C2A">
           <Grid>
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto"/>
@@ -384,7 +626,7 @@ $Script:LastDeviceXaml = @'
             <Border Grid.Row="0" Padding="12,10" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
               <StackPanel>
                 <TextBlock Text="USERS" Foreground="#50507A" FontSize="10" FontWeight="Bold" Margin="0,0,0,8"/>
-                <TextBox x:Name="LdUserSearch" IsEnabled="False" Height="32"
+                <TextBox x:Name="LdUserSearch" IsEnabled="False" Height="34"
                          Tag="Search by name or UPN..."/>
               </StackPanel>
             </Border>
@@ -429,6 +671,96 @@ $Script:LastDeviceXaml = @'
       </Grid>
     </TabItem>
 
+    <!-- By Device tab: pick a device, see who signed into it -->
+    <TabItem Header="By Device">
+      <Grid Background="#12121C">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" MinWidth="200"/>
+          <ColumnDefinition Width="5"/>
+          <ColumnDefinition Width="*" MinWidth="200"/>
+        </Grid.ColumnDefinitions>
+
+        <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch"
+                      Background="#3C3C5A" Cursor="SizeWE" ResizeBehavior="PreviousAndNext"/>
+
+        <!-- Devices panel (left) -->
+        <Border Grid.Column="0" Background="#1C1C2A">
+          <Grid>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Border Grid.Row="0" Padding="12,10" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
+              <StackPanel>
+                <TextBlock Text="DEVICES" Foreground="#50507A" FontSize="10" FontWeight="Bold" Margin="0,0,0,8"/>
+                <TextBox x:Name="LdDevBrowserSearch" IsEnabled="False" Height="34"
+                         Tag="Search by device name..."/>
+              </StackPanel>
+            </Border>
+            <ListBox x:Name="LdDevBrowserList" Grid.Row="1" IsEnabled="False"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     VirtualizingPanel.IsVirtualizing="True"
+                     VirtualizingPanel.VirtualizationMode="Recycling"
+                     Margin="0,2,0,2"/>
+          </Grid>
+        </Border>
+
+        <!-- Users panel (right) -->
+        <Border Grid.Column="2" Background="#12121C">
+          <Grid>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Border Grid.Row="0" Background="#1C1C2A" Padding="12,10"
+                    BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
+              <TextBlock Text="SIGNED-IN USERS" Foreground="#50507A" FontSize="10" FontWeight="Bold"/>
+            </Border>
+            <TextBlock x:Name="LdDevUserPlaceholder" Grid.Row="1"
+                       Text="Select a device to see who signed into it"
+                       Foreground="#50507A" FontStyle="Italic" FontSize="12"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Visibility="Visible"/>
+            <ListBox x:Name="LdDevUserList" Grid.Row="1"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     VirtualizingPanel.IsVirtualizing="True"
+                     VirtualizingPanel.VirtualizationMode="Recycling"
+                     Margin="0,2,0,2" Visibility="Collapsed"/>
+          </Grid>
+        </Border>
+      </Grid>
+    </TabItem>
+
+    <!-- Stale Devices tab: devices not checked in for N days -->
+    <TabItem Header="Stale Devices">
+      <Grid Background="#12121C">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <Border Grid.Row="0" Background="#1C1C2A" Padding="12,10"
+                BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+            <TextBlock Text="Not checked in for:" Foreground="#7878A0"
+                       FontSize="12" VerticalAlignment="Center" Margin="0,0,10,0"/>
+            <ComboBox x:Name="LdStaleDays" Width="130"/>
+            <TextBlock x:Name="LdStaleCount" Foreground="#7878A0"
+                       FontSize="12" VerticalAlignment="Center" Margin="16,0,0,0"/>
+          </StackPanel>
+        </Border>
+        <DataGrid x:Name="LdStaleGrid" Grid.Row="1" CanUserSortColumns="False"
+                  VirtualizingPanel.IsVirtualizing="True"
+                  VirtualizingPanel.VirtualizationMode="Recycling">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="Device Name"   Binding="{Binding DeviceName}"  Width="*"/>
+            <DataGridTextColumn Header="Last User"     Binding="{Binding LastUser}"    Width="*"/>
+            <DataGridTextColumn Header="Last Check-In" Binding="{Binding LastCheckin}" Width="140"/>
+            <DataGridTextColumn Header="Days Since"    Binding="{Binding DaysSince}"   Width="90"/>
+          </DataGrid.Columns>
+        </DataGrid>
+      </Grid>
+    </TabItem>
+
     <!-- Log tab -->
     <TabItem Header="Log">
       <RichTextBox x:Name="LdLogBox" Background="#12121C" Foreground="#7878A0"
@@ -447,45 +779,101 @@ function Initialize-LastDeviceTool {
     $content = [System.Windows.Markup.XamlReader]::Load($reader)
 
     $Script:LD_UI = @{
-        UserSearch     = $content.FindName('LdUserSearch')
-        UserList       = $content.FindName('LdUserList')
-        DevPlaceholder = $content.FindName('LdDevPlaceholder')
-        DevList        = $content.FindName('LdDevList')
-        BtnCopy        = $content.FindName('LdBtnCopy')
-        LogBox         = $content.FindName('LdLogBox')
+        UserSearch        = $content.FindName('LdUserSearch')
+        UserList          = $content.FindName('LdUserList')
+        DevPlaceholder    = $content.FindName('LdDevPlaceholder')
+        DevList           = $content.FindName('LdDevList')
+        BtnCopy           = $content.FindName('LdBtnCopy')
+        DevBrowserSearch  = $content.FindName('LdDevBrowserSearch')
+        DevBrowserList    = $content.FindName('LdDevBrowserList')
+        DevUserList       = $content.FindName('LdDevUserList')
+        DevUserPlaceholder= $content.FindName('LdDevUserPlaceholder')
+        LogBox            = $content.FindName('LdLogBox')
+        StaleDays         = $content.FindName('LdStaleDays')
+        StaleGrid         = $content.FindName('LdStaleGrid')
+        StaleCount        = $content.FindName('LdStaleCount')
     }
 
+    '7 days','30 days','60 days','90 days' | ForEach-Object {
+        $Script:LD_UI.StaleDays.Items.Add($_) | Out-Null
+    }
+    $Script:LD_UI.StaleDays.SelectedIndex = 1
+    $Script:LD_UI.StaleDays.Add_SelectionChanged({
+        try { Update-LdStaleFilter }
+        catch { Write-Log "StaleDays SelectionChanged error: $_" 'ERROR' }
+    })
+
     # Search box
-    $Script:LD_UI.UserSearch.Add_TextChanged({ Update-LdUserFilter })
+    $Script:LD_UI.UserSearch.Add_TextChanged({
+        try { Update-LdUserFilter }
+        catch { Write-Log "UserSearch TextChanged error: $_" 'ERROR' }
+    })
 
     # User selection -> load devices
     $Script:LD_UI.UserList.Add_SelectionChanged({
-        $sel = $Script:LD_UI.UserList.SelectedItem
-        if (-not $sel) { return }
-        Start-LdDeviceLoad -UserId $sel.Tag.id
+        try {
+            $sel = $Script:LD_UI.UserList.SelectedItem
+            if (-not $sel) { return }
+            Write-Log "LastDevice: selected user '$($sel.Content)' ($($sel.Tag.id))" 'DEBUG'
+            Start-LdDeviceLoad -UserId $sel.Tag.id
+        } catch {
+            Write-Log "UserList SelectionChanged error: $_" 'ERROR'
+        }
     })
 
     # Device selection -> copy to clipboard
     $Script:LD_UI.DevList.Add_SelectionChanged({
-        $sel = $Script:LD_UI.DevList.SelectedItem
-        if (-not $sel) { $Script:LD_UI.BtnCopy.IsEnabled = $false; return }
-        [System.Windows.Clipboard]::SetText($sel.Content)
-        Set-MainStatus "Copied: $($sel.Content)" '#22C55E'
-        $Script:LD_UI.BtnCopy.IsEnabled = $true
+        try {
+            $sel = $Script:LD_UI.DevList.SelectedItem
+            if (-not $sel) { $Script:LD_UI.BtnCopy.IsEnabled = $false; return }
+            Write-Log "LastDevice: device selected '$($sel.Content)'" 'DEBUG'
+            [System.Windows.Clipboard]::SetText($sel.Content)
+            Set-MainStatus "Copied: $($sel.Content)" '#22C55E'
+            $Script:LD_UI.BtnCopy.IsEnabled = $true
+        } catch {
+            Write-Log "DevList SelectionChanged error: $_" 'ERROR'
+        }
     })
 
     # Copy button re-copies selected device
     $Script:LD_UI.BtnCopy.Add_Click({
-        $sel = $Script:LD_UI.DevList.SelectedItem
-        if (-not $sel) { return }
-        [System.Windows.Clipboard]::SetText($sel.Content)
-        Set-MainStatus "Copied: $($sel.Content)" '#22C55E'
+        try {
+            $sel = $Script:LD_UI.DevList.SelectedItem
+            if (-not $sel) { return }
+            Write-Log "LastDevice: BtnCopy clicked for '$($sel.Content)'" 'DEBUG'
+            [System.Windows.Clipboard]::SetText($sel.Content)
+            Set-MainStatus "Copied: $($sel.Content)" '#22C55E'
+        } catch {
+            Write-Log "BtnCopy click error: $_" 'ERROR'
+        }
+    })
+
+    # By Device: device search filter
+    $Script:LD_UI.DevBrowserSearch.Add_TextChanged({
+        try { Update-LdDevBrowserFilter }
+        catch { Write-Log "DevBrowserSearch TextChanged error: $_" 'ERROR' }
+    })
+
+    # By Device: device selected -> show users
+    $Script:LD_UI.DevBrowserList.Add_SelectionChanged({
+        try {
+            $sel = $Script:LD_UI.DevBrowserList.SelectedItem
+            if (-not $sel) { return }
+            Write-Log "LastDevice/ByDevice: selected device '$($sel.Content)'" 'DEBUG'
+            Show-LdDeviceUsers -Device $sel.Tag
+            Set-MainStatus "Device: $($sel.Content)" '#7878A0'
+        } catch {
+            Write-Log "DevBrowserList SelectionChanged error: $_" 'ERROR'
+        }
     })
 
     # Register with global connect/reset hooks
     $Script:ConnectCallbacks.Add({ Start-LdUserLoad })
+    $Script:ConnectCallbacks.Add({ Start-LdAllDevicesLoad })
     $Script:ResetCallbacks.Add({
-        $Script:LD_AllUsers = @()
+        $Script:LD_AllUsers   = @()
+        $Script:LD_AllDevices = @()
+
         $Script:LD_UI.UserList.Items.Clear()
         $Script:LD_UI.UserSearch.Text      = ''
         $Script:LD_UI.UserSearch.IsEnabled = $false
@@ -495,6 +883,17 @@ function Initialize-LastDeviceTool {
         $Script:LD_UI.DevPlaceholder.Text       = 'Select a user to see their devices'
         $Script:LD_UI.DevPlaceholder.Visibility = 'Visible'
         $Script:LD_UI.BtnCopy.IsEnabled         = $false
+
+        $Script:LD_UI.DevBrowserSearch.Text      = ''
+        $Script:LD_UI.DevBrowserSearch.IsEnabled = $false
+        $Script:LD_UI.DevBrowserList.Items.Clear()
+        $Script:LD_UI.DevBrowserList.IsEnabled   = $false
+        $Script:LD_UI.DevUserList.Items.Clear()
+        $Script:LD_UI.DevUserList.Visibility         = 'Collapsed'
+        $Script:LD_UI.DevUserPlaceholder.Text        = 'Select a device to see who signed into it'
+        $Script:LD_UI.DevUserPlaceholder.Visibility  = 'Visible'
+        $Script:LD_UI.StaleGrid.ItemsSource = $null
+        $Script:LD_UI.StaleCount.Text = ''
     })
 
     Write-LdLog 'Last Device ready. Select a tenant to begin.' '#50507A'
