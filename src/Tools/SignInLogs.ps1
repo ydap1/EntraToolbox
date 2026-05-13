@@ -29,6 +29,7 @@ function Write-SlLog {
 
 # ── Async user load ────────────────────────────────────────────────────────────
 function Start-SlUserLoad {
+    if ($Script:DemoMode) { Start-SlUserLoadDemo; return }
     $Script:SL_UI.UserSearch.IsEnabled = $false
     $Script:SL_UI.UserList.IsEnabled   = $false
     $Script:SL_UI.UserList.Items.Clear()
@@ -122,6 +123,7 @@ function Update-SlUserFilter {
 # ── Async sign-in log load ─────────────────────────────────────────────────────
 function Start-SlLogsLoad {
     param([string]$UserId)
+    if ($Script:DemoMode) { Start-SlLogsLoadDemo -UserId $UserId; return }
 
     $Script:SL_UI.LogsGrid.Visibility        = 'Collapsed'
     $Script:SL_UI.LogsPlaceholder.Text       = 'Loading sign-in logs...'

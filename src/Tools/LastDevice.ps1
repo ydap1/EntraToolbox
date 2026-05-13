@@ -34,6 +34,7 @@ function Write-LdLog {
 
 # ── Async user load ────────────────────────────────────────────────────────────
 function Start-LdUserLoad {
+    if ($Script:DemoMode) { Start-LdUserLoadDemo; return }
     $Script:LD_UI.UserList.Items.Clear()
     $Script:LD_UI.UserSearch.Text      = ''
     $Script:LD_UI.UserSearch.IsEnabled = $false
@@ -134,6 +135,7 @@ function Update-LdUserFilter {
 # ── Async device load ──────────────────────────────────────────────────────────
 function Start-LdDeviceLoad {
     param([string]$UserId)
+    if ($Script:DemoMode) { Start-LdDeviceLoadDemo -UserId $UserId; return }
 
     $Script:LD_UI.DevList.Items.Clear()
     $Script:LD_UI.DevList.Visibility        = 'Collapsed'
@@ -239,6 +241,7 @@ function Start-LdDeviceLoad {
 
 # ── Async all-devices load (for "By Device" tab) ──────────────────────────────
 function Start-LdAllDevicesLoad {
+    if ($Script:DemoMode) { Start-LdAllDevicesLoadDemo; return }
     $Script:LD_UI.DevBrowserSearch.IsEnabled = $false
     $Script:LD_UI.DevBrowserList.IsEnabled   = $false
     $Script:LD_UI.DevBrowserList.Items.Clear()

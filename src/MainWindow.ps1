@@ -223,6 +223,9 @@ $Script:MainXaml = @'
         <Button x:Name="BtnRemoveTenant" Content="-" Style="{StaticResource FlatBtn}"
                 Background="#3C3C5A" Padding="10,6" Margin="4,0,0,0"
                 FontSize="16" ToolTip="Remove selected tenant" Width="34" IsEnabled="False"/>
+        <Button x:Name="BtnDemo" Content="Demo" Style="{StaticResource FlatBtn}"
+                Background="#7C3AED" Padding="10,6" Margin="12,0,0,0"
+                ToolTip="Run in demo mode with fake Oakfield Academy data"/>
       </StackPanel>
     </Border>
 
@@ -480,6 +483,7 @@ function Show-MainWindow {
         TabSignIn     = $window.FindName('TabSignIn')
         Status        = $window.FindName('MainStatus')
         Version       = $window.FindName('MainVersion')
+        BtnDemo       = $window.FindName('BtnDemo')
     }
 
     if ($AppVersion) { $Script:MainUI.Version.Text = "v$AppVersion" }
@@ -493,6 +497,19 @@ function Show-MainWindow {
     Write-Log 'MainWindow: initializing Sign-In Logs tool' 'DEBUG'
     $Script:MainUI.TabSignIn.Content     = Initialize-SignInLogsTool
     Write-Log 'MainWindow: tools initialized' 'INFO'
+
+    # Demo mode button
+    $Script:MainUI.BtnDemo.Add_Click({
+        try {
+            Write-Log 'Demo mode activated - Oakfield Academy' 'INFO'
+            $Script:DemoMode = $true
+            Invoke-ResetTools
+            $Script:AccessToken = 'DEMO'
+            Invoke-PostConnect
+        } catch {
+            Write-Log "BtnDemo click error: $_" 'ERROR'
+        }
+    })
 
     # Add Tenant button
     $Script:MainUI.BtnAddTenant.Add_Click({
@@ -527,6 +544,7 @@ function Show-MainWindow {
             if (-not $sel) { return }
 
             Write-Log "TenantCombo: selected '$($sel.Content)'" 'INFO'
+            $Script:DemoMode = $false
             Invoke-ResetTools
             $Script:MainUI.TenantCombo.IsEnabled    = $false
             $Script:MainUI.BtnAddTenant.IsEnabled   = $false

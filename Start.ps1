@@ -42,6 +42,7 @@ if (-not (Get-Module MSAL.PS -ErrorAction SilentlyContinue)) {
 }
 
 . (Join-Path $PSScriptRoot 'src\Auth.ps1')
+. (Join-Path $PSScriptRoot 'src\Demo.ps1')
 . (Join-Path $PSScriptRoot 'src\Tools\PasswordReset.ps1')
 . (Join-Path $PSScriptRoot 'src\Tools\UserPasswordReset.ps1')
 . (Join-Path $PSScriptRoot 'src\Tools\LastDevice.ps1')
