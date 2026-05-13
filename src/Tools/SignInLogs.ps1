@@ -20,7 +20,7 @@ function Write-SlLog {
     $ts   = Get-Date -Format 'HH:mm:ss'
     $para = New-Object System.Windows.Documents.Paragraph
     $run  = New-Object System.Windows.Documents.Run "[$ts]  $Msg"
-    $run.Foreground = $Color
+    $run.Foreground = Get-ThemeHex $Color
     $para.Inlines.Add($run)
     $para.Margin = '0'
     $Script:SL_UI.LogBox.Document.Blocks.Add($para)
