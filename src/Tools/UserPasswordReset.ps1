@@ -586,7 +586,7 @@ $Script:UprXaml = @'
 
 # ── Initialize ─────────────────────────────────────────────────────────────────
 function Initialize-UserPasswordResetTool {
-    $reader  = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new($Script:UprXaml))
+    $reader  = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new(Invoke-ThemeXaml $Script:UprXaml))
     $content = [System.Windows.Markup.XamlReader]::Load($reader)
 
     $Script:UPR_UI = @{

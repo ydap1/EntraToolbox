@@ -401,51 +401,52 @@ $Script:Demo_ComplianceDetails = @{
     )
 }
 
-function Start-DcDeviceLoadDemo {
-    $Script:DC_AllDevices = @($Script:Demo_NonCompliantDevices | Sort-Object { $_.deviceName })
-    Update-DcFilter
-    $Script:DC_UI.DevSearch.IsEnabled  = $true
-    $Script:DC_UI.DevList.IsEnabled    = $true
-    $Script:DC_UI.BtnRefresh.IsEnabled = $true
-    $n = $Script:DC_AllDevices.Count
-    Write-Log "Demo: DevCompliance loaded $n non-compliant devices" 'INFO'
-    Write-DcLog "Loaded $n non-compliant devices (demo — Contoso Academy)." '#22C55E'
-    Set-MainStatus "$n non-compliant device$(if ($n -ne 1) { 's' }) found." '#FBBF24'
-}
+function Start-DcLoadDemo {
+    $Script:DC_UI.IssuesGrid.ItemsSource   = $null
+    $Script:DC_UI.IssuesGrid.Visibility    = 'Collapsed'
+    $Script:DC_UI.Placeholder.Text         = 'Loading...'
+    $Script:DC_UI.Placeholder.Visibility   = 'Visible'
+    $Script:DC_UI.Status.Text              = ''
+    $Script:DC_UI.BtnRefresh.IsEnabled     = $false
+    $Script:DC_UI.LogBox.Document.Blocks.Clear()
 
-function Start-DcDetailLoadDemo {
-    param([string]$DeviceId)
-
-    $Script:DC_UI.IssuesGrid.ItemsSource       = $null
-    $Script:DC_UI.IssuesPlaceholder.Text       = 'Loading compliance details...'
-    $Script:DC_UI.IssuesPlaceholder.Visibility = 'Visible'
-    $Script:DC_UI.IssuesGrid.Visibility        = 'Collapsed'
-
-    $rawRows = $Script:Demo_ComplianceDetails[$DeviceId]
-    if (-not $rawRows -or $rawRows.Count -eq 0) {
-        $Script:DC_UI.IssuesPlaceholder.Text = 'No compliance issues found for this device.'
-        Set-MainStatus 'No compliance issues found.' '#22C55E'
-        return
-    }
-
-    $redBrush = [System.Windows.Media.SolidColorBrush]::new(
-        [System.Windows.Media.Color]::FromRgb(0xEF, 0x44, 0x44))
-    $redBrush.Freeze()
-
-    $displayRows = foreach ($r in $rawRows) {
-        [PSCustomObject]@{
-            PolicyName = $r.PolicyName
-            Setting    = $r.Setting
-            StateLabel = $r.StateLabel
-            StateColor = $redBrush
-            Detail     = $r.Detail
+    $displayRows = [System.Collections.Generic.List[PSObject]]::new()
+    foreach ($device in $Script:Demo_NonCompliantDevices) {
+        $details = $Script:Demo_ComplianceDetails[$device.id]
+        if (-not $details) { continue }
+        $osStr = "$($device.operatingSystem) $($device.osVersion)".Trim()
+        foreach ($detail in $details) {
+            $stateStr = if ($device.complianceState -eq 'inGracePeriod') { 'inGracePeriod' } else { 'noncompliant' }
+            $brush = [System.Windows.Media.SolidColorBrush]::new(
+                [System.Windows.Media.ColorConverter]::ConvertFromString((Get-DcStateColor $stateStr)))
+            $brush.Freeze()
+            $displayRows.Add([PSCustomObject]@{
+                DeviceName = $device.deviceName
+                User       = $device.userDisplayName
+                OS         = $osStr
+                Policy     = $detail.PolicyName
+                Setting    = $detail.Setting
+                StateLabel = $detail.StateLabel
+                StateColor = $brush
+                Detail     = $detail.Detail
+            })
         }
     }
 
-    $Script:DC_UI.IssuesGrid.ItemsSource       = [object[]]$displayRows
-    $Script:DC_UI.IssuesPlaceholder.Visibility = 'Collapsed'
-    $Script:DC_UI.IssuesGrid.Visibility        = 'Visible'
-    $n = $rawRows.Count
-    Write-DcLog "Loaded $n failing setting$(if ($n -ne 1) { 's' }) (demo)." '#22C55E'
-    Set-MainStatus "$n compliance issue$(if ($n -ne 1) { 's' }) found." '#FBBF24'
+    $Script:DC_UI.BtnRefresh.IsEnabled = $true
+    $n  = $displayRows.Count
+    $nd = ($Script:Demo_NonCompliantDevices | Where-Object { $Script:Demo_ComplianceDetails[$_.id] }).Count
+
+    if ($n -eq 0) {
+        $Script:DC_UI.Placeholder.Text = 'All managed devices are compliant.'
+        Set-MainStatus 'All devices are compliant (demo).' '#22C55E'
+        return
+    }
+
+    $Script:DC_UI.IssuesGrid.ItemsSource  = [object[]]$displayRows
+    $Script:DC_UI.Placeholder.Visibility  = 'Collapsed'
+    $Script:DC_UI.IssuesGrid.Visibility   = 'Visible'
+    Write-Log "Demo: DevCompliance loaded $n issue(s) across $nd device(s)" 'INFO'
+    Write-DcLog "Found $n issue$(if ($n -ne 1) {'s'}) across $nd device$(if ($nd -ne 1) {'s'}) (demo — Contoso Academy)." '#22C55E'
+    Set-MainStatus "$n compliance issue$(if ($n -ne 1) {'s'}) across $nd device$(if ($nd -ne 1) {'s'}) (demo)." '#FBBF24'
 }

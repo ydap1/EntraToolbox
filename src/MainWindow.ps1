@@ -182,7 +182,7 @@ $Script:MainXaml = @'
     </Grid.RowDefinitions>
 
     <!-- Header -->
-    <Border Grid.Row="0" Background="#1C1C2A">
+    <Border Grid.Row="0" x:Name="MainHeaderBorder" Background="#1C1C2A">
       <Border.Effect>
         <DropShadowEffect BlurRadius="10" ShadowDepth="2" Opacity="0.35" Color="Black"/>
       </Border.Effect>
@@ -203,17 +203,18 @@ $Script:MainXaml = @'
           </StackPanel>
         </StackPanel>
         <Border Grid.Column="1" x:Name="TenantBadge" CornerRadius="4"
-                Background="#1A2A4A" Padding="10,4" Visibility="Collapsed">
-          <StackPanel Orientation="Horizontal">
+                Background="#1A2A4A" Padding="10,5" VerticalAlignment="Center" Visibility="Collapsed">
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
             <Ellipse Width="7" Height="7" Fill="#22C55E" Margin="0,0,6,0" VerticalAlignment="Center"/>
-            <TextBlock x:Name="LblTenantName" Foreground="#60A5FA" FontSize="11" FontWeight="SemiBold"/>
+            <TextBlock x:Name="LblTenantName" Foreground="#60A5FA" FontSize="11" FontWeight="SemiBold"
+                       VerticalAlignment="Center"/>
           </StackPanel>
         </Border>
       </Grid>
     </Border>
 
     <!-- Tenant bar -->
-    <Border Grid.Row="1" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
+    <Border Grid.Row="1" x:Name="MainTenantBar" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
       <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0">
         <TextBlock Text="Tenant:" Foreground="#7878A0" VerticalAlignment="Center" Margin="0,0,10,0"/>
         <ComboBox x:Name="TenantCombo" Width="280" IsEnabled="False"/>
@@ -225,7 +226,10 @@ $Script:MainXaml = @'
                 FontSize="16" ToolTip="Remove selected tenant" Width="34" IsEnabled="False"/>
         <Button x:Name="BtnDemo" Content="Demo" Style="{StaticResource FlatBtn}"
                 Background="#7C3AED" Padding="10,6" Margin="12,0,0,0"
-                ToolTip="Run in demo mode with fake Oakfield Academy data"/>
+                ToolTip="Run in demo mode with fake Contoso Academy data"/>
+        <Button x:Name="BtnSettings" Content="&#x2699;" Style="{StaticResource FlatBtn}"
+                Background="#3C3C5A" Padding="8,6" Margin="6,0,0,0"
+                FontSize="14" ToolTip="Settings"/>
       </StackPanel>
     </Border>
 
@@ -253,7 +257,7 @@ $Script:MainXaml = @'
     </TabControl>
 
     <!-- Status bar -->
-    <Border Grid.Row="3" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,1,0,0">
+    <Border Grid.Row="3" x:Name="MainStatusBar" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,1,0,0">
       <Grid Margin="14,0">
         <TextBlock x:Name="MainStatus" Text="Ready - select a tenant to begin"
                    Foreground="#50507A" FontSize="11" VerticalAlignment="Center"/>
@@ -349,6 +353,89 @@ $Script:AddTenantXaml = @'
 </Window>
 '@
 
+$Script:SettingsXaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Settings" Width="340" Height="190"
+        WindowStyle="ToolWindow" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        Background="#1C1C2A" FontFamily="Segoe UI" FontSize="13">
+  <Window.Resources>
+    <Style x:Key="Btn" TargetType="Button">
+      <Setter Property="Foreground"      Value="White"/>
+      <Setter Property="FontWeight"      Value="SemiBold"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Cursor"          Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="bd" Background="{TemplateBinding Background}"
+                    CornerRadius="5" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="bd" Property="Opacity" Value="0.82"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="bd" Property="Background" Value="#242436"/>
+                <Setter Property="Foreground" Value="#3C3C5A"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="TextBlock">
+      <Setter Property="Foreground" Value="#7878A0"/>
+      <Setter Property="FontSize"   Value="11"/>
+    </Style>
+    <Style TargetType="ComboBoxItem">
+      <Setter Property="Foreground" Value="#E2E2F0"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Padding"    Value="10,7"/>
+      <Style.Triggers>
+        <Trigger Property="IsMouseOver" Value="True">
+          <Setter Property="Background" Value="#1E1E38"/>
+        </Trigger>
+        <Trigger Property="IsSelected" Value="True">
+          <Setter Property="Background" Value="#6366F1"/>
+          <Setter Property="Foreground" Value="White"/>
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+  </Window.Resources>
+  <Grid Margin="20,16,20,16">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="16"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <StackPanel Grid.Row="0">
+      <TextBlock Text="Theme" Margin="0,0,0,4"/>
+      <ComboBox x:Name="SettingsThemeCombo" Height="32"
+                Background="#242436" Foreground="#E2E2F0"
+                BorderBrush="#3C3C5A" BorderThickness="1" Padding="8,0"/>
+    </StackPanel>
+    <Grid Grid.Row="2">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="8"/>
+        <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+      <Button x:Name="SettingsCancel" Grid.Column="0" Content="Cancel"
+              Style="{StaticResource Btn}" Background="#3C3C5A" Padding="0,8"/>
+      <Button x:Name="SettingsSave" Grid.Column="2" Content="Save"
+              Style="{StaticResource Btn}" Background="#6366F1" Padding="20,8"/>
+    </Grid>
+  </Grid>
+</Window>
+'@
+
+$Script:SettingsDlgWin   = $null
+$Script:SettingsDlgCombo = $null
+
 # ── Tenant combo helpers ───────────────────────────────────────────────────────
 function Update-TenantCombo {
     $tenants = @(Get-SavedTenants)
@@ -366,7 +453,7 @@ function Update-TenantCombo {
 }
 
 function Show-AddTenantDialog {
-    $reader            = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new($Script:AddTenantXaml))
+    $reader            = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new(Invoke-ThemeXaml $Script:AddTenantXaml))
     $Script:DlgWin     = [System.Windows.Markup.XamlReader]::Load($reader)
     $Script:DlgWin.Owner = $Script:MainUI.Window
     $Script:DlgTid     = $Script:DlgWin.FindName('DlgTenantId')
@@ -435,6 +522,48 @@ function Show-AddTenantDialog {
     $Script:DlgTid.Focus() | Out-Null
 }
 
+function Show-SettingsDialog {
+    $reader = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new(Invoke-ThemeXaml $Script:SettingsXaml))
+    $Script:SettingsDlgWin = [System.Windows.Markup.XamlReader]::Load($reader)
+    $Script:SettingsDlgWin.Owner = $Script:MainUI.Window
+
+    $Script:SettingsDlgCombo = $Script:SettingsDlgWin.FindName('SettingsThemeCombo')
+    $btnSave   = $Script:SettingsDlgWin.FindName('SettingsSave')
+    $btnCancel = $Script:SettingsDlgWin.FindName('SettingsCancel')
+
+    foreach ($name in $Script:ThemePalettes.Keys) {
+        $item = New-Object System.Windows.Controls.ComboBoxItem
+        $item.Content = $name
+        $Script:SettingsDlgCombo.Items.Add($item) | Out-Null
+    }
+    for ($i = 0; $i -lt $Script:SettingsDlgCombo.Items.Count; $i++) {
+        if ($Script:SettingsDlgCombo.Items[$i].Content -eq $Script:CurrentThemeName) {
+            $Script:SettingsDlgCombo.SelectedIndex = $i
+            break
+        }
+    }
+
+    $btnCancel.Add_Click({
+        try { $Script:SettingsDlgWin.Close() }
+        catch { Write-Log "SettingsCancel click error: $_" 'ERROR' }
+    })
+
+    $btnSave.Add_Click({
+        try {
+            $sel = $Script:SettingsDlgCombo.SelectedItem
+            if (-not $sel) { return }
+            $themeName = $sel.Content
+            Save-AppSettings -Theme $themeName
+            Apply-Theme -ThemeName $themeName
+            $Script:SettingsDlgWin.Close()
+        } catch {
+            Write-Log "SettingsSave click error: $_" 'ERROR'
+        }
+    })
+
+    $Script:SettingsDlgWin.ShowDialog() | Out-Null
+}
+
 function Invoke-PostConnect {
     # Get real tenant display name from Graph and update header
     try {
@@ -467,25 +596,29 @@ function Show-MainWindow {
     Add-Type -AssemblyName WindowsBase
 
     Write-Log 'MainWindow: parsing XAML' 'DEBUG'
-    $reader = New-Object System.Xml.XmlNodeReader ([xml]$Script:MainXaml)
+    $reader = New-Object System.Xml.XmlNodeReader ([xml](Invoke-ThemeXaml $Script:MainXaml))
     $window = [System.Windows.Markup.XamlReader]::Load($reader)
 
     $Script:MainUI = @{
-        Window        = $window
-        TenantCombo   = $window.FindName('TenantCombo')
-        BtnAddTenant  = $window.FindName('BtnAddTenant')
-        BtnRemove     = $window.FindName('BtnRemoveTenant')
-        TenantBadge   = $window.FindName('TenantBadge')
-        TenantName    = $window.FindName('LblTenantName')
-        Tabs          = $window.FindName('MainTabs')
-        TabPwReset    = $window.FindName('TabPwReset')
-        TabPwUser     = $window.FindName('TabPwUser')
-        TabLastDevice = $window.FindName('TabLastDevice')
-        TabSignIn     = $window.FindName('TabSignIn')
+        Window           = $window
+        TenantCombo      = $window.FindName('TenantCombo')
+        BtnAddTenant     = $window.FindName('BtnAddTenant')
+        BtnRemove        = $window.FindName('BtnRemoveTenant')
+        TenantBadge      = $window.FindName('TenantBadge')
+        TenantName       = $window.FindName('LblTenantName')
+        Tabs             = $window.FindName('MainTabs')
+        TabPwReset       = $window.FindName('TabPwReset')
+        TabPwUser        = $window.FindName('TabPwUser')
+        TabLastDevice    = $window.FindName('TabLastDevice')
+        TabSignIn        = $window.FindName('TabSignIn')
+        TabDevCompliance = $window.FindName('TabDevCompliance')
         Status           = $window.FindName('MainStatus')
         Version          = $window.FindName('MainVersion')
         BtnDemo          = $window.FindName('BtnDemo')
-        TabDevCompliance = $window.FindName('TabDevCompliance')
+        BtnSettings      = $window.FindName('BtnSettings')
+        HeaderBorder     = $window.FindName('MainHeaderBorder')
+        TenantBarBorder  = $window.FindName('MainTenantBar')
+        StatusBarBorder  = $window.FindName('MainStatusBar')
     }
 
     if ($AppVersion) { $Script:MainUI.Version.Text = "v$AppVersion" }
@@ -505,7 +638,8 @@ function Show-MainWindow {
     # Demo mode button
     $Script:MainUI.BtnDemo.Add_Click({
         try {
-            Write-Log 'Demo mode activated - Oakfield Academy' 'INFO'
+            $Script:MainUI.TenantCombo.SelectedIndex = -1
+            Write-Log 'Demo mode activated - Contoso Academy' 'INFO'
             $Script:DemoMode = $true
             Invoke-ResetTools
             $Script:AccessToken = 'DEMO'
@@ -513,6 +647,12 @@ function Show-MainWindow {
         } catch {
             Write-Log "BtnDemo click error: $_" 'ERROR'
         }
+    })
+
+    # Settings button
+    $Script:MainUI.BtnSettings.Add_Click({
+        try { Show-SettingsDialog }
+        catch { Write-Log "BtnSettings click error: $_" 'ERROR' }
     })
 
     # Add Tenant button
