@@ -76,6 +76,7 @@ $Script:PwUserRef   = $null
 $Script:PwUserTimer = $null
 
 function Start-PwUserLoad {
+    if ($Script:DemoMode) { Start-PwUserLoadDemo; return }
     $Script:PwReset_UI.CboYear.Items.Clear()
     $Script:PwReset_UI.CboYear.IsEnabled   = $false
     $Script:PwReset_UI.BtnLoad.IsEnabled   = $false
@@ -696,19 +697,24 @@ function Initialize-PasswordResetTool {
                 $row.Password = $pw
 
                 if ($isLive) {
-                    try {
-                        Invoke-GraphPatch -Path "/v1.0/users/$($row.Id)" -Body @{
-                            passwordProfile = @{
-                                password                      = $pw
-                                forceChangePasswordNextSignIn = $false
-                            }
-                        }
+                    if ($Script:DemoMode) {
                         $row.Status = 'OK'; $ok++
-                        Write-PwLog "OK: $($row.DisplayName)  ($($row.UPN))" '#22C55E'
-                    } catch {
-                        $row.Status = 'Failed'; $fail++
-                        Write-Log "PwReset: PATCH failed for $($row.UPN) - $_" 'ERROR'
-                        Write-PwLog "FAILED: $($row.DisplayName) - $_" '#EF4444'
+                        Write-PwLog "OK: $($row.DisplayName)  ($($row.UPN))  [DEMO]" '#22C55E'
+                    } else {
+                        try {
+                            Invoke-GraphPatch -Path "/v1.0/users/$($row.Id)" -Body @{
+                                passwordProfile = @{
+                                    password                      = $pw
+                                    forceChangePasswordNextSignIn = $false
+                                }
+                            }
+                            $row.Status = 'OK'; $ok++
+                            Write-PwLog "OK: $($row.DisplayName)  ($($row.UPN))" '#22C55E'
+                        } catch {
+                            $row.Status = 'Failed'; $fail++
+                            Write-Log "PwReset: PATCH failed for $($row.UPN) - $_" 'ERROR'
+                            Write-PwLog "FAILED: $($row.DisplayName) - $_" '#EF4444'
+                        }
                     }
                 } else {
                     $row.Status = 'OK'; $ok++

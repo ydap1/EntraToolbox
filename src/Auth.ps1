@@ -187,6 +187,7 @@ function Get-GraphPaged {
 }
 
 function Get-TenantDisplayName {
+    if ($Script:DemoMode) { return 'Oakfield Academy' }
     try {
         $resp = Invoke-GraphGet '/v1.0/organization?$select=displayName'
         if ($resp.value -and $resp.value.Count -gt 0) { return $resp.value[0].displayName }

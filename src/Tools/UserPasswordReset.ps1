@@ -34,6 +34,7 @@ function Write-UprLog {
 
 # ── Async user load ────────────────────────────────────────────────────────────
 function Start-UprUserLoad {
+    if ($Script:DemoMode) { Start-UprUserLoadDemo; return }
     $Script:UPR_UI.UserSearch.IsEnabled = $false
     $Script:UPR_UI.UserList.IsEnabled   = $false
     $Script:UPR_UI.UserList.Items.Clear()
@@ -128,6 +129,7 @@ function Update-UprUserFilter {
 # ── Async passwordProfile fetch ────────────────────────────────────────────────
 function Start-UprProfileLoad {
     param([string]$UserId)
+    if ($Script:DemoMode) { Start-UprProfileLoadDemo; return }
 
     $Script:UPR_UI.PromptStatus.Text       = 'Checking...'
     $Script:UPR_UI.PromptStatus.Foreground = '#7878A0'
@@ -210,6 +212,7 @@ function Update-UprGroupFilter {
 
 function Start-UprGroupLoad {
     param([string]$UserId)
+    if ($Script:DemoMode) { Start-UprGroupLoadDemo -UserId $UserId; return }
     $Script:UPR_AllGroups = @()
     $Script:UPR_UI.GrpList.Items.Clear()
     $Script:UPR_UI.GrpList.Visibility        = 'Collapsed'
@@ -673,10 +676,12 @@ function Initialize-UserPasswordResetTool {
             Set-MainStatus "Resetting password for $($user.displayName)..." '#7878A0'
 
             try {
-                Invoke-GraphPatch -Path "/v1.0/users/$($user.id)" -Body @{
-                    passwordProfile = @{
-                        password                      = $pw
-                        forceChangePasswordNextSignIn = $force
+                if (-not $Script:DemoMode) {
+                    Invoke-GraphPatch -Path "/v1.0/users/$($user.id)" -Body @{
+                        passwordProfile = @{
+                            password                      = $pw
+                            forceChangePasswordNextSignIn = $force
+                        }
                     }
                 }
 
