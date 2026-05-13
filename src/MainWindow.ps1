@@ -453,7 +453,7 @@ function Update-TenantCombo {
 }
 
 function Show-AddTenantDialog {
-    $reader            = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new(Invoke-ThemeXaml $Script:AddTenantXaml))
+    $reader            = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new((Invoke-ThemeXaml $Script:AddTenantXaml)))
     $Script:DlgWin     = [System.Windows.Markup.XamlReader]::Load($reader)
     $Script:DlgWin.Owner = $Script:MainUI.Window
     $Script:DlgTid     = $Script:DlgWin.FindName('DlgTenantId')
@@ -523,7 +523,7 @@ function Show-AddTenantDialog {
 }
 
 function Show-SettingsDialog {
-    $reader = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new(Invoke-ThemeXaml $Script:SettingsXaml))
+    $reader = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new((Invoke-ThemeXaml $Script:SettingsXaml)))
     $Script:SettingsDlgWin = [System.Windows.Markup.XamlReader]::Load($reader)
     $Script:SettingsDlgWin.Owner = $Script:MainUI.Window
 

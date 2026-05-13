@@ -553,7 +553,7 @@ $Script:PwResetXaml = @'
 
 # ── Initialize ─────────────────────────────────────────────────────────────────
 function Initialize-PasswordResetTool {
-    $reader  = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new(Invoke-ThemeXaml $Script:PwResetXaml))
+    $reader  = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new((Invoke-ThemeXaml $Script:PwResetXaml)))
     $content = [System.Windows.Markup.XamlReader]::Load($reader)
 
     $Script:PwReset_UI = @{
