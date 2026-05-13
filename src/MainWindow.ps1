@@ -245,10 +245,11 @@ $Script:MainXaml = @'
           </Grid>
         </ControlTemplate>
       </TabControl.Template>
-      <TabItem x:Name="TabPwReset"    Header="Year Group Passwords"/>
-      <TabItem x:Name="TabPwUser"     Header="User Password Reset"/>
-      <TabItem x:Name="TabLastDevice" Header="Last Device"/>
-      <TabItem x:Name="TabSignIn"     Header="Sign-In Logs"/>
+      <TabItem x:Name="TabPwReset"     Header="Year Group Passwords"/>
+      <TabItem x:Name="TabPwUser"      Header="User Password Reset"/>
+      <TabItem x:Name="TabLastDevice"  Header="Last Device"/>
+      <TabItem x:Name="TabSignIn"      Header="Sign-In Logs"/>
+      <TabItem x:Name="TabDevCompliance" Header="Device Compliance"/>
     </TabControl>
 
     <!-- Status bar -->
@@ -481,9 +482,10 @@ function Show-MainWindow {
         TabPwUser     = $window.FindName('TabPwUser')
         TabLastDevice = $window.FindName('TabLastDevice')
         TabSignIn     = $window.FindName('TabSignIn')
-        Status        = $window.FindName('MainStatus')
-        Version       = $window.FindName('MainVersion')
-        BtnDemo       = $window.FindName('BtnDemo')
+        Status           = $window.FindName('MainStatus')
+        Version          = $window.FindName('MainVersion')
+        BtnDemo          = $window.FindName('BtnDemo')
+        TabDevCompliance = $window.FindName('TabDevCompliance')
     }
 
     if ($AppVersion) { $Script:MainUI.Version.Text = "v$AppVersion" }
@@ -495,7 +497,9 @@ function Show-MainWindow {
     Write-Log 'MainWindow: initializing Last Device tool' 'DEBUG'
     $Script:MainUI.TabLastDevice.Content = Initialize-LastDeviceTool
     Write-Log 'MainWindow: initializing Sign-In Logs tool' 'DEBUG'
-    $Script:MainUI.TabSignIn.Content     = Initialize-SignInLogsTool
+    $Script:MainUI.TabSignIn.Content         = Initialize-SignInLogsTool
+    Write-Log 'MainWindow: initializing Device Compliance tool' 'DEBUG'
+    $Script:MainUI.TabDevCompliance.Content  = Initialize-DeviceComplianceTool
     Write-Log 'MainWindow: tools initialized' 'INFO'
 
     # Demo mode button

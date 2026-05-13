@@ -358,3 +358,94 @@ function Start-UprGroupLoadDemo {
     Update-UprGroupFilter
     $Script:UPR_UI.GrpList.Visibility = 'Visible'
 }
+
+# ── Device Compliance demo loaders ────────────────────────────────────────────
+$Script:Demo_NonCompliantDevices = @(
+    [PSCustomObject]@{
+        id='d-lt-007'; deviceName='CTX-LT-007'; complianceState='noncompliant'
+        userDisplayName='Connor Burke'; userPrincipalName='connor.burke@contoso.sch.uk'
+        operatingSystem='Windows'; osVersion='10.0.19041.3996'; lastSyncDateTime='2026-03-30T08:30:00Z'
+    },
+    [PSCustomObject]@{
+        id='d-lt-010'; deviceName='CTX-LT-010'; complianceState='noncompliant'
+        userDisplayName='Maya Ramachandran'; userPrincipalName='maya.ramachandran@contoso.sch.uk'
+        operatingSystem='Windows'; osVersion='10.0.19045.2006'; lastSyncDateTime='2025-11-10T10:00:00Z'
+    },
+    [PSCustomObject]@{
+        id='d-cb-004'; deviceName='CTX-CB-004'; complianceState='noncompliant'
+        userDisplayName='Isabelle Martin'; userPrincipalName='isabelle.martin@contoso.sch.uk'
+        operatingSystem='Windows'; osVersion='10.0.22621.1'; lastSyncDateTime='2025-12-15T10:00:00Z'
+    },
+    [PSCustomObject]@{
+        id='d-sp-006'; deviceName='CTX-SP-006'; complianceState='inGracePeriod'
+        userDisplayName='Helen Marsh'; userPrincipalName='h.marsh@contoso.sch.uk'
+        operatingSystem='Windows'; osVersion='10.0.22621.3155'; lastSyncDateTime='2026-03-01T09:00:00Z'
+    }
+)
+
+$Script:Demo_ComplianceDetails = @{
+    'd-lt-007' = @(
+        [PSCustomObject]@{ PolicyName='Windows 10 Security Baseline'; Setting='BitLockerEnabled';          StateLabel='Non-compliant'; StateColor=$null; Detail='BitLocker is not enabled on the system drive.' },
+        [PSCustomObject]@{ PolicyName='Windows 10 Security Baseline'; Setting='OsMinimumVersion';          StateLabel='Non-compliant'; StateColor=$null; Detail='OS version 10.0.19041 is below the required minimum 10.0.22000.' },
+        [PSCustomObject]@{ PolicyName='Windows 10 Security Baseline'; Setting='AntivirusRequired';         StateLabel='Non-compliant'; StateColor=$null; Detail='No active antivirus product was detected.' }
+    )
+    'd-lt-010' = @(
+        [PSCustomObject]@{ PolicyName='Windows 10 Security Baseline'; Setting='AntivirusRequired';         StateLabel='Non-compliant'; StateColor=$null; Detail='No active antivirus product was detected.' },
+        [PSCustomObject]@{ PolicyName='Password Policy';              Setting='PasswordMinimumLength';      StateLabel='Non-compliant'; StateColor=$null; Detail='Password minimum length (4) is below required (8).' }
+    )
+    'd-cb-004' = @(
+        [PSCustomObject]@{ PolicyName='Firewall Compliance';          Setting='FirewallEnabled';            StateLabel='Non-compliant'; StateColor=$null; Detail='Windows Defender Firewall is not enabled for all network profiles.' }
+    )
+    'd-sp-006' = @(
+        [PSCustomObject]@{ PolicyName='Windows 10 Security Baseline'; Setting='OsMinimumVersion';          StateLabel='Non-compliant'; StateColor=$null; Detail='OS version 10.0.22621.3155 is below the required minimum 10.0.22621.3447.' }
+    )
+}
+
+function Start-DcDeviceLoadDemo {
+    $Script:DC_AllDevices = @($Script:Demo_NonCompliantDevices | Sort-Object { $_.deviceName })
+    Update-DcFilter
+    $Script:DC_UI.DevSearch.IsEnabled  = $true
+    $Script:DC_UI.DevList.IsEnabled    = $true
+    $Script:DC_UI.BtnRefresh.IsEnabled = $true
+    $n = $Script:DC_AllDevices.Count
+    Write-Log "Demo: DevCompliance loaded $n non-compliant devices" 'INFO'
+    Write-DcLog "Loaded $n non-compliant devices (demo — Contoso Academy)." '#22C55E'
+    Set-MainStatus "$n non-compliant device$(if ($n -ne 1) { 's' }) found." '#FBBF24'
+}
+
+function Start-DcDetailLoadDemo {
+    param([string]$DeviceId)
+
+    $Script:DC_UI.IssuesGrid.ItemsSource       = $null
+    $Script:DC_UI.IssuesPlaceholder.Text       = 'Loading compliance details...'
+    $Script:DC_UI.IssuesPlaceholder.Visibility = 'Visible'
+    $Script:DC_UI.IssuesGrid.Visibility        = 'Collapsed'
+
+    $rawRows = $Script:Demo_ComplianceDetails[$DeviceId]
+    if (-not $rawRows -or $rawRows.Count -eq 0) {
+        $Script:DC_UI.IssuesPlaceholder.Text = 'No compliance issues found for this device.'
+        Set-MainStatus 'No compliance issues found.' '#22C55E'
+        return
+    }
+
+    $redBrush = [System.Windows.Media.SolidColorBrush]::new(
+        [System.Windows.Media.Color]::FromRgb(0xEF, 0x44, 0x44))
+    $redBrush.Freeze()
+
+    $displayRows = foreach ($r in $rawRows) {
+        [PSCustomObject]@{
+            PolicyName = $r.PolicyName
+            Setting    = $r.Setting
+            StateLabel = $r.StateLabel
+            StateColor = $redBrush
+            Detail     = $r.Detail
+        }
+    }
+
+    $Script:DC_UI.IssuesGrid.ItemsSource       = [object[]]$displayRows
+    $Script:DC_UI.IssuesPlaceholder.Visibility = 'Collapsed'
+    $Script:DC_UI.IssuesGrid.Visibility        = 'Visible'
+    $n = $rawRows.Count
+    Write-DcLog "Loaded $n failing setting$(if ($n -ne 1) { 's' }) (demo)." '#22C55E'
+    Set-MainStatus "$n compliance issue$(if ($n -ne 1) { 's' }) found." '#FBBF24'
+}
