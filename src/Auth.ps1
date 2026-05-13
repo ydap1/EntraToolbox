@@ -24,25 +24,32 @@ function Write-Log {
 }
 
 function Get-ThemeHex([string]$Semantic) {
-    $t = $Script:Theme
     switch ($Semantic) {
-        'Text'      { $t.Text }
-        'TextDim'   { $t.TextDim }
-        'Muted'     { $t.Muted }
-        'Accent'    { $t.Accent }
-        'Success'   { $t.Success }
-        'Danger'    { $t.Danger }
-        'Warning'   { $t.Warning }
-        'Border'    { $t.Border }
-        'Card'      { $t.Card }
-        'Surface'   { $t.Surface }
-        'Bg'        { $t.Bg }
-        'SuccessBg' { $t.SuccessBg }
-        'DangerBg'  { $t.DangerBg }
-        'WarnText'  { $t.WarnText }
+        'Text'      { '#E2E2F0' }
+        'TextDim'   { '#7878A0' }
+        'Muted'     { '#50507A' }
+        'Accent'    { '#6366F1' }
+        'Success'   { '#22C55E' }
+        'Danger'    { '#EF4444' }
+        'Warning'   { '#FBBF24' }
+        'Border'    { '#3C3C5A' }
+        'Card'      { '#242436' }
+        'Surface'   { '#1C1C2A' }
+        'Bg'        { '#12121C' }
+        'Hover'     { '#1E1E38' }
+        'Selected'  { '#2A2A50' }
+        'GridLine'  { '#1E1E32' }
+        'AltRow'    { '#181826' }
+        'SubHeader' { '#1A1A2C' }
+        'SuccessBg' { '#0D2B1A' }
+        'DangerBg'  { '#2B0D0D' }
+        'WarnText'  { '#CC6666' }
         default     { $Semantic }
     }
 }
+
+function Invoke-ThemeXaml([string]$Xaml) { $Xaml }
+
 
 # ── Shared state ───────────────────────────────────────────────────────────────
 $Script:AccessToken       = $null
