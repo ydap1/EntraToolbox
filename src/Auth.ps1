@@ -194,11 +194,11 @@ public static class EntraToolboxCache {
 
             $token = $null
             try {
-                $token = Get-MsalToken -ClientApplication $app -Scopes $Scopes `
+                $token = Get-MsalToken -PublicClientApplication $app -Scopes $Scopes `
                                        -Silent -ErrorAction Stop
             } catch { $token = $null }
             if (-not $token) {
-                $token = Get-MsalToken -ClientApplication $app -Scopes $Scopes -Interactive
+                $token = Get-MsalToken -PublicClientApplication $app -Scopes $Scopes -Interactive
             }
             if ($token -and $token.AccessToken) {
                 $AuthRef['Token'] = $token.AccessToken
