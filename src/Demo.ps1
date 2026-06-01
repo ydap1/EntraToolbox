@@ -124,15 +124,15 @@ $Script:Demo_Devices = @(
 
 # ── Fake groups ────────────────────────────────────────────────────────────────
 $Script:Demo_Groups = @(
-    [PSCustomObject]@{ displayName='All Students';      '@odata.type'='#microsoft.graph.group' },
-    [PSCustomObject]@{ displayName='All Staff';         '@odata.type'='#microsoft.graph.group' },
-    [PSCustomObject]@{ displayName='Year 10';           '@odata.type'='#microsoft.graph.group' },
-    [PSCustomObject]@{ displayName='Year 11';           '@odata.type'='#microsoft.graph.group' },
-    [PSCustomObject]@{ displayName='Year 12';           '@odata.type'='#microsoft.graph.group' },
-    [PSCustomObject]@{ displayName='Office 365 A3';     '@odata.type'='#microsoft.graph.group' },
-    [PSCustomObject]@{ displayName='MFA Enabled';       '@odata.type'='#microsoft.graph.group' },
-    [PSCustomObject]@{ displayName='Intune Users';      '@odata.type'='#microsoft.graph.group' },
-    [PSCustomObject]@{ displayName='Global Users';      '@odata.type'='#microsoft.graph.directoryRole' }
+    [PSCustomObject]@{ id='g-all-students'; displayName='All Students';      '@odata.type'='#microsoft.graph.group' },
+    [PSCustomObject]@{ id='g-all-staff';    displayName='All Staff';         '@odata.type'='#microsoft.graph.group' },
+    [PSCustomObject]@{ id='g-year-10';      displayName='Year 10';           '@odata.type'='#microsoft.graph.group' },
+    [PSCustomObject]@{ id='g-year-11';      displayName='Year 11';           '@odata.type'='#microsoft.graph.group' },
+    [PSCustomObject]@{ id='g-year-12';      displayName='Year 12';           '@odata.type'='#microsoft.graph.group' },
+    [PSCustomObject]@{ id='g-o365-a3';      displayName='Office 365 A3';     '@odata.type'='#microsoft.graph.group' },
+    [PSCustomObject]@{ id='g-mfa';          displayName='MFA Enabled';       '@odata.type'='#microsoft.graph.group' },
+    [PSCustomObject]@{ id='g-intune';       displayName='Intune Users';      '@odata.type'='#microsoft.graph.group' },
+    [PSCustomObject]@{ id='g-global';       displayName='Global Users';      '@odata.type'='#microsoft.graph.directoryRole' }
 )
 
 # ── Sign-in log generator ──────────────────────────────────────────────────────
@@ -357,4 +357,82 @@ function Start-UprGroupLoadDemo {
     $Script:UPR_UI.GrpSearch.Visibility      = 'Visible'
     Update-UprGroupFilter
     $Script:UPR_UI.GrpList.Visibility = 'Visible'
+}
+
+# ── Group Copy demo loaders ────────────────────────────────────────────────────
+function Start-GcUserLoadDemo {
+    $Script:GC_AllUsers = @($Script:Demo_Users | Sort-Object { $_.displayName })
+    Update-GcSrcFilter
+    Update-GcTgtFilter
+    $Script:GC_UI.SrcSearch.IsEnabled = $true
+    $Script:GC_UI.SrcList.IsEnabled   = $true
+    $Script:GC_UI.TgtSearch.IsEnabled = $true
+    $Script:GC_UI.TgtList.IsEnabled   = $true
+    $n = $Script:GC_AllUsers.Count
+    Write-Log "Demo: GC loaded $n users" 'INFO'
+    Write-GcLog "Loaded $n users (demo — Contoso Academy)." 'Success'
+    Set-MainStatus "Demo — $n users loaded." 'Success'
+}
+
+function Start-GcSourceGroupLoadDemo {
+    param([string]$UserId)
+
+    $Script:GC_SourceGroups = @()
+    $Script:GC_UI.GrpList.Items.Clear()
+    $Script:GC_UI.GrpList.Visibility        = 'Collapsed'
+    $Script:GC_UI.GrpPlaceholder.Visibility = 'Visible'
+
+    $groups = @(Get-DemoGroupsForUser -UserId $UserId |
+        Where-Object { $_.'@odata.type' -eq '#microsoft.graph.group' } |
+        Sort-Object { $_.displayName })
+    $Script:GC_SourceGroups = $groups
+    $n = $groups.Count
+
+    if ($n -eq 0) {
+        $Script:GC_UI.GrpHeader.Text      = 'Source user has no group memberships'
+        $Script:GC_UI.GrpPlaceholder.Text = 'No groups to copy.'
+        return
+    }
+
+    $Script:GC_UI.GrpHeader.Text            = "$n group$(if ($n -ne 1) { 's' }) on source user"
+    $Script:GC_UI.GrpPlaceholder.Visibility = 'Collapsed'
+    foreach ($g in $groups) {
+        $lbi         = [System.Windows.Controls.ListBoxItem]::new()
+        $lbi.Content = $g.displayName
+        $lbi.Tag     = $g
+        [void]$Script:GC_UI.GrpList.Items.Add($lbi)
+    }
+    $Script:GC_UI.GrpList.Visibility = 'Visible'
+    Update-GcCopyButton
+}
+
+function Start-GcCopyDemo {
+    $srcUser   = $Script:GC_SourceUser
+    $tgtUser   = $Script:GC_TargetUser
+    $srcGroups = $Script:GC_SourceGroups
+
+    $Script:GC_UI.BtnCopy.IsEnabled = $false
+    Write-GcLog "Starting (demo): '$($srcUser.displayName)' -> '$($tgtUser.displayName)'" 'TextDim'
+
+    $tgtGroups   = @(Get-DemoGroupsForUser -UserId $tgtUser.id |
+        Where-Object { $_.'@odata.type' -eq '#microsoft.graph.group' })
+    $tgtGroupIds = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($g in $tgtGroups) { [void]$tgtGroupIds.Add($g.id) }
+
+    $added   = [System.Collections.Generic.List[string]]::new()
+    $skipped = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($g in $srcGroups) {
+        if ($tgtGroupIds.Contains($g.id)) { $skipped.Add($g.displayName) }
+        else                              { $added.Add($g.displayName)   }
+    }
+
+    foreach ($g in $added)   { Write-GcLog "Added:   $g" 'Success' }
+    foreach ($g in $skipped) { Write-GcLog "Skipped: $g (already a member)" 'TextDim' }
+
+    $summary = "Done (demo) — added: $($added.Count)  skipped: $($skipped.Count)  failed: 0"
+    Write-GcLog $summary 'Text'
+    Set-MainStatus $summary 'Success'
+    Write-Log "GC demo: $summary" 'INFO'
+    Update-GcCopyButton
 }
