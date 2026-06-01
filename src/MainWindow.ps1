@@ -224,6 +224,9 @@ $Script:MainXaml = @'
         <Button x:Name="BtnRemoveTenant" Content="-" Style="{StaticResource FlatBtn}"
                 Background="#3C3C5A" Padding="10,6" Margin="4,0,0,0"
                 FontSize="16" ToolTip="Remove selected tenant" Width="34" IsEnabled="False"/>
+        <Button x:Name="BtnDisconnect" Content="Disconnect" Style="{StaticResource FlatBtn}"
+                Background="#EF4444" Padding="10,6" Margin="12,0,0,0"
+                ToolTip="Sign out and clear saved credentials for this tenant" IsEnabled="False"/>
         <Button x:Name="BtnDemo" Content="Demo" Style="{StaticResource FlatBtn}"
                 Background="#7C3AED" Padding="10,6" Margin="12,0,0,0"
                 ToolTip="Run in demo mode with fake Contoso Academy data"/>
@@ -467,6 +470,7 @@ function Invoke-PostConnect {
         }
     } catch {}
 
+    $Script:MainUI.BtnDisconnect.IsEnabled = $true
     # Fire all connect callbacks (each tool loads its data)
     foreach ($cb in $Script:ConnectCallbacks) { & $cb }
     Set-MainStatus 'Connected.' 'Success'
@@ -474,9 +478,10 @@ function Invoke-PostConnect {
 
 function Invoke-ResetTools {
     foreach ($cb in $Script:ResetCallbacks) { & $cb }
-    $Script:MainUI.TenantBadge.Visibility = 'Collapsed'
-    $Script:MainUI.TenantName.Text        = ''
-    $Script:AccessToken                   = $null
+    $Script:MainUI.TenantBadge.Visibility  = 'Collapsed'
+    $Script:MainUI.TenantName.Text         = ''
+    $Script:AccessToken                    = $null
+    $Script:MainUI.BtnDisconnect.IsEnabled = $false
 }
 
 # ── Show-MainWindow ────────────────────────────────────────────────────────────
@@ -497,6 +502,7 @@ function Show-MainWindow {
         TenantCombo      = $window.FindName('TenantCombo')
         BtnAddTenant     = $window.FindName('BtnAddTenant')
         BtnRemove        = $window.FindName('BtnRemoveTenant')
+        BtnDisconnect    = $window.FindName('BtnDisconnect')
         TenantBadge      = $window.FindName('TenantBadge')
         TenantName       = $window.FindName('LblTenantName')
         Tabs             = $window.FindName('MainTabs')
@@ -558,12 +564,28 @@ function Show-MainWindow {
                 "Remove tenant '$($sel.Content)'?",
                 'Remove Tenant', 'YesNo', 'Question')
             if ($confirm -ne 'Yes') { return }
+            Disconnect-Tenant -TenantId $tid
             Remove-SavedTenant -TenantId $tid
             Invoke-ResetTools
             Update-TenantCombo
             Set-MainStatus 'Tenant removed.' 'TextDim'
         } catch {
             Write-Log "BtnRemove click error: $_" 'ERROR'
+        }
+    })
+
+    # Disconnect (sign out + clear cached credentials)
+    $Script:MainUI.BtnDisconnect.Add_Click({
+        try {
+            $sel = $Script:MainUI.TenantCombo.SelectedItem
+            if (-not $sel) { return }
+            $tid = $sel.Tag.TenantId
+            Write-Log "BtnDisconnect: signing out of tenant $tid" 'INFO'
+            Disconnect-Tenant -TenantId $tid
+            Invoke-ResetTools
+            Set-MainStatus 'Signed out. Select tenant to reconnect.' 'TextDim'
+        } catch {
+            Write-Log "BtnDisconnect click error: $_" 'ERROR'
         }
     })
 
@@ -602,7 +624,7 @@ function Show-MainWindow {
         }
     })
 
-    # On load: populate tenant combo
+    # On load: populate tenant combo and auto-connect if credentials are cached
     $window.Add_Loaded({
         try {
             Write-Log 'Window loaded - populating tenant combo' 'INFO'
@@ -613,7 +635,9 @@ function Show-MainWindow {
                 Set-MainStatus 'No tenants saved. Click + to add one.' 'TextDim'
                 Show-AddTenantDialog
             } else {
-                Set-MainStatus 'Select a tenant to begin.' 'TextDim'
+                # Auto-select first tenant — SelectionChanged fires and attempts silent auth.
+                # If credentials are cached the user sees no browser popup.
+                $Script:MainUI.TenantCombo.SelectedIndex = 0
             }
         } catch {
             Write-Log "Window Loaded handler error: $_" 'ERROR'

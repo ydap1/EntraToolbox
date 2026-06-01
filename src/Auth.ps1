@@ -108,9 +108,47 @@ function Remove-SavedTenant {
     ConvertTo-Json @($remaining) -Depth 3 | Set-Content -Path (Get-TenantsConfigPath) -Encoding UTF8
 }
 
+function Get-TenantCacheFile {
+    param([string]$TenantId)
+    $cacheDir = Join-Path $Global:AppRoot 'config\msal_cache'
+    if (-not (Test-Path $cacheDir)) { New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null }
+    Join-Path $cacheDir "token_cache_$($TenantId -replace '[^a-zA-Z0-9]','').bin"
+}
+
+function Get-TenantAccountHint {
+    param([string]$TenantId)
+    $t = @(Get-SavedTenants) | Where-Object { $_.TenantId -eq $TenantId } | Select-Object -First 1
+    if ($t -and $t.AccountHint) { return $t.AccountHint }
+    return $null
+}
+
+function Set-TenantAccountHint {
+    param([string]$TenantId, [string]$AccountHint)
+    $all = @(Get-SavedTenants)
+    foreach ($t in $all) {
+        if ($t.TenantId -eq $TenantId) {
+            $t | Add-Member -NotePropertyName 'AccountHint' -NotePropertyValue $AccountHint -Force
+        }
+    }
+    ConvertTo-Json @($all) -Depth 3 | Set-Content -Path (Get-TenantsConfigPath) -Encoding UTF8
+}
+
+function Disconnect-Tenant {
+    param([Parameter(Mandatory)][string]$TenantId)
+    $Script:AccessToken     = $null
+    $Script:CurrentTenantId = $null
+    $cacheFile = Get-TenantCacheFile -TenantId $TenantId
+    if (Test-Path $cacheFile) { Remove-Item $cacheFile -Force -ErrorAction SilentlyContinue }
+    Set-TenantAccountHint -TenantId $TenantId -AccountHint ''
+    Write-Log "Tenant $TenantId disconnected and credentials cleared" 'INFO'
+}
+
 # ── Async auth ─────────────────────────────────────────────────────────────────
 # Get-MsalToken -Interactive MUST NOT run on the WPF UI thread (deadlock).
 # Run it in a background runspace and poll with a DispatcherTimer.
+# On first connect the user authenticates interactively; the account UPN and a
+# DPAPI-encrypted MSAL cache are saved so every subsequent launch authenticates
+# silently (no browser popup) until Disconnect-Tenant is called.
 function Start-TenantConnectAsync {
     param(
         [Parameter(Mandatory)][string]$TenantId,
@@ -119,24 +157,31 @@ function Start-TenantConnectAsync {
     )
 
     Write-Log "Auth: starting token acquisition for tenant $TenantId" 'DEBUG'
-    $Script:AuthRef     = [hashtable]::Synchronized(@{ Done = $false; Token = $null; Error = $null })
+    $cacheFile   = Get-TenantCacheFile  -TenantId $TenantId
+    $accountHint = Get-TenantAccountHint -TenantId $TenantId
+    if ($accountHint) { Write-Log "Auth: using saved account hint $accountHint" 'DEBUG' }
+
+    $Script:AuthRef = [hashtable]::Synchronized(@{
+        Done       = $false
+        Token      = $null
+        Error      = $null
+        TenantId   = $TenantId
+        AccountUPN = $null
+    })
     $Script:AuthSuccess = $OnSuccess
     $Script:AuthFailure = $OnFailure
 
     $clientId = $Script:GraphClientId
     $scopes   = $Script:GraphScopes
 
-    # Persistent token cache — DPAPI-encrypted MSAL V3 format, stored per-app
-    $cacheDir = Join-Path $Global:AppRoot 'config\msal_cache'
-    if (-not (Test-Path $cacheDir)) { New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null }
-
     $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
     $rs.Open()
-    $rs.SessionStateProxy.SetVariable('AuthRef',  $Script:AuthRef)
-    $rs.SessionStateProxy.SetVariable('TenantId', $TenantId)
-    $rs.SessionStateProxy.SetVariable('ClientId', $clientId)
-    $rs.SessionStateProxy.SetVariable('Scopes',   $scopes)
-    $rs.SessionStateProxy.SetVariable('CacheDir', $cacheDir)
+    $rs.SessionStateProxy.SetVariable('AuthRef',     $Script:AuthRef)
+    $rs.SessionStateProxy.SetVariable('TenantId',    $TenantId)
+    $rs.SessionStateProxy.SetVariable('ClientId',    $clientId)
+    $rs.SessionStateProxy.SetVariable('Scopes',      $scopes)
+    $rs.SessionStateProxy.SetVariable('CacheFile',   $cacheFile)
+    $rs.SessionStateProxy.SetVariable('AccountHint', $accountHint)
 
     $ps = [System.Management.Automation.PowerShell]::Create()
     $ps.Runspace = $rs
@@ -144,7 +189,6 @@ function Start-TenantConnectAsync {
         try {
             Import-Module MSAL.PS -ErrorAction Stop
 
-            $cacheFile = Join-Path $CacheDir 'token_cache.bin'
             $app = New-MsalClientApplication -ClientId $ClientId -TenantId $TenantId
 
             # MSAL.PS polls Get-MsalToken via Start-Sleep — MSAL executes on a thread pool
@@ -158,7 +202,6 @@ function Start-TenantConnectAsync {
                 $refs = [System.Collections.Generic.List[string]]::new()
                 $refs.Add($msalDll)
 
-                # ProtectedData (DPAPI) is available on Windows PS7 — include if possible
                 $withDpapi = $false
                 try {
                     $pdDll = [System.Security.Cryptography.ProtectedData].Assembly.Location
@@ -189,19 +232,25 @@ public static class EntraToolboxCache {
                 if (-not $typeKnown) {
                     Add-Type -TypeDefinition $src -ReferencedAssemblies $refs.ToArray() -ErrorAction Stop
                 }
-                [EntraToolboxCache]::Enable($app.UserTokenCache, $cacheFile)
+                [EntraToolboxCache]::Enable($app.UserTokenCache, $CacheFile)
             } catch { }
 
             $token = $null
             try {
-                $token = Get-MsalToken -PublicClientApplication $app -Scopes $Scopes `
-                                       -Silent -ErrorAction Stop
+                if ($AccountHint) {
+                    $token = Get-MsalToken -PublicClientApplication $app -Scopes $Scopes `
+                                           -Silent -LoginHint $AccountHint -ErrorAction Stop
+                } else {
+                    $token = Get-MsalToken -PublicClientApplication $app -Scopes $Scopes `
+                                           -Silent -ErrorAction Stop
+                }
             } catch { $token = $null }
             if (-not $token) {
                 $token = Get-MsalToken -PublicClientApplication $app -Scopes $Scopes -Interactive
             }
             if ($token -and $token.AccessToken) {
-                $AuthRef['Token'] = $token.AccessToken
+                $AuthRef['Token']      = $token.AccessToken
+                $AuthRef['AccountUPN'] = $token.Account.Username
             } else {
                 $AuthRef['Error'] = 'Token acquisition returned null.'
             }
@@ -226,7 +275,13 @@ public static class EntraToolboxCache {
                 return
             }
             Write-Log 'Auth succeeded - token acquired' 'INFO'
-            $Script:AccessToken = $Script:AuthRef['Token']
+            $Script:AccessToken     = $Script:AuthRef['Token']
+            $Script:CurrentTenantId = $Script:AuthRef['TenantId']
+            if ($Script:AuthRef['AccountUPN']) {
+                Set-TenantAccountHint -TenantId $Script:AuthRef['TenantId'] `
+                                      -AccountHint $Script:AuthRef['AccountUPN']
+                Write-Log "Auth: account hint saved ($($Script:AuthRef['AccountUPN']))" 'DEBUG'
+            }
             & $Script:AuthSuccess
         } catch {
             Write-Log "Auth timer tick error: $_" 'ERROR'
