@@ -126,7 +126,7 @@ function Start-TenantConnectAsync {
     $clientId = $Script:GraphClientId
     $scopes   = $Script:GraphScopes
 
-    # Persistent token cache — stores refresh tokens across sessions (DPAPI-encrypted on Windows)
+    # Persistent token cache — DPAPI-encrypted MSAL V3 format, stored per-app
     $cacheDir = Join-Path $Global:AppRoot 'config\msal_cache'
     if (-not (Test-Path $cacheDir)) { New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null }
 
@@ -144,8 +144,53 @@ function Start-TenantConnectAsync {
         try {
             Import-Module MSAL.PS -ErrorAction Stop
 
-            $app  = New-MsalClientApplication -ClientId $ClientId -TenantId $TenantId
-            $null = Enable-MsalTokenCacheOnDisk -PublicClientApplication $app -CacheDirectory $CacheDir
+            $cacheFile = Join-Path $CacheDir 'token_cache.bin'
+            $app = New-MsalClientApplication -ClientId $ClientId -TenantId $TenantId
+
+            # MSAL.PS polls Get-MsalToken via Start-Sleep — MSAL executes on a thread pool
+            # thread that has no PS runspace. Scriptblock delegates fail there, so we compile
+            # a native C# class to handle cache I/O entirely in .NET.
+            try {
+                $msalDll = ([System.AppDomain]::CurrentDomain.GetAssemblies() |
+                    Where-Object { $_.GetName().Name -eq 'Microsoft.Identity.Client' } |
+                    Select-Object -First 1).Location
+
+                $refs = [System.Collections.Generic.List[string]]::new()
+                $refs.Add($msalDll)
+
+                # ProtectedData (DPAPI) is available on Windows PS7 — include if possible
+                $withDpapi = $false
+                try {
+                    $pdDll = [System.Security.Cryptography.ProtectedData].Assembly.Location
+                    if ($pdDll) { $refs.Add($pdDll); $withDpapi = $true }
+                } catch { }
+
+                $src = if ($withDpapi) { @'
+using System; using System.IO; using System.Security.Cryptography; using Microsoft.Identity.Client;
+public static class EntraToolboxCache {
+    private static string F; private static readonly object L = new object();
+    public static void Enable(ITokenCache c, string path) { F=path; c.SetBeforeAccess(B); c.SetAfterAccess(A); }
+    private static void B(TokenCacheNotificationArgs n) { lock(L){ if(!File.Exists(F))return; try{ byte[]d=File.ReadAllBytes(F); try{d=ProtectedData.Unprotect(d,null,DataProtectionScope.CurrentUser);}catch{} n.TokenCache.DeserializeMsalV3(d); }catch{} } }
+    private static void A(TokenCacheNotificationArgs n) { if(!n.HasStateChanged)return; lock(L){ try{ byte[]d=n.TokenCache.SerializeMsalV3(); try{d=ProtectedData.Protect(d,null,DataProtectionScope.CurrentUser);}catch{} string dir=Path.GetDirectoryName(F); if(!Directory.Exists(dir))Directory.CreateDirectory(dir); File.WriteAllBytes(F,d); }catch{} } }
+}
+'@ } else { @'
+using System; using System.IO; using Microsoft.Identity.Client;
+public static class EntraToolboxCache {
+    private static string F; private static readonly object L = new object();
+    public static void Enable(ITokenCache c, string path) { F=path; c.SetBeforeAccess(B); c.SetAfterAccess(A); }
+    private static void B(TokenCacheNotificationArgs n) { lock(L){ if(!File.Exists(F))return; try{n.TokenCache.DeserializeMsalV3(File.ReadAllBytes(F));}catch{} } }
+    private static void A(TokenCacheNotificationArgs n) { if(!n.HasStateChanged)return; lock(L){ try{ string dir=Path.GetDirectoryName(F); if(!Directory.Exists(dir))Directory.CreateDirectory(dir); File.WriteAllBytes(F,n.TokenCache.SerializeMsalV3()); }catch{} } }
+}
+'@ }
+
+                # Only compile once per AppDomain (multiple auth calls share the process)
+                $typeKnown = $false
+                try { $typeKnown = $null -ne [EntraToolboxCache] } catch { }
+                if (-not $typeKnown) {
+                    Add-Type -TypeDefinition $src -ReferencedAssemblies $refs.ToArray() -ErrorAction Stop
+                }
+                [EntraToolboxCache]::Enable($app.UserTokenCache, $cacheFile)
+            } catch { }
 
             $token = $null
             try {
