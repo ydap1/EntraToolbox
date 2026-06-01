@@ -118,7 +118,7 @@ function Start-TenantConnectAsync {
         [Parameter(Mandatory)][scriptblock]$OnFailure
     )
 
-    Write-Log "Auth: starting interactive token acquisition for tenant $TenantId" 'DEBUG'
+    Write-Log "Auth: starting token acquisition for tenant $TenantId" 'DEBUG'
     $Script:AuthRef     = [hashtable]::Synchronized(@{ Done = $false; Token = $null; Error = $null })
     $Script:AuthSuccess = $OnSuccess
     $Script:AuthFailure = $OnFailure
@@ -126,26 +126,34 @@ function Start-TenantConnectAsync {
     $clientId = $Script:GraphClientId
     $scopes   = $Script:GraphScopes
 
+    # Persistent token cache — stores refresh tokens across sessions (DPAPI-encrypted on Windows)
+    $cacheDir = Join-Path $Global:AppRoot 'config\msal_cache'
+    if (-not (Test-Path $cacheDir)) { New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null }
+
     $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
     $rs.Open()
     $rs.SessionStateProxy.SetVariable('AuthRef',  $Script:AuthRef)
     $rs.SessionStateProxy.SetVariable('TenantId', $TenantId)
     $rs.SessionStateProxy.SetVariable('ClientId', $clientId)
     $rs.SessionStateProxy.SetVariable('Scopes',   $scopes)
+    $rs.SessionStateProxy.SetVariable('CacheDir', $cacheDir)
 
     $ps = [System.Management.Automation.PowerShell]::Create()
     $ps.Runspace = $rs
     [void]$ps.AddScript({
         try {
             Import-Module MSAL.PS -ErrorAction Stop
+
+            $app  = New-MsalClientApplication -ClientId $ClientId -TenantId $TenantId
+            $null = Enable-MsalTokenCacheOnDisk -PublicClientApplication $app -CacheDirectory $CacheDir
+
             $token = $null
             try {
-                $token = Get-MsalToken -ClientId $ClientId -TenantId $TenantId `
-                                       -Scopes $Scopes -Silent -ErrorAction SilentlyContinue
+                $token = Get-MsalToken -ClientApplication $app -Scopes $Scopes `
+                                       -Silent -ErrorAction Stop
             } catch { $token = $null }
             if (-not $token) {
-                $token = Get-MsalToken -ClientId $ClientId -TenantId $TenantId `
-                                       -Scopes $Scopes -Interactive
+                $token = Get-MsalToken -ClientApplication $app -Scopes $Scopes -Interactive
             }
             if ($token -and $token.AccessToken) {
                 $AuthRef['Token'] = $token.AccessToken
