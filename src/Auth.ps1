@@ -63,7 +63,7 @@ $Script:GraphScopes = @(
     'https://graph.microsoft.com/User.ReadWrite.All',
     'https://graph.microsoft.com/DeviceManagementManagedDevices.Read.All',
     'https://graph.microsoft.com/AuditLog.Read.All',
-    'https://graph.microsoft.com/GroupMember.Read.All'
+    'https://graph.microsoft.com/GroupMember.ReadWrite.All'
 )
 
 # Per-tool callbacks fired after a new tenant connects (token ready) or before reset (token null)
