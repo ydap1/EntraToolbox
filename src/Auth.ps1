@@ -209,20 +209,22 @@ function Start-TenantConnectAsync {
                 } catch { }
 
                 $src = if ($withDpapi) { @'
-using System; using System.IO; using System.Security.Cryptography; using Microsoft.Identity.Client;
+using System; using System.IO; using System.Security.Cryptography; using System.Collections.Generic; using Microsoft.Identity.Client;
 public static class EntraToolboxCache {
-    private static string F; private static readonly object L = new object();
-    public static void Enable(ITokenCache c, string path) { F=path; c.SetBeforeAccess(B); c.SetAfterAccess(A); }
-    private static void B(TokenCacheNotificationArgs n) { lock(L){ if(!File.Exists(F))return; try{ byte[]d=File.ReadAllBytes(F); try{d=ProtectedData.Unprotect(d,null,DataProtectionScope.CurrentUser);}catch{} n.TokenCache.DeserializeMsalV3(d); }catch{} } }
-    private static void A(TokenCacheNotificationArgs n) { if(!n.HasStateChanged)return; lock(L){ try{ byte[]d=n.TokenCache.SerializeMsalV3(); try{d=ProtectedData.Protect(d,null,DataProtectionScope.CurrentUser);}catch{} string dir=Path.GetDirectoryName(F); if(!Directory.Exists(dir))Directory.CreateDirectory(dir); File.WriteAllBytes(F,d); }catch{} } }
+    private static readonly Dictionary<object,string> _map = new Dictionary<object,string>();
+    private static readonly object L = new object();
+    public static void Enable(ITokenCache c, string path) { lock(L){_map[c]=path;} c.SetBeforeAccess(B); c.SetAfterAccess(A); }
+    private static void B(TokenCacheNotificationArgs n) { lock(L){ string f; if(!_map.TryGetValue(n.TokenCache,out f)||!File.Exists(f))return; try{ byte[]d=File.ReadAllBytes(f); try{d=ProtectedData.Unprotect(d,null,DataProtectionScope.CurrentUser);}catch{} n.TokenCache.DeserializeMsalV3(d); }catch{} } }
+    private static void A(TokenCacheNotificationArgs n) { if(!n.HasStateChanged)return; lock(L){ string f; if(!_map.TryGetValue(n.TokenCache,out f))return; try{ byte[]d=n.TokenCache.SerializeMsalV3(); try{d=ProtectedData.Protect(d,null,DataProtectionScope.CurrentUser);}catch{} string dir=Path.GetDirectoryName(f); if(!Directory.Exists(dir))Directory.CreateDirectory(dir); File.WriteAllBytes(f,d); }catch{} } }
 }
 '@ } else { @'
-using System; using System.IO; using Microsoft.Identity.Client;
+using System; using System.IO; using System.Collections.Generic; using Microsoft.Identity.Client;
 public static class EntraToolboxCache {
-    private static string F; private static readonly object L = new object();
-    public static void Enable(ITokenCache c, string path) { F=path; c.SetBeforeAccess(B); c.SetAfterAccess(A); }
-    private static void B(TokenCacheNotificationArgs n) { lock(L){ if(!File.Exists(F))return; try{n.TokenCache.DeserializeMsalV3(File.ReadAllBytes(F));}catch{} } }
-    private static void A(TokenCacheNotificationArgs n) { if(!n.HasStateChanged)return; lock(L){ try{ string dir=Path.GetDirectoryName(F); if(!Directory.Exists(dir))Directory.CreateDirectory(dir); File.WriteAllBytes(F,n.TokenCache.SerializeMsalV3()); }catch{} } }
+    private static readonly Dictionary<object,string> _map = new Dictionary<object,string>();
+    private static readonly object L = new object();
+    public static void Enable(ITokenCache c, string path) { lock(L){_map[c]=path;} c.SetBeforeAccess(B); c.SetAfterAccess(A); }
+    private static void B(TokenCacheNotificationArgs n) { lock(L){ string f; if(!_map.TryGetValue(n.TokenCache,out f)||!File.Exists(f))return; try{n.TokenCache.DeserializeMsalV3(File.ReadAllBytes(f));}catch{} } }
+    private static void A(TokenCacheNotificationArgs n) { if(!n.HasStateChanged)return; lock(L){ string f; if(!_map.TryGetValue(n.TokenCache,out f))return; try{ string dir=Path.GetDirectoryName(f); if(!Directory.Exists(dir))Directory.CreateDirectory(dir); File.WriteAllBytes(f,n.TokenCache.SerializeMsalV3()); }catch{} } }
 }
 '@ }
 
