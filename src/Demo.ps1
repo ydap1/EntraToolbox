@@ -464,3 +464,52 @@ function Start-TpUserLoadDemo {
     Write-TpLog "Loaded $n users (demo — Contoso Academy)." 'Success'
     Set-MainStatus "Demo — $n users loaded." 'Success'
 }
+
+function Start-TpCreateDemo {
+    $Script:TP_Creating                    = $true
+    $Script:TP_UI.BtnCreate.IsEnabled      = $false
+    $Script:TP_UI.BtnLoad.IsEnabled        = $false
+    $Script:TP_UI.BtnSelectAll.IsEnabled   = $false
+    $Script:TP_UI.BtnSelectNone.IsEnabled  = $false
+    $Script:TP_UI.PnlStats.Visibility      = 'Collapsed'
+
+    $teamName   = $Script:TP_UI.TeamName.Text.Trim()
+    $isClass    = $Script:TP_UI.RbClass.IsChecked
+    $type       = if ($isClass) { 'Class' } else { 'Standard' }
+    $memberSnap = @($Script:TP_Rows | ForEach-Object {
+        @{ DisplayName = $_.DisplayName; IsOwner = [bool]$_.IsOwner }
+    })
+
+    Write-TpLog "Creating $type team: '$teamName' (demo)" 'TextDim'
+    Set-MainStatus "Creating team '$teamName' (demo)..." 'TextDim'
+
+    $demoTimer          = [System.Windows.Threading.DispatcherTimer]::new()
+    $demoTimer.Interval = [TimeSpan]::FromSeconds(3)
+    $demoTimer.Add_Tick({
+        try {
+            $demoTimer.Stop()
+            $fakeId = Get-Random -Maximum 99999
+            Write-TpLog "Team '$teamName' created (demo). ID: demo-team-$fakeId" 'TextDim'
+            foreach ($m in $memberSnap) {
+                $role = if ($m.IsOwner) { 'Owner' } else { 'Member' }
+                Write-TpLog "Added: $($m.DisplayName)  [$role]" 'Success'
+            }
+            $ok = $memberSnap.Count
+            Write-TpLog "Done (demo) — $ok members added, 0 failed." 'Success'
+            Set-MainStatus "Team created (demo): $ok members added." 'Success'
+
+            $Script:TP_Creating                        = $false
+            $Script:TP_UI.LblTeamStatus.Text           = 'Team   Created'
+            $Script:TP_UI.LblTeamStatus.Foreground     = (Get-ThemeHex 'Success')
+            $Script:TP_UI.LblAdded.Text                = "Added  $ok"
+            $Script:TP_UI.LblFailed.Text               = 'Failed 0'
+            $Script:TP_UI.LblFailed.Foreground         = (Get-ThemeHex 'TextDim')
+            $Script:TP_UI.PnlStats.Visibility          = 'Visible'
+            $Script:TP_UI.BtnLoad.IsEnabled            = $true
+            $Script:TP_UI.BtnSelectAll.IsEnabled       = $true
+            $Script:TP_UI.BtnSelectNone.IsEnabled      = $true
+            Update-TpCreateButton
+        } catch { Write-Log "TP demo timer error: $_" 'ERROR' }
+    })
+    $demoTimer.Start()
+}

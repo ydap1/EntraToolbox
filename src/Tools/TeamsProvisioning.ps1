@@ -514,8 +514,169 @@ function Start-TpUserLoad {
 }
 
 function Start-TpCreateTeam {
-    # Implemented in Task 5
-    Write-TpLog 'Team creation not yet implemented.' 'TextDim'
+    if ($Script:DemoMode) { Start-TpCreateDemo; return }
+
+    # Commit any pending DataGrid edit (e.g. Owner checkbox still active)
+    $Script:TP_UI.Grid.CommitEdit([System.Windows.Controls.DataGridEditingUnit]::Row, $true) | Out-Null
+
+    $teamName   = $Script:TP_UI.TeamName.Text.Trim()
+    $isClass    = $Script:TP_UI.RbClass.IsChecked
+    $template   = if ($isClass) { 'educationClass' } else { 'standard' }
+    $adminUpn   = Get-TenantAccountHint -TenantId $Script:CurrentTenantId
+    $memberSnap = @($Script:TP_Rows | ForEach-Object {
+        @{ Id = $_.Id; UPN = $_.UPN; DisplayName = $_.DisplayName; IsOwner = [bool]$_.IsOwner }
+    })
+
+    $Script:TP_Creating                    = $true
+    $Script:TP_UI.BtnCreate.IsEnabled      = $false
+    $Script:TP_UI.BtnLoad.IsEnabled        = $false
+    $Script:TP_UI.BtnSelectAll.IsEnabled   = $false
+    $Script:TP_UI.BtnSelectNone.IsEnabled  = $false
+    $Script:TP_UI.PnlStats.Visibility      = 'Collapsed'
+    Set-MainStatus "Creating team '$teamName'..." 'TextDim'
+    Write-TpLog "Creating $template team: '$teamName'  ($($memberSnap.Count) members)" 'TextDim'
+
+    $Script:TP_CreateRef = [hashtable]::Synchronized(@{
+        Done        = $false
+        TeamId      = $null
+        MembersOk   = 0
+        MembersFail = 0
+        Error       = $null
+        Log         = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+    })
+    $token = $Script:AccessToken
+
+    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
+    $rs.Open()
+    $rs.SessionStateProxy.SetVariable('Ref',        $Script:TP_CreateRef)
+    $rs.SessionStateProxy.SetVariable('Token',      $token)
+    $rs.SessionStateProxy.SetVariable('TeamName',   $teamName)
+    $rs.SessionStateProxy.SetVariable('Template',   $template)
+    $rs.SessionStateProxy.SetVariable('AdminUpn',   $adminUpn)
+    $rs.SessionStateProxy.SetVariable('MemberSnap', $memberSnap)
+
+    $ps = [System.Management.Automation.PowerShell]::Create()
+    $ps.Runspace = $rs
+    [void]$ps.AddScript({
+        try {
+            $headers = @{
+                Authorization  = "Bearer $Token"
+                'Content-Type' = 'application/json'
+            }
+
+            # Step 1 — POST /teams (returns 202 with Location header)
+            $body = @{
+                'template@odata.bind' = "https://graph.microsoft.com/v1.0/teamsTemplates('$Template')"
+                displayName           = $TeamName
+                members               = @(
+                    @{
+                        '@odata.type'     = '#microsoft.graph.aadUserConversationMember'
+                        roles             = @('owner')
+                        'user@odata.bind' = "https://graph.microsoft.com/v1.0/users('$AdminUpn')"
+                    }
+                )
+            } | ConvertTo-Json -Depth 10
+
+            $resp     = Invoke-WebRequest -Uri 'https://graph.microsoft.com/v1.0/teams' `
+                            -Headers $headers -Method POST -Body $body -ErrorAction Stop
+            $location = $resp.Headers['Location']
+            if (-not $location) { throw 'No Location header in 202 response' }
+            $Ref['Log'].Enqueue('Team provisioning started — polling for completion...')
+
+            # Step 2 — Poll operation URL every 3 s (max 90 s)
+            $teamId  = $null
+            $polls   = 0
+            do {
+                Start-Sleep -Seconds 3
+                $polls++
+                $op = Invoke-RestMethod -Uri $location -Headers $headers -Method GET -ErrorAction Stop
+                if ($op.status -eq 'succeeded') {
+                    $teamId = $op.targetResourceId
+                    $Ref['Log'].Enqueue("Team created. ID: $teamId")
+                    break
+                }
+                if ($op.status -eq 'failed') {
+                    throw "Provisioning failed: $($op.error.message)"
+                }
+                $Ref['Log'].Enqueue("Provisioning status: $($op.status) ($polls/30)")
+            } while ($polls -lt 30)
+
+            if (-not $teamId) { throw 'Timed out waiting for team provisioning (90 s). Check Teams admin centre.' }
+            $Ref['TeamId'] = $teamId
+
+            # Step 3 — Add members one by one
+            $membersUrl = "https://graph.microsoft.com/v1.0/teams/$teamId/members"
+            foreach ($m in $MemberSnap) {
+                try {
+                    $mBody = @{
+                        '@odata.type'     = '#microsoft.graph.aadUserConversationMember'
+                        roles             = @(if ($m.IsOwner) { 'owner' } else { })
+                        'user@odata.bind' = "https://graph.microsoft.com/v1.0/users('$($m.UPN)')"
+                    } | ConvertTo-Json -Depth 5
+                    Invoke-RestMethod -Uri $membersUrl -Headers $headers `
+                        -Method POST -Body $mBody -ErrorAction Stop | Out-Null
+                    $Ref['MembersOk']++
+                    $role = if ($m.IsOwner) { 'Owner' } else { 'Member' }
+                    $Ref['Log'].Enqueue("Added: $($m.DisplayName)  [$role]")
+                } catch {
+                    $Ref['MembersFail']++
+                    $Ref['Log'].Enqueue("FAILED: $($m.DisplayName) - $($_.Exception.Message)")
+                }
+            }
+        } catch {
+            $Ref['Error'] = $_.Exception.Message
+        } finally {
+            $Ref['Done'] = $true
+        }
+    })
+    $ps.BeginInvoke() | Out-Null
+
+    if ($Script:TP_CreateTimer) { $Script:TP_CreateTimer.Stop() }
+    $Script:TP_CreateTimer          = [System.Windows.Threading.DispatcherTimer]::new()
+    $Script:TP_CreateTimer.Interval = [TimeSpan]::FromMilliseconds(500)
+    $Script:TP_CreateTimer.Add_Tick({
+        try {
+            # Drain log queue on every tick for real-time progress
+            $msg = $null
+            while ($Script:TP_CreateRef['Log'].TryDequeue([ref]$msg)) {
+                $color = if ($msg -like 'FAILED:*') { 'Danger' } elseif ($msg -like 'Added:*') { 'Success' } else { 'TextDim' }
+                Write-TpLog $msg $color
+            }
+
+            if (-not $Script:TP_CreateRef['Done']) { return }
+            $Script:TP_CreateTimer.Stop()
+            $Script:TP_Creating = $false
+
+            if ($Script:TP_CreateRef['Error']) {
+                Write-Log "TP: creation failed - $($Script:TP_CreateRef['Error'])" 'ERROR'
+                Write-TpLog "ERROR: $($Script:TP_CreateRef['Error'])" 'Danger'
+                Set-MainStatus 'Team creation failed.' 'Danger'
+                $Script:TP_UI.LblTeamStatus.Text       = 'Team   FAILED'
+                $Script:TP_UI.LblTeamStatus.Foreground = (Get-ThemeHex 'Danger')
+            } else {
+                $ok   = $Script:TP_CreateRef['MembersOk']
+                $fail = $Script:TP_CreateRef['MembersFail']
+                $col  = if ($fail -gt 0) { 'Warning' } else { 'Success' }
+                Write-Log "TP: done - $ok added, $fail failed" 'INFO'
+                Write-TpLog "Done — $ok members added, $fail failed." $col
+                Set-MainStatus "Team created: $ok added, $fail failed." $col
+                $Script:TP_UI.LblTeamStatus.Text       = 'Team   Created'
+                $Script:TP_UI.LblTeamStatus.Foreground = (Get-ThemeHex 'Success')
+                $Script:TP_UI.LblAdded.Text            = "Added  $ok"
+                $Script:TP_UI.LblFailed.Text           = "Failed $fail"
+                $Script:TP_UI.LblFailed.Foreground     = if ($fail -gt 0) { (Get-ThemeHex 'Danger') } else { (Get-ThemeHex 'TextDim') }
+            }
+
+            $Script:TP_UI.PnlStats.Visibility     = 'Visible'
+            $Script:TP_UI.BtnLoad.IsEnabled       = $true
+            $Script:TP_UI.BtnSelectAll.IsEnabled  = $true
+            $Script:TP_UI.BtnSelectNone.IsEnabled = $true
+            Update-TpCreateButton
+        } catch {
+            Write-Log "TP create timer error: $_" 'ERROR'
+        }
+    })
+    $Script:TP_CreateTimer.Start()
 }
 
 function Initialize-TeamsProvisioningTool {
