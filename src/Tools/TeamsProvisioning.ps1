@@ -624,7 +624,8 @@ function Start-TpCreateTeam {
                 }
             }
         } catch {
-            $Ref['Error'] = $_.Exception.Message
+            $errDetail = if ($_.ErrorDetails.Message) { " — $($_.ErrorDetails.Message)" } else { '' }
+            $Ref['Error'] = "$($_.Exception.Message)$errDetail"
         } finally {
             $Ref['Done'] = $true
         }
