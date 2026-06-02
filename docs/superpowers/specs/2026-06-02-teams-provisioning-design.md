@@ -61,10 +61,12 @@ Four labelled sections using the existing `SectionLbl` style:
 **Members tab** — `DataGrid` columns:
 | Column | Binding | Notes |
 |---|---|---|
-| Display Name | `DisplayName` | sortable |
-| UPN | `UPN` | sortable |
-| Department | `Department` | sortable |
-| Owner | `IsOwner` | `CheckBox` in a `DataGridTemplateColumn`; unchecked = Member, checked = Owner |
+| Display Name | `DisplayName` | `DataGridTextColumn` with `IsReadOnly="True"`, sortable |
+| UPN | `UPN` | `DataGridTextColumn` with `IsReadOnly="True"`, sortable |
+| Department | `Department` | `DataGridTextColumn` with `IsReadOnly="True"`, sortable |
+| Owner | `IsOwner` | `DataGridTemplateColumn` with an interactive `CheckBox`; unchecked = Member, checked = Owner |
+
+The `DataGrid` element itself uses `IsReadOnly="False"` (unlike other tools) so the Owner checkbox is interactive. Text columns are individually `IsReadOnly="True"` to prevent editing.
 
 Multi-row selection enabled (same as PasswordReset grid).
 
@@ -84,10 +86,10 @@ GET /v1.0/users?$select=id,displayName,userPrincipalName,department&$filter=acco
 On completion: populates `$Script:TP_AllUsers`, builds year group dropdown entries.
 
 ### Year group mode — Load Students
-Synchronous (data already in memory). Filters `$Script:TP_AllUsers` by `Get-DeptGroup`, populates the Members grid with `IsOwner = $false` for all rows.
+Synchronous (data already in memory). Filters `$Script:TP_AllUsers` by `Get-DeptGroup`, clears the Members grid, then populates it with `IsOwner = $false` for all rows.
 
 ### Direct user mode — search
-Client-side filter of `$Script:TP_AllUsers` on `displayName` or `userPrincipalName` as the user types. Clicking a result appends a row to the grid (duplicate check by user ID).
+Client-side filter of `$Script:TP_AllUsers` on `displayName` or `userPrincipalName` as the user types. Clicking a result appends a row to the grid (duplicate check by user ID). Switching from Year Group mode to Direct Users mode (or vice versa) clears the Members grid.
 
 ### Team creation (Create Team button)
 Background runspace, steps logged to the Log tab:
