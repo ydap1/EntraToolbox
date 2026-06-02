@@ -205,66 +205,23 @@ function Start-TenantConnectAsync {
         try {
             Import-Module MSAL.PS -ErrorAction Stop
 
-            if ($ExistingApp) {
-                # Reuse the in-session app — no file cache setup needed; tokens are in memory.
-                $app = $ExistingApp
+            $app = if ($ExistingApp) { $ExistingApp } else {
+                New-MsalClientApplication -ClientId $ClientId -TenantId $TenantId
+            }
+
+            # ITokenCacheSerializer is implemented by the concrete TokenCache class and
+            # exposes SerializeMsalV3/DeserializeMsalV3 without requiring any C# compilation.
+            # Cast once; use for both load-before and save-after auth.
+            $cacheSer = $app.UserTokenCache -as [Microsoft.Identity.Client.ITokenCacheSerializer]
+            if ($cacheSer) {
+                # Populate the in-memory cache from disk so silent auth can find saved tokens.
+                # Skip for reused apps — their in-memory cache is already current.
+                if (-not $ExistingApp -and (Test-Path $CacheFile)) {
+                    try { $cacheSer.DeserializeMsalV3([System.IO.File]::ReadAllBytes($CacheFile)) } catch {}
+                }
                 $AuthRef['CacheEnabled'] = $true
             } else {
-                $app = New-MsalClientApplication -ClientId $ClientId -TenantId $TenantId
-
-                # Hook a file-based token cache so silent re-auth works across restarts.
-                # MSAL callbacks fire from a .NET thread pool thread with no PS runspace,
-                # so we must use a compiled C# class — PS scriptblocks would crash there.
-                # Hashtable (System.Collections) is used instead of Dictionary<,> because
-                # generic type resolution can fail in a minimal background runspace.
-                try {
-                    $msalMod = Get-Module MSAL.PS -ErrorAction SilentlyContinue
-                    $msalDll = $null
-                    if ($msalMod) {
-                        $msalDll = Get-ChildItem -Path $msalMod.ModuleBase `
-                                       -Filter 'Microsoft.Identity.Client.dll' -Recurse `
-                                       -ErrorAction SilentlyContinue |
-                                   Select-Object -First 1 -ExpandProperty FullName
-                    }
-                    if (-not $msalDll) {
-                        $msalDll = ([System.AppDomain]::CurrentDomain.GetAssemblies() |
-                            Where-Object { $_.GetName().Name -eq 'Microsoft.Identity.Client' } |
-                            Select-Object -First 1).Location
-                    }
-                    if (-not $msalDll -or -not (Test-Path $msalDll)) {
-                        throw "Microsoft.Identity.Client.dll not found"
-                    }
-
-                    $src = @'
-using System; using System.IO; using System.Collections; using Microsoft.Identity.Client;
-public static class EntraToolboxCache {
-    private static readonly Hashtable _map = new Hashtable();
-    private static readonly object L = new object();
-    public static void Enable(ITokenCache c, string path) { lock(L){_map[c]=path;} c.SetBeforeAccess(B); c.SetAfterAccess(A); }
-    private static void B(TokenCacheNotificationArgs n) { lock(L){ string f=(string)_map[n.TokenCache]; if(f==null||!File.Exists(f))return; try{n.TokenCache.DeserializeMsalV3(File.ReadAllBytes(f));}catch{} } }
-    private static void A(TokenCacheNotificationArgs n) { if(!n.HasStateChanged)return; lock(L){ string f=(string)_map[n.TokenCache]; if(f==null)return; try{ string dir=Path.GetDirectoryName(f); if(!Directory.Exists(dir))Directory.CreateDirectory(dir); File.WriteAllBytes(f,n.TokenCache.SerializeMsalV3()); }catch{} } }
-}
-'@
-                    $typeKnown = $false
-                    try { $typeKnown = $null -ne [EntraToolboxCache] } catch { }
-                    if (-not $typeKnown) {
-                        # Resolve the actual assembly paths for each type the C# class uses.
-                        # On .NET Framework these all live in mscorlib; on .NET Core they can
-                        # be split across System.Private.CoreLib, System.IO.FileSystem, etc.
-                        # Using Assembly.Location avoids hard-coding runtime-version paths.
-                        $refs = @($msalDll) + @(
-                            [System.Object].Assembly.Location,
-                            [System.IO.File].Assembly.Location,
-                            [System.IO.Path].Assembly.Location,
-                            [System.Collections.Hashtable].Assembly.Location
-                        ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
-                        Add-Type -TypeDefinition $src -ReferencedAssemblies $refs -ErrorAction Stop
-                    }
-                    [EntraToolboxCache]::Enable($app.UserTokenCache, $CacheFile)
-                    $AuthRef['CacheEnabled'] = $true
-                } catch {
-                    $AuthRef['CacheWarning'] = "Token cache setup failed: $_"
-                }
+                $AuthRef['CacheWarning'] = 'ITokenCacheSerializer cast failed — tokens will not persist across restarts'
             }
 
             # Step 1: silent auth
@@ -315,6 +272,16 @@ public static class EntraToolboxCache {
                 $AuthRef['Token']      = $token.AccessToken
                 $AuthRef['AccountUPN'] = $token.Account.Username
                 $AuthRef['App']        = $app
+                # Write the updated cache to disk so silent auth works on next relaunch.
+                if ($cacheSer) {
+                    try {
+                        $cacheDir = [System.IO.Path]::GetDirectoryName($CacheFile)
+                        if (-not [System.IO.Directory]::Exists($cacheDir)) {
+                            [System.IO.Directory]::CreateDirectory($cacheDir) | Out-Null
+                        }
+                        [System.IO.File]::WriteAllBytes($CacheFile, $cacheSer.SerializeMsalV3())
+                    } catch {}
+                }
             } else {
                 $AuthRef['Error'] = 'Token acquisition returned null.'
             }
