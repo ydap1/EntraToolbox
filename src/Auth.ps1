@@ -164,11 +164,13 @@ function Start-TenantConnectAsync {
     if ($accountHint) { Write-Log "Auth: using saved account hint $accountHint" 'DEBUG' }
 
     $Script:AuthRef = [hashtable]::Synchronized(@{
-        Done       = $false
-        Token      = $null
-        Error      = $null
-        TenantId   = $TenantId
-        AccountUPN = $null
+        Done         = $false
+        Token        = $null
+        Error        = $null
+        TenantId     = $TenantId
+        AccountUPN   = $null
+        CacheEnabled = $false
+        CacheWarning = $null
     })
     $Script:AuthSuccess = $OnSuccess
     $Script:AuthFailure = $OnFailure
@@ -193,33 +195,29 @@ function Start-TenantConnectAsync {
 
             $app = New-MsalClientApplication -ClientId $ClientId -TenantId $TenantId
 
-            # MSAL.PS polls Get-MsalToken via Start-Sleep — MSAL executes on a thread pool
-            # thread that has no PS runspace. Scriptblock delegates fail there, so we compile
-            # a native C# class to handle cache I/O entirely in .NET.
+            # Hook a file-based token cache so silent re-auth works across restarts.
+            # MSAL callbacks fire from a .NET thread pool thread with no PS runspace,
+            # so we must use a compiled C# class — PS scriptblocks would crash there.
             try {
-                $msalDll = ([System.AppDomain]::CurrentDomain.GetAssemblies() |
-                    Where-Object { $_.GetName().Name -eq 'Microsoft.Identity.Client' } |
-                    Select-Object -First 1).Location
+                # Locate Microsoft.Identity.Client.dll via the loaded MSAL.PS module
+                $msalMod = Get-Module MSAL.PS -ErrorAction SilentlyContinue
+                $msalDll = $null
+                if ($msalMod) {
+                    $msalDll = Get-ChildItem -Path $msalMod.ModuleBase `
+                                   -Filter 'Microsoft.Identity.Client.dll' -Recurse `
+                                   -ErrorAction SilentlyContinue |
+                               Select-Object -First 1 -ExpandProperty FullName
+                }
+                if (-not $msalDll) {
+                    $msalDll = ([System.AppDomain]::CurrentDomain.GetAssemblies() |
+                        Where-Object { $_.GetName().Name -eq 'Microsoft.Identity.Client' } |
+                        Select-Object -First 1).Location
+                }
+                if (-not $msalDll -or -not (Test-Path $msalDll)) {
+                    throw "Microsoft.Identity.Client.dll not found"
+                }
 
-                $refs = [System.Collections.Generic.List[string]]::new()
-                $refs.Add($msalDll)
-
-                $withDpapi = $false
-                try {
-                    $pdDll = [System.Security.Cryptography.ProtectedData].Assembly.Location
-                    if ($pdDll) { $refs.Add($pdDll); $withDpapi = $true }
-                } catch { }
-
-                $src = if ($withDpapi) { @'
-using System; using System.IO; using System.Security.Cryptography; using System.Collections.Generic; using Microsoft.Identity.Client;
-public static class EntraToolboxCache {
-    private static readonly Dictionary<object,string> _map = new Dictionary<object,string>();
-    private static readonly object L = new object();
-    public static void Enable(ITokenCache c, string path) { lock(L){_map[c]=path;} c.SetBeforeAccess(B); c.SetAfterAccess(A); }
-    private static void B(TokenCacheNotificationArgs n) { lock(L){ string f; if(!_map.TryGetValue(n.TokenCache,out f)||!File.Exists(f))return; try{ byte[]d=File.ReadAllBytes(f); try{d=ProtectedData.Unprotect(d,null,DataProtectionScope.CurrentUser);}catch{} n.TokenCache.DeserializeMsalV3(d); }catch{} } }
-    private static void A(TokenCacheNotificationArgs n) { if(!n.HasStateChanged)return; lock(L){ string f; if(!_map.TryGetValue(n.TokenCache,out f))return; try{ byte[]d=n.TokenCache.SerializeMsalV3(); try{d=ProtectedData.Protect(d,null,DataProtectionScope.CurrentUser);}catch{} string dir=Path.GetDirectoryName(f); if(!Directory.Exists(dir))Directory.CreateDirectory(dir); File.WriteAllBytes(f,d); }catch{} } }
-}
-'@ } else { @'
+                $src = @'
 using System; using System.IO; using System.Collections.Generic; using Microsoft.Identity.Client;
 public static class EntraToolboxCache {
     private static readonly Dictionary<object,string> _map = new Dictionary<object,string>();
@@ -228,16 +226,17 @@ public static class EntraToolboxCache {
     private static void B(TokenCacheNotificationArgs n) { lock(L){ string f; if(!_map.TryGetValue(n.TokenCache,out f)||!File.Exists(f))return; try{n.TokenCache.DeserializeMsalV3(File.ReadAllBytes(f));}catch{} } }
     private static void A(TokenCacheNotificationArgs n) { if(!n.HasStateChanged)return; lock(L){ string f; if(!_map.TryGetValue(n.TokenCache,out f))return; try{ string dir=Path.GetDirectoryName(f); if(!Directory.Exists(dir))Directory.CreateDirectory(dir); File.WriteAllBytes(f,n.TokenCache.SerializeMsalV3()); }catch{} } }
 }
-'@ }
-
-                # Only compile once per AppDomain (multiple auth calls share the process)
+'@
                 $typeKnown = $false
                 try { $typeKnown = $null -ne [EntraToolboxCache] } catch { }
                 if (-not $typeKnown) {
-                    Add-Type -TypeDefinition $src -ReferencedAssemblies $refs.ToArray() -ErrorAction Stop
+                    Add-Type -TypeDefinition $src -ReferencedAssemblies @($msalDll) -ErrorAction Stop
                 }
                 [EntraToolboxCache]::Enable($app.UserTokenCache, $CacheFile)
-            } catch { }
+                $AuthRef['CacheEnabled'] = $true
+            } catch {
+                $AuthRef['CacheWarning'] = "Token cache setup failed: $_"
+            }
 
             $token = $null
             try {
@@ -277,6 +276,11 @@ public static class EntraToolboxCache {
                 Write-Log "Auth failed: $($Script:AuthRef['Error'])" 'ERROR'
                 & $Script:AuthFailure $Script:AuthRef['Error']
                 return
+            }
+            if ($Script:AuthRef['CacheWarning']) {
+                Write-Log "Auth: $($Script:AuthRef['CacheWarning'])" 'WARN'
+            } elseif ($Script:AuthRef['CacheEnabled']) {
+                Write-Log 'Auth: token cache hooked successfully' 'DEBUG'
             }
             Write-Log 'Auth succeeded - token acquired' 'INFO'
             $Script:AccessToken     = $Script:AuthRef['Token']
