@@ -436,3 +436,31 @@ function Start-GcCopyDemo {
     Write-Log "GC demo: $summary" 'INFO'
     Update-GcCopyButton
 }
+
+# ── Teams Provisioning demo loader ─────────────────────────────────────────────
+function Start-TpUserLoadDemo {
+    $Script:TP_AllUsers = @($Script:Demo_Users | Sort-Object { $_.displayName })
+
+    $allGroups     = $Script:TP_AllUsers | ForEach-Object { Get-DeptGroup $_.department } |
+                     Where-Object { $_ -ne $null } | Sort-Object -Unique
+    $numericGroups = @($allGroups | Where-Object { $_ -is [int] }    | Sort-Object)
+    $namedGroups   = @($allGroups | Where-Object { $_ -is [string] } | Sort-Object)
+
+    $Script:TP_UI.CboYear.Items.Clear()
+    foreach ($g in ($numericGroups + $namedGroups)) {
+        $cnt   = ($Script:TP_AllUsers | Where-Object { (Get-DeptGroup $_.department) -eq $g }).Count
+        $label = if ($g -is [int]) { "Year $g  -  $cnt users" } else { "$g  -  $cnt users" }
+        $item  = New-Object System.Windows.Controls.ComboBoxItem
+        $item.Content = $label
+        $item.Tag     = $g
+        $Script:TP_UI.CboYear.Items.Add($item) | Out-Null
+    }
+    if ($Script:TP_UI.CboYear.Items.Count -gt 0) { $Script:TP_UI.CboYear.SelectedIndex = 0 }
+    $Script:TP_UI.CboYear.IsEnabled = $true
+    $Script:TP_UI.BtnLoad.IsEnabled = $true
+
+    $n = $Script:TP_AllUsers.Count
+    Write-Log "Demo: TP loaded $n users" 'INFO'
+    Write-TpLog "Loaded $n users (demo — Contoso Academy)." 'Success'
+    Set-MainStatus "Demo — $n users loaded." 'Success'
+}

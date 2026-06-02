@@ -432,8 +432,85 @@ $Script:TpXaml = @'
 '@
 
 function Start-TpUserLoad {
-    # Implemented in Task 4
-    Write-TpLog 'User load not yet implemented.' 'TextDim'
+    if ($Script:DemoMode) { Start-TpUserLoadDemo; return }
+
+    $Script:TP_UI.CboYear.Items.Clear()
+    $Script:TP_UI.CboYear.IsEnabled = $false
+    $Script:TP_UI.BtnLoad.IsEnabled = $false
+    Set-MainStatus 'Teams: loading users...' 'TextDim'
+    Write-TpLog 'Fetching users from Entra ID...' 'TextDim'
+
+    $Script:TP_UserRef = [hashtable]::Synchronized(@{ Done = $false; Users = $null; Error = $null })
+    $token = $Script:AccessToken
+
+    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
+    $rs.Open()
+    $rs.SessionStateProxy.SetVariable('Ref',   $Script:TP_UserRef)
+    $rs.SessionStateProxy.SetVariable('Token', $token)
+
+    $ps = [System.Management.Automation.PowerShell]::Create()
+    $ps.Runspace = $rs
+    [void]$ps.AddScript({
+        try {
+            $users = [System.Collections.Generic.List[object]]::new()
+            $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,department&$filter=accountEnabled eq true&$top=999'
+            do {
+                $resp = Invoke-RestMethod -Uri $url `
+                    -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
+                foreach ($u in $resp.value) { $users.Add($u) }
+                $url = $resp.'@odata.nextLink'
+            } while ($url)
+            $Ref['Users'] = $users.ToArray()
+        } catch {
+            $Ref['Error'] = $_.Exception.Message
+        } finally {
+            $Ref['Done'] = $true
+        }
+    })
+    $ps.BeginInvoke() | Out-Null
+
+    if ($Script:TP_UserTimer) { $Script:TP_UserTimer.Stop() }
+    $Script:TP_UserTimer          = [System.Windows.Threading.DispatcherTimer]::new()
+    $Script:TP_UserTimer.Interval = [TimeSpan]::FromMilliseconds(300)
+    $Script:TP_UserTimer.Add_Tick({
+        try {
+            if (-not $Script:TP_UserRef['Done']) { return }
+            $Script:TP_UserTimer.Stop()
+
+            if ($Script:TP_UserRef['Error']) {
+                Write-Log "TP: user load failed - $($Script:TP_UserRef['Error'])" 'ERROR'
+                Write-TpLog "Failed to load users: $($Script:TP_UserRef['Error'])" 'Danger'
+                Set-MainStatus 'Teams: failed to load users.' 'Danger'
+                return
+            }
+
+            $Script:TP_AllUsers = $Script:TP_UserRef['Users']
+            Write-Log "TP: loaded $($Script:TP_AllUsers.Count) users" 'INFO'
+            Write-TpLog "Loaded $($Script:TP_AllUsers.Count) enabled users." 'Success'
+
+            $allGroups     = $Script:TP_AllUsers | ForEach-Object { Get-DeptGroup $_.department } |
+                             Where-Object { $_ -ne $null } | Sort-Object -Unique
+            $numericGroups = @($allGroups | Where-Object { $_ -is [int] }    | Sort-Object)
+            $namedGroups   = @($allGroups | Where-Object { $_ -is [string] } | Sort-Object)
+
+            $Script:TP_UI.CboYear.Items.Clear()
+            foreach ($g in ($numericGroups + $namedGroups)) {
+                $cnt   = ($Script:TP_AllUsers | Where-Object { (Get-DeptGroup $_.department) -eq $g }).Count
+                $label = if ($g -is [int]) { "Year $g  -  $cnt users" } else { "$g  -  $cnt users" }
+                $item  = New-Object System.Windows.Controls.ComboBoxItem
+                $item.Content = $label
+                $item.Tag     = $g
+                $Script:TP_UI.CboYear.Items.Add($item) | Out-Null
+            }
+            if ($Script:TP_UI.CboYear.Items.Count -gt 0) { $Script:TP_UI.CboYear.SelectedIndex = 0 }
+            $Script:TP_UI.CboYear.IsEnabled = $true
+            $Script:TP_UI.BtnLoad.IsEnabled = $true
+            Set-MainStatus "Teams: $($Script:TP_AllUsers.Count) users loaded." 'Success'
+        } catch {
+            Write-Log "TP user-load timer error: $_" 'ERROR'
+        }
+    })
+    $Script:TP_UserTimer.Start()
 }
 
 function Start-TpCreateTeam {
