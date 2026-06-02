@@ -15,6 +15,7 @@ $Script:TP_CreateTimer = $null
 
 function Write-TpLog {
     param([string]$Msg, [string]$Color = 'TextDim')
+    if (-not $Script:TP_UI) { Write-Log $Msg 'DEBUG'; return }
     $ts   = Get-Date -Format 'HH:mm:ss'
     $para = New-Object System.Windows.Documents.Paragraph
     $run  = New-Object System.Windows.Documents.Run "[$ts]  $Msg"
@@ -522,8 +523,8 @@ function Initialize-TeamsProvisioningTool {
             $Script:TP_UI.PnlStats.Visibility     = 'Collapsed'
             Update-TpSelectionLabel
             Update-TpCreateButton
-            Write-TpLog "Loaded $($members.Count) users for group: $selGroup" 'Text'
-            Set-MainStatus "Group $selGroup - $($members.Count) users loaded." 'Text'
+            Write-TpLog "Loaded $($members.Count) users for group: $selGroup" 'TextDim'
+            Set-MainStatus "Group $selGroup - $($members.Count) users loaded." 'TextDim'
         } catch { Write-Log "TP BtnLoad click error: $_" 'ERROR' }
     })
 
@@ -555,7 +556,7 @@ function Initialize-TeamsProvisioningTool {
             Update-TpSelectionLabel
             Update-TpCreateButton
             Update-TpSearchFilter
-            Write-TpLog "Added: $($u.displayName)  ($($u.userPrincipalName))" 'Text'
+            Write-TpLog "Added: $($u.displayName)  ($($u.userPrincipalName))" 'TextDim'
         } catch { Write-Log "TP SearchList DoubleClick error: $_" 'ERROR' }
     })
 
@@ -580,6 +581,8 @@ function Initialize-TeamsProvisioningTool {
     # Connect / reset callbacks
     $Script:ConnectCallbacks.Add({ Start-TpUserLoad })
     $Script:ResetCallbacks.Add({
+        if ($Script:TP_UserTimer)  { $Script:TP_UserTimer.Stop() }
+        if ($Script:TP_CreateTimer) { $Script:TP_CreateTimer.Stop() }
         $Script:TP_Rows.Clear()
         $Script:TP_AllUsers                    = @()
         $Script:TP_Creating                    = $false
