@@ -9,22 +9,13 @@
 # ── Script-level state ─────────────────────────────────────────────────────────
 $Script:SL_UI        = $null
 $Script:SL_AllUsers  = @()
-$Script:SL_UserRef   = $null
 $Script:SL_UserTimer = $null
-$Script:SL_LogsRef   = $null
 $Script:SL_LogsTimer = $null
 
 # ── Log helper ─────────────────────────────────────────────────────────────────
 function Write-SlLog {
     param([string]$Msg, [string]$Color = 'TextDim')
-    $ts   = Get-Date -Format 'HH:mm:ss'
-    $para = New-Object System.Windows.Documents.Paragraph
-    $run  = New-Object System.Windows.Documents.Run "[$ts]  $Msg"
-    $run.Foreground = Get-ThemeHex $Color
-    $para.Inlines.Add($run)
-    $para.Margin = '0'
-    $Script:SL_UI.LogBox.Document.Blocks.Add($para)
-    $Script:SL_UI.LogBox.ScrollToEnd()
+    Write-RichLog $Script:SL_UI.LogBox $Msg $Color
 }
 
 # ── Async user load ────────────────────────────────────────────────────────────
@@ -36,56 +27,34 @@ function Start-SlUserLoad {
     Set-MainStatus 'Loading users...' 'TextDim'
     Write-SlLog 'Fetching users from Entra ID...' 'TextDim'
 
-    $Script:SL_UserRef = [hashtable]::Synchronized(@{ Done = $false; Users = $null; Error = $null })
-    $token = $Script:AccessToken
-
-    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
-    $rs.Open()
-    $rs.SessionStateProxy.SetVariable('Ref',   $Script:SL_UserRef)
-    $rs.SessionStateProxy.SetVariable('Token', $token)
-
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    $ps.Runspace = $rs
-    [void]$ps.AddScript({
-        try {
-            $users = [System.Collections.Generic.List[object]]::new()
-            $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName&$top=999&$filter=accountEnabled eq true'
-            do {
-                $resp = Invoke-RestMethod -Uri $url `
-                    -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-                foreach ($u in $resp.value) { $users.Add($u) }
-                $url = $resp.'@odata.nextLink'
-            } while ($url)
-            $Ref['Users'] = $users.ToArray()
-        } catch {
-            $sc = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode.value__ } else { 0 }
-            if ($sc -eq 401) { $Ref['Error'] = '401' } else { $Ref['Error'] = $_.Exception.Message }
-        } finally { $Ref['Done'] = $true }
-    })
-    $ps.BeginInvoke() | Out-Null
-
     if ($Script:SL_UserTimer) { $Script:SL_UserTimer.Stop() }
-    $Script:SL_UserTimer          = [System.Windows.Threading.DispatcherTimer]::new()
-    $Script:SL_UserTimer.Interval = [TimeSpan]::FromMilliseconds(300)
-    $Script:SL_UserTimer.Add_Tick({
+    $Script:SL_UserTimer = Start-AsyncWork -RefSeed @{ Users = $null } -Script {
+        $users = [System.Collections.Generic.List[object]]::new()
+        $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName&$top=999&$filter=accountEnabled eq true'
+        do {
+            $resp = Invoke-RestMethod -Uri $url `
+                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
+            foreach ($u in $resp.value) { $users.Add($u) }
+            $url = $resp.'@odata.nextLink'
+        } while ($url)
+        $Ref['Users'] = $users.ToArray()
+    } -OnComplete {
+        param($ref)
         try {
-            if (-not $Script:SL_UserRef['Done']) { return }
-            $Script:SL_UserTimer.Stop()
-
-            if ($Script:SL_UserRef['Error'] -eq '401') {
+            if ($ref['Error'] -eq '401') {
                 Write-Log 'SignInLogs: user load 401 - session expired' 'ERROR'
                 Write-SlLog 'Session expired - reconnect via the tenant selector.' 'Danger'
                 Set-MainStatus 'Session expired.' 'Danger'
                 return
             }
-            if ($Script:SL_UserRef['Error']) {
-                Write-Log "SignInLogs: user load failed - $($Script:SL_UserRef['Error'])" 'ERROR'
-                Write-SlLog "Error loading users: $($Script:SL_UserRef['Error'])" 'Danger'
+            if ($ref['Error']) {
+                Write-Log "SignInLogs: user load failed - $($ref['Error'])" 'ERROR'
+                Write-SlLog "Error loading users: $($ref['Error'])" 'Danger'
                 Set-MainStatus 'Failed to load users.' 'Danger'
                 return
             }
 
-            $Script:SL_AllUsers = @($Script:SL_UserRef['Users'] | Sort-Object { $_.displayName })
+            $Script:SL_AllUsers = @($ref['Users'] | Sort-Object { $_.displayName })
             Update-SlUserFilter
             $Script:SL_UI.UserSearch.IsEnabled = $true
             $Script:SL_UI.UserList.IsEnabled   = $true
@@ -96,8 +65,7 @@ function Start-SlUserLoad {
         } catch {
             Write-Log "SignInLogs user-load timer error: $_" 'ERROR'
         }
-    })
-    $Script:SL_UserTimer.Start()
+    }
 }
 
 function Update-SlUserFilter {
@@ -130,110 +98,96 @@ function Start-SlLogsLoad {
     $Script:SL_UI.LogsPlaceholder.Visibility = 'Visible'
     Set-MainStatus 'Fetching sign-in logs...' 'TextDim'
 
-    $Script:SL_LogsRef = [hashtable]::Synchronized(@{ Done = $false; Logs = $null; Error = $null })
-    $token = $Script:AccessToken
-
-    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
-    $rs.Open()
-    $rs.SessionStateProxy.SetVariable('Ref',    $Script:SL_LogsRef)
-    $rs.SessionStateProxy.SetVariable('Token',  $token)
-    $rs.SessionStateProxy.SetVariable('UserId', $UserId)
-
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    $ps.Runspace = $rs
-    [void]$ps.AddScript({
-        try {
-            $url = 'https://graph.microsoft.com/v1.0/auditLogs/signIns' +
-                   "?`$filter=userId eq '$UserId'" +
-                   '&$top=50&$orderby=createdDateTime desc' +
-                   '&$select=createdDateTime,appDisplayName,status,ipAddress,location,deviceDetail'
-            $resp = Invoke-RestMethod -Uri $url `
-                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-            $Ref['Logs'] = $resp.value
-        } catch {
-            $sc = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode.value__ } else { 0 }
-            if ($sc -eq 403) { $Ref['Error'] = '403' }
-            elseif ($sc -eq 401) { $Ref['Error'] = '401' }
-            else { $Ref['Error'] = $_.Exception.Message }
-        } finally { $Ref['Done'] = $true }
-    })
-    $ps.BeginInvoke() | Out-Null
-
     if ($Script:SL_LogsTimer) { $Script:SL_LogsTimer.Stop() }
-    $Script:SL_LogsTimer          = [System.Windows.Threading.DispatcherTimer]::new()
-    $Script:SL_LogsTimer.Interval = [TimeSpan]::FromMilliseconds(300)
-    $Script:SL_LogsTimer.Add_Tick({
-        try {
-            if (-not $Script:SL_LogsRef['Done']) { return }
-            $Script:SL_LogsTimer.Stop()
-
-            if ($Script:SL_LogsRef['Error'] -eq '403') {
-                Write-Log 'SignInLogs: 403 - AuditLog.Read.All not consented' 'ERROR'
-                Write-SlLog 'Permission denied. Reconnect the tenant to grant AuditLog.Read.All access.' 'Danger'
-                $Script:SL_UI.LogsPlaceholder.Text = 'Permission denied - reconnect the tenant to grant AuditLog.Read.All access.'
-                Set-MainStatus 'Permission denied.' 'Danger'
-                return
+    $Script:SL_LogsTimer = Start-AsyncWork `
+        -Vars    @{ UserId = $UserId } `
+        -RefSeed @{ Logs   = $null } `
+        -Script {
+            # 403 (missing AuditLog.Read.All consent) is handled inline because the
+            # shared helper only auto-classifies 401. Anything else falls through to
+            # the helper's outer catch and surfaces as $Ref['Error'] = message.
+            try {
+                $url = 'https://graph.microsoft.com/v1.0/auditLogs/signIns' +
+                       "?`$filter=userId eq '$UserId'" +
+                       '&$top=50&$orderby=createdDateTime desc' +
+                       '&$select=createdDateTime,appDisplayName,status,ipAddress,location,deviceDetail'
+                $resp = Invoke-RestMethod -Uri $url `
+                    -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
+                $Ref['Logs'] = $resp.value
+            } catch {
+                if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode.value__ -eq 403) {
+                    $Ref['Error'] = '403'
+                } else { throw }
             }
-            if ($Script:SL_LogsRef['Error'] -eq '401') {
-                Write-Log 'SignInLogs: 401 - session expired' 'ERROR'
-                $Script:SL_UI.LogsPlaceholder.Text = 'Session expired - reconnect via the tenant selector.'
-                Set-MainStatus 'Session expired.' 'Danger'
-                return
-            }
-            if ($Script:SL_LogsRef['Error']) {
-                Write-Log "SignInLogs: log load failed - $($Script:SL_LogsRef['Error'])" 'ERROR'
-                Write-SlLog "Error fetching logs: $($Script:SL_LogsRef['Error'])" 'Danger'
-                $Script:SL_UI.LogsPlaceholder.Text = "Error: $($Script:SL_LogsRef['Error'])"
-                Set-MainStatus 'Failed to load sign-in logs.' 'Danger'
-                return
-            }
-
-            $logs = $Script:SL_LogsRef['Logs']
-            Write-Log "SignInLogs: loaded $($logs.Count) sign-in records" 'INFO'
-
-            if (-not $logs -or $logs.Count -eq 0) {
-                $Script:SL_UI.LogsPlaceholder.Text = 'No sign-in records found for this user.'
-                Set-MainStatus 'No sign-in records found.' 'TextDim'
-                return
-            }
-
-            $greenBrush = [System.Windows.Media.SolidColorBrush]::new(
-                [System.Windows.Media.ColorConverter]::ConvertFromString((Get-ThemeHex 'Success')))
-            $redBrush   = [System.Windows.Media.SolidColorBrush]::new(
-                [System.Windows.Media.ColorConverter]::ConvertFromString((Get-ThemeHex 'Danger')))
-            $mutedBrush = [System.Windows.Media.SolidColorBrush]::new(
-                [System.Windows.Media.ColorConverter]::ConvertFromString((Get-ThemeHex 'TextDim')))
-            $greenBrush.Freeze(); $redBrush.Freeze(); $mutedBrush.Freeze()
-
-            $rows = foreach ($entry in $logs) {
-                $isSuccess  = $entry.status.errorCode -eq 0
-                $resultText = if ($isSuccess) { 'Success' } else { "Failure ($($entry.status.errorCode))" }
-                $resultBrush = if ($isSuccess) { $greenBrush } else { $redBrush }
-                $locParts = @($entry.location.city, $entry.location.countryOrRegion) | Where-Object { $_ }
-                [PSCustomObject]@{
-                    DateTime    = if ($entry.createdDateTime) {
-                                      ([datetime]$entry.createdDateTime).ToLocalTime().ToString('yyyy-MM-dd HH:mm')
-                                  } else { '' }
-                    Application = $entry.appDisplayName
-                    Result      = $resultText
-                    ResultColor = $resultBrush
-                    IpAddress   = $entry.ipAddress
-                    Location    = $locParts -join ', '
-                    Device      = $entry.deviceDetail.displayName
+        } -OnComplete {
+            param($ref)
+            try {
+                if ($ref['Error'] -eq '403') {
+                    Write-Log 'SignInLogs: 403 - AuditLog.Read.All not consented' 'ERROR'
+                    Write-SlLog 'Permission denied. Reconnect the tenant to grant AuditLog.Read.All access.' 'Danger'
+                    $Script:SL_UI.LogsPlaceholder.Text = 'Permission denied - reconnect the tenant to grant AuditLog.Read.All access.'
+                    Set-MainStatus 'Permission denied.' 'Danger'
+                    return
                 }
-            }
+                if ($ref['Error'] -eq '401') {
+                    Write-Log 'SignInLogs: 401 - session expired' 'ERROR'
+                    $Script:SL_UI.LogsPlaceholder.Text = 'Session expired - reconnect via the tenant selector.'
+                    Set-MainStatus 'Session expired.' 'Danger'
+                    return
+                }
+                if ($ref['Error']) {
+                    Write-Log "SignInLogs: log load failed - $($ref['Error'])" 'ERROR'
+                    Write-SlLog "Error fetching logs: $($ref['Error'])" 'Danger'
+                    $Script:SL_UI.LogsPlaceholder.Text = "Error: $($ref['Error'])"
+                    Set-MainStatus 'Failed to load sign-in logs.' 'Danger'
+                    return
+                }
 
-            $Script:SL_UI.LogsGrid.ItemsSource    = [object[]]$rows
-            $Script:SL_UI.LogsPlaceholder.Visibility = 'Collapsed'
-            $Script:SL_UI.LogsGrid.Visibility        = 'Visible'
-            $n = $logs.Count
-            Write-SlLog "Loaded $n sign-in record$(if ($n -ne 1) { 's' })." 'Success'
-            Set-MainStatus "Sign-in logs loaded ($n records)." 'Success'
-        } catch {
-            Write-Log "SignInLogs logs-load timer error: $_" 'ERROR'
+                $logs = $ref['Logs']
+                Write-Log "SignInLogs: loaded $($logs.Count) sign-in records" 'INFO'
+
+                if (-not $logs -or $logs.Count -eq 0) {
+                    $Script:SL_UI.LogsPlaceholder.Text = 'No sign-in records found for this user.'
+                    Set-MainStatus 'No sign-in records found.' 'TextDim'
+                    return
+                }
+
+                $greenBrush = [System.Windows.Media.SolidColorBrush]::new(
+                    [System.Windows.Media.ColorConverter]::ConvertFromString((Get-ThemeHex 'Success')))
+                $redBrush   = [System.Windows.Media.SolidColorBrush]::new(
+                    [System.Windows.Media.ColorConverter]::ConvertFromString((Get-ThemeHex 'Danger')))
+                $mutedBrush = [System.Windows.Media.SolidColorBrush]::new(
+                    [System.Windows.Media.ColorConverter]::ConvertFromString((Get-ThemeHex 'TextDim')))
+                $greenBrush.Freeze(); $redBrush.Freeze(); $mutedBrush.Freeze()
+
+                $rows = foreach ($entry in $logs) {
+                    $isSuccess  = $entry.status.errorCode -eq 0
+                    $resultText = if ($isSuccess) { 'Success' } else { "Failure ($($entry.status.errorCode))" }
+                    $resultBrush = if ($isSuccess) { $greenBrush } else { $redBrush }
+                    $locParts = @($entry.location.city, $entry.location.countryOrRegion) | Where-Object { $_ }
+                    [PSCustomObject]@{
+                        DateTime    = if ($entry.createdDateTime) {
+                                          ([datetime]$entry.createdDateTime).ToLocalTime().ToString('yyyy-MM-dd HH:mm')
+                                      } else { '' }
+                        Application = $entry.appDisplayName
+                        Result      = $resultText
+                        ResultColor = $resultBrush
+                        IpAddress   = $entry.ipAddress
+                        Location    = $locParts -join ', '
+                        Device      = $entry.deviceDetail.displayName
+                    }
+                }
+
+                $Script:SL_UI.LogsGrid.ItemsSource    = [object[]]$rows
+                $Script:SL_UI.LogsPlaceholder.Visibility = 'Collapsed'
+                $Script:SL_UI.LogsGrid.Visibility        = 'Visible'
+                $n = $logs.Count
+                Write-SlLog "Loaded $n sign-in record$(if ($n -ne 1) { 's' })." 'Success'
+                Set-MainStatus "Sign-in logs loaded ($n records)." 'Success'
+            } catch {
+                Write-Log "SignInLogs logs-load timer error: $_" 'ERROR'
+            }
         }
-    })
-    $Script:SL_LogsTimer.Start()
 }
 
 # ── XAML ───────────────────────────────────────────────────────────────────────
