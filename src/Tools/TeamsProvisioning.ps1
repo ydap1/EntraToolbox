@@ -523,6 +523,13 @@ function Start-TpCreateTeam {
     $isClass    = $Script:TP_UI.RbClass.IsChecked
     $template   = if ($isClass) { 'educationClass' } else { 'standard' }
     $adminUpn   = Get-TenantAccountHint -TenantId $Script:CurrentTenantId
+    if (-not $adminUpn) {
+        Write-TpLog 'Cannot create team: admin UPN not available. Disconnect and reconnect to refresh.' 'Danger'
+        Set-MainStatus 'Team creation failed: admin UPN unavailable.' 'Danger'
+        $Script:TP_Creating = $false
+        Update-TpCreateButton
+        return
+    }
     $memberSnap = @($Script:TP_Rows | ForEach-Object {
         @{ Id = $_.Id; UPN = $_.UPN; DisplayName = $_.DisplayName; IsOwner = [bool]$_.IsOwner }
     })
