@@ -23,6 +23,88 @@ function Write-Log {
     Write-Host "[$ts][$Level] $Message" -ForegroundColor $color
 }
 
+# ── In-tab rich-text log ──────────────────────────────────────────────────────
+# Appends a themed, timestamped paragraph to a WPF RichTextBox. If the log box
+# isn't ready yet (early init), falls back to the console logger.
+function Write-RichLog {
+    param(
+        $LogBox,
+        [string]$Msg,
+        [string]$Color = 'TextDim'
+    )
+    if (-not $LogBox) { Write-Log $Msg 'DEBUG'; return }
+    $ts   = Get-Date -Format 'HH:mm:ss'
+    $para = New-Object System.Windows.Documents.Paragraph
+    $run  = New-Object System.Windows.Documents.Run "[$ts]  $Msg"
+    $run.Foreground = Get-ThemeHex $Color
+    $para.Inlines.Add($run)
+    $para.Margin = '0'
+    $LogBox.Document.Blocks.Add($para)
+    $LogBox.ScrollToEnd()
+}
+
+# ── WPF-safe async runspace + completion timer ────────────────────────────────
+# Runs $Script in a background Runspace with $Ref (synchronized hashtable), $Token
+# (current access token unless -NoToken), and any extra $Vars set as session vars.
+# When the runspace sets $Ref['Done']=$true, the DispatcherTimer stops itself,
+# disposes the runspace, and invokes $OnComplete on the UI thread with $Ref as $args[0].
+# 401 responses are caught centrally and reported as $Ref['Error']='401'.
+# Returns the DispatcherTimer so callers can Stop() a prior in-flight invocation.
+function Start-AsyncWork {
+    param(
+        [Parameter(Mandatory)][scriptblock]$Script,
+        [Parameter(Mandatory)][scriptblock]$OnComplete,
+        [hashtable]$Vars     = @{},
+        [hashtable]$RefSeed  = @{},
+        [int]$IntervalMs     = 300,
+        [switch]$NoToken
+    )
+    $seed = @{ Done = $false; Error = $null }
+    foreach ($k in $RefSeed.Keys) { $seed[$k] = $RefSeed[$k] }
+    $ref = [hashtable]::Synchronized($seed)
+
+    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
+    $rs.Open()
+    $rs.SessionStateProxy.SetVariable('Ref', $ref)
+    if (-not $NoToken) { $rs.SessionStateProxy.SetVariable('Token', $Script:AccessToken) }
+    foreach ($k in $Vars.Keys) { $rs.SessionStateProxy.SetVariable($k, $Vars[$k]) }
+
+    $ps = [System.Management.Automation.PowerShell]::Create()
+    $ps.Runspace = $rs
+    [void]$ps.AddScript({
+        param($Body)
+        try { & $Body }
+        catch {
+            if ($_.Exception.Response -and $_.Exception.Response.StatusCode.value__ -eq 401) {
+                $Ref['Error'] = '401'
+            } else {
+                $Ref['Error'] = $_.Exception.Message
+            }
+        }
+        finally { $Ref['Done'] = $true }
+    })
+    [void]$ps.AddArgument($Script)
+    $async = $ps.BeginInvoke()
+
+    $timer = [System.Windows.Threading.DispatcherTimer]::new()
+    $timer.Interval = [TimeSpan]::FromMilliseconds($IntervalMs)
+    # Stash state on Tag — scriptblocks attached to events don't capture locals
+    # like $OnComplete by closure, but $this gives them the timer at tick time.
+    $timer.Tag = @{ Ref = $ref; PS = $ps; RS = $rs; Async = $async; OnComplete = $OnComplete }
+    $timer.Add_Tick({
+        if (-not $this.Tag.Ref['Done']) { return }
+        $this.Stop()
+        try { $this.Tag.PS.EndInvoke($this.Tag.Async) | Out-Null } catch {}
+        $this.Tag.PS.Dispose()
+        $this.Tag.RS.Close()
+        $this.Tag.RS.Dispose()
+        try { & $this.Tag.OnComplete $this.Tag.Ref }
+        catch { Write-Log "Async OnComplete error: $_" 'ERROR' }
+    })
+    $timer.Start()
+    return $timer
+}
+
 # ── Theme ────────────────────────────────────────────────────────────────────
 # Neutral slate-grey dark theme with an amber accent (replaces the old indigo/purple).
 # Colours live in one place: $Script:Theme maps a semantic name to its hex value, and
