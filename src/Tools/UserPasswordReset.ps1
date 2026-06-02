@@ -12,24 +12,14 @@
 $Script:UPR_UI         = $null
 $Script:UPR_AllUsers   = @()
 $Script:UPR_AllGroups  = @()
-$Script:UPR_UserRef    = $null
 $Script:UPR_UserTimer  = $null
-$Script:UPR_ProfRef    = $null
 $Script:UPR_ProfTimer  = $null
-$Script:UPR_GrpRef     = $null
 $Script:UPR_GrpTimer   = $null
 
 # ── Log helper ─────────────────────────────────────────────────────────────────
 function Write-UprLog {
     param([string]$Msg, [string]$Color = 'TextDim')
-    $ts   = Get-Date -Format 'HH:mm:ss'
-    $para = New-Object System.Windows.Documents.Paragraph
-    $run  = New-Object System.Windows.Documents.Run "[$ts]  $Msg"
-    $run.Foreground = Get-ThemeHex $Color
-    $para.Inlines.Add($run)
-    $para.Margin = '0'
-    $Script:UPR_UI.LogBox.Document.Blocks.Add($para)
-    $Script:UPR_UI.LogBox.ScrollToEnd()
+    Write-RichLog $Script:UPR_UI.LogBox $Msg $Color
 }
 
 # ── Async user load ────────────────────────────────────────────────────────────
@@ -41,57 +31,34 @@ function Start-UprUserLoad {
     Set-MainStatus 'Loading users...' 'TextDim'
     Write-UprLog 'Fetching users from Entra ID...' 'TextDim'
 
-    $Script:UPR_UserRef = [hashtable]::Synchronized(@{ Done = $false; Users = $null; Error = $null })
-    $token = $Script:AccessToken
-
-    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
-    $rs.Open()
-    $rs.SessionStateProxy.SetVariable('Ref',   $Script:UPR_UserRef)
-    $rs.SessionStateProxy.SetVariable('Token', $token)
-
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    $ps.Runspace = $rs
-    [void]$ps.AddScript({
-        try {
-            $users = [System.Collections.Generic.List[object]]::new()
-            $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName&$top=999&$filter=accountEnabled eq true'
-            do {
-                $resp = Invoke-RestMethod -Uri $url `
-                    -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-                foreach ($u in $resp.value) { $users.Add($u) }
-                $url = $resp.'@odata.nextLink'
-            } while ($url)
-            $Ref['Users'] = $users.ToArray()
-        } catch {
-            if ($_.Exception.Response -and $_.Exception.Response.StatusCode.value__ -eq 401) {
-                $Ref['Error'] = '401'
-            } else { $Ref['Error'] = $_.Exception.Message }
-        } finally { $Ref['Done'] = $true }
-    })
-    $ps.BeginInvoke() | Out-Null
-
     if ($Script:UPR_UserTimer) { $Script:UPR_UserTimer.Stop() }
-    $Script:UPR_UserTimer          = [System.Windows.Threading.DispatcherTimer]::new()
-    $Script:UPR_UserTimer.Interval = [TimeSpan]::FromMilliseconds(300)
-    $Script:UPR_UserTimer.Add_Tick({
+    $Script:UPR_UserTimer = Start-AsyncWork -RefSeed @{ Users = $null } -Script {
+        $users = [System.Collections.Generic.List[object]]::new()
+        $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName&$top=999&$filter=accountEnabled eq true'
+        do {
+            $resp = Invoke-RestMethod -Uri $url `
+                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
+            foreach ($u in $resp.value) { $users.Add($u) }
+            $url = $resp.'@odata.nextLink'
+        } while ($url)
+        $Ref['Users'] = $users.ToArray()
+    } -OnComplete {
+        param($ref)
         try {
-            if (-not $Script:UPR_UserRef['Done']) { return }
-            $Script:UPR_UserTimer.Stop()
-
-            if ($Script:UPR_UserRef['Error'] -eq '401') {
+            if ($ref['Error'] -eq '401') {
                 Write-Log 'UPR: user load 401 - session expired' 'ERROR'
                 Write-UprLog 'Session expired - reconnect via the tenant selector.' 'Danger'
                 Set-MainStatus 'Session expired.' 'Danger'
                 return
             }
-            if ($Script:UPR_UserRef['Error']) {
-                Write-Log "UPR: user load failed - $($Script:UPR_UserRef['Error'])" 'ERROR'
-                Write-UprLog "Error loading users: $($Script:UPR_UserRef['Error'])" 'Danger'
+            if ($ref['Error']) {
+                Write-Log "UPR: user load failed - $($ref['Error'])" 'ERROR'
+                Write-UprLog "Error loading users: $($ref['Error'])" 'Danger'
                 Set-MainStatus 'Failed to load users.' 'Danger'
                 return
             }
 
-            $Script:UPR_AllUsers = @($Script:UPR_UserRef['Users'] | Sort-Object { $_.displayName })
+            $Script:UPR_AllUsers = @($ref['Users'] | Sort-Object { $_.displayName })
             Update-UprUserFilter
             $Script:UPR_UI.UserSearch.IsEnabled = $true
             $Script:UPR_UI.UserList.IsEnabled   = $true
@@ -102,8 +69,7 @@ function Start-UprUserLoad {
         } catch {
             Write-Log "UPR user-load timer error: $_" 'ERROR'
         }
-    })
-    $Script:UPR_UserTimer.Start()
+    }
 }
 
 function Update-UprUserFilter {
@@ -135,58 +101,39 @@ function Start-UprProfileLoad {
     $Script:UPR_UI.PromptStatus.Foreground = (Get-ThemeHex 'TextDim')
     $Script:UPR_UI.BtnReset.IsEnabled      = $false
 
-    $Script:UPR_ProfRef = [hashtable]::Synchronized(@{ Done = $false; Force = $null; Error = $null })
-    $token = $Script:AccessToken
-
-    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
-    $rs.Open()
-    $rs.SessionStateProxy.SetVariable('Ref',    $Script:UPR_ProfRef)
-    $rs.SessionStateProxy.SetVariable('Token',  $token)
-    $rs.SessionStateProxy.SetVariable('UserId', $UserId)
-
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    $ps.Runspace = $rs
-    [void]$ps.AddScript({
-        try {
+    if ($Script:UPR_ProfTimer) { $Script:UPR_ProfTimer.Stop() }
+    $Script:UPR_ProfTimer = Start-AsyncWork `
+        -Vars    @{ UserId = $UserId } `
+        -RefSeed @{ Force  = $null } `
+        -Script {
             $resp = Invoke-RestMethod `
                 -Uri "https://graph.microsoft.com/v1.0/users/$UserId`?`$select=passwordProfile" `
                 -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
             $Ref['Force'] = $resp.passwordProfile.forceChangePasswordNextSignIn
-        } catch {
-            $Ref['Error'] = $_.Exception.Message
-        } finally { $Ref['Done'] = $true }
-    })
-    $ps.BeginInvoke() | Out-Null
+        } -OnComplete {
+            param($ref)
+            try {
+                $Script:UPR_UI.BtnReset.IsEnabled = $true
 
-    if ($Script:UPR_ProfTimer) { $Script:UPR_ProfTimer.Stop() }
-    $Script:UPR_ProfTimer          = [System.Windows.Threading.DispatcherTimer]::new()
-    $Script:UPR_ProfTimer.Interval = [TimeSpan]::FromMilliseconds(300)
-    $Script:UPR_ProfTimer.Add_Tick({
-        try {
-            if (-not $Script:UPR_ProfRef['Done']) { return }
-            $Script:UPR_ProfTimer.Stop()
-            $Script:UPR_UI.BtnReset.IsEnabled = $true
+                if ($ref['Error']) {
+                    Write-Log "UPR: passwordProfile fetch failed - $($ref['Error'])" 'WARN'
+                    $Script:UPR_UI.PromptStatus.Text       = 'Could not read current status'
+                    $Script:UPR_UI.PromptStatus.Foreground = (Get-ThemeHex 'TextDim')
+                    return
+                }
 
-            if ($Script:UPR_ProfRef['Error']) {
-                Write-Log "UPR: passwordProfile fetch failed - $($Script:UPR_ProfRef['Error'])" 'WARN'
-                $Script:UPR_UI.PromptStatus.Text       = 'Could not read current status'
-                $Script:UPR_UI.PromptStatus.Foreground = (Get-ThemeHex 'TextDim')
-                return
+                $force = $ref['Force']
+                if ($force -eq $true) {
+                    $Script:UPR_UI.PromptStatus.Text       = 'Currently: will prompt on next sign-in'
+                    $Script:UPR_UI.PromptStatus.Foreground = (Get-ThemeHex 'Warning')
+                } else {
+                    $Script:UPR_UI.PromptStatus.Text       = 'Currently: no prompt required'
+                    $Script:UPR_UI.PromptStatus.Foreground = (Get-ThemeHex 'Success')
+                }
+            } catch {
+                Write-Log "UPR profile timer error: $_" 'ERROR'
             }
-
-            $force = $Script:UPR_ProfRef['Force']
-            if ($force -eq $true) {
-                $Script:UPR_UI.PromptStatus.Text       = 'Currently: will prompt on next sign-in'
-                $Script:UPR_UI.PromptStatus.Foreground = (Get-ThemeHex 'Warning')
-            } else {
-                $Script:UPR_UI.PromptStatus.Text       = 'Currently: no prompt required'
-                $Script:UPR_UI.PromptStatus.Foreground = (Get-ThemeHex 'Success')
-            }
-        } catch {
-            Write-Log "UPR profile timer error: $_" 'ERROR'
         }
-    })
-    $Script:UPR_ProfTimer.Start()
 }
 
 # ── Group membership ───────────────────────────────────────────────────────────
@@ -222,19 +169,11 @@ function Start-UprGroupLoad {
     $Script:UPR_UI.GrpPlaceholder.Visibility = 'Visible'
     $Script:UPR_UI.GrpHeader.Text            = 'Select a user to view their group memberships'
 
-    $Script:UPR_GrpRef = [hashtable]::Synchronized(@{ Done = $false; Groups = $null; Error = $null })
-    $token = $Script:AccessToken
-
-    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
-    $rs.Open()
-    $rs.SessionStateProxy.SetVariable('Ref',    $Script:UPR_GrpRef)
-    $rs.SessionStateProxy.SetVariable('Token',  $token)
-    $rs.SessionStateProxy.SetVariable('UserId', $UserId)
-
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    $ps.Runspace = $rs
-    [void]$ps.AddScript({
-        try {
+    if ($Script:UPR_GrpTimer) { $Script:UPR_GrpTimer.Stop() }
+    $Script:UPR_GrpTimer = Start-AsyncWork `
+        -Vars    @{ UserId = $UserId } `
+        -RefSeed @{ Groups = $null } `
+        -Script {
             $groups = [System.Collections.Generic.List[object]]::new()
             $url = "https://graph.microsoft.com/v1.0/users/$UserId/transitiveMemberOf?`$select=displayName,groupTypes&`$top=999"
             do {
@@ -244,51 +183,37 @@ function Start-UprGroupLoad {
                 $url = $resp.'@odata.nextLink'
             } while ($url)
             $Ref['Groups'] = $groups.ToArray()
-        } catch {
-            $sc = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode.value__ } else { 0 }
-            if ($sc -eq 401) { $Ref['Error'] = '401' }
-            else { $Ref['Error'] = $_.Exception.Message }
-        } finally { $Ref['Done'] = $true }
-    })
-    $ps.BeginInvoke() | Out-Null
+        } -OnComplete {
+            param($ref)
+            try {
+                if ($ref['Error'] -eq '401') {
+                    $Script:UPR_UI.GrpPlaceholder.Text = 'Session expired - reconnect.'
+                    return
+                }
+                if ($ref['Error']) {
+                    Write-Log "UPR: group load failed - $($ref['Error'])" 'ERROR'
+                    $Script:UPR_UI.GrpPlaceholder.Text = "Error: $($ref['Error'])"
+                    return
+                }
 
-    if ($Script:UPR_GrpTimer) { $Script:UPR_GrpTimer.Stop() }
-    $Script:UPR_GrpTimer          = [System.Windows.Threading.DispatcherTimer]::new()
-    $Script:UPR_GrpTimer.Interval = [TimeSpan]::FromMilliseconds(300)
-    $Script:UPR_GrpTimer.Add_Tick({
-        try {
-            if (-not $Script:UPR_GrpRef['Done']) { return }
-            $Script:UPR_GrpTimer.Stop()
+                $Script:UPR_AllGroups = @($ref['Groups'] | Sort-Object { $_.displayName })
+                $n = $Script:UPR_AllGroups.Count
+                Write-Log "UPR: loaded $n group memberships" 'INFO'
 
-            if ($Script:UPR_GrpRef['Error'] -eq '401') {
-                $Script:UPR_UI.GrpPlaceholder.Text = 'Session expired - reconnect.'
-                return
+                if ($n -eq 0) {
+                    $Script:UPR_UI.GrpPlaceholder.Text = 'No group memberships found.'
+                    return
+                }
+
+                $Script:UPR_UI.GrpHeader.Text            = "$n group membership$(if ($n -ne 1) { 's' })"
+                $Script:UPR_UI.GrpPlaceholder.Visibility = 'Collapsed'
+                $Script:UPR_UI.GrpSearch.Visibility      = 'Visible'
+                Update-UprGroupFilter
+                $Script:UPR_UI.GrpList.Visibility = 'Visible'
+            } catch {
+                Write-Log "UPR group timer error: $_" 'ERROR'
             }
-            if ($Script:UPR_GrpRef['Error']) {
-                Write-Log "UPR: group load failed - $($Script:UPR_GrpRef['Error'])" 'ERROR'
-                $Script:UPR_UI.GrpPlaceholder.Text = "Error: $($Script:UPR_GrpRef['Error'])"
-                return
-            }
-
-            $Script:UPR_AllGroups = @($Script:UPR_GrpRef['Groups'] | Sort-Object { $_.displayName })
-            $n = $Script:UPR_AllGroups.Count
-            Write-Log "UPR: loaded $n group memberships" 'INFO'
-
-            if ($n -eq 0) {
-                $Script:UPR_UI.GrpPlaceholder.Text = 'No group memberships found.'
-                return
-            }
-
-            $Script:UPR_UI.GrpHeader.Text            = "$n group membership$(if ($n -ne 1) { 's' })"
-            $Script:UPR_UI.GrpPlaceholder.Visibility = 'Collapsed'
-            $Script:UPR_UI.GrpSearch.Visibility      = 'Visible'
-            Update-UprGroupFilter
-            $Script:UPR_UI.GrpList.Visibility = 'Visible'
-        } catch {
-            Write-Log "UPR group timer error: $_" 'ERROR'
         }
-    })
-    $Script:UPR_GrpTimer.Start()
 }
 
 # ── XAML ───────────────────────────────────────────────────────────────────────
