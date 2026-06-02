@@ -472,6 +472,10 @@ function Invoke-PostConnect {
     } catch {}
 
     $Script:MainUI.BtnDisconnect.IsEnabled = $true
+    # Remember the tenant we just connected to so the next launch reconnects to it.
+    if (-not $Script:DemoMode -and $Script:CurrentTenantId) {
+        try { Set-AppSetting -Name 'LastTenantId' -Value $Script:CurrentTenantId } catch {}
+    }
     # Fire all connect callbacks (each tool loads its data)
     foreach ($cb in $Script:ConnectCallbacks) { & $cb }
     Set-MainStatus 'Connected.' 'Success'
@@ -639,9 +643,17 @@ function Show-MainWindow {
                 Set-MainStatus 'No tenants saved. Click + to add one.' 'TextDim'
                 Show-AddTenantDialog
             } else {
-                # Auto-select first tenant — SelectionChanged fires and attempts silent auth.
-                # If credentials are cached the user sees no browser popup.
-                $Script:MainUI.TenantCombo.SelectedIndex = 0
+                # Auto-select the last-used tenant (falling back to the first) — SelectionChanged
+                # fires and attempts silent auth. If credentials are cached the user sees no
+                # browser popup and lands straight back where they left off.
+                $lastTid = Get-AppSetting -Name 'LastTenantId'
+                $idx = 0
+                if ($lastTid) {
+                    for ($i = 0; $i -lt $Script:MainUI.TenantCombo.Items.Count; $i++) {
+                        if ($Script:MainUI.TenantCombo.Items[$i].Tag.TenantId -eq $lastTid) { $idx = $i; break }
+                    }
+                }
+                $Script:MainUI.TenantCombo.SelectedIndex = $idx
             }
         } catch {
             Write-Log "Window Loaded handler error: $_" 'ERROR'

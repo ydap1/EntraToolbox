@@ -23,32 +23,65 @@ function Write-Log {
     Write-Host "[$ts][$Level] $Message" -ForegroundColor $color
 }
 
-function Get-ThemeHex([string]$Semantic) {
-    switch ($Semantic) {
-        'Text'      { '#E2E2F0' }
-        'TextDim'   { '#7878A0' }
-        'Muted'     { '#50507A' }
-        'Accent'    { '#6366F1' }
-        'Success'   { '#22C55E' }
-        'Danger'    { '#EF4444' }
-        'Warning'   { '#FBBF24' }
-        'Border'    { '#3C3C5A' }
-        'Card'      { '#242436' }
-        'Surface'   { '#1C1C2A' }
-        'Bg'        { '#12121C' }
-        'Hover'     { '#1E1E38' }
-        'Selected'  { '#2A2A50' }
-        'GridLine'  { '#1E1E32' }
-        'AltRow'    { '#181826' }
-        'SubHeader' { '#1A1A2C' }
-        'SuccessBg' { '#0D2B1A' }
-        'DangerBg'  { '#2B0D0D' }
-        'WarnText'  { '#CC6666' }
-        default     { $Semantic }
-    }
+# ── Theme ────────────────────────────────────────────────────────────────────
+# Neutral slate-grey dark theme with an amber accent (replaces the old indigo/purple).
+# Colours live in one place: $Script:Theme maps a semantic name to its hex value, and
+# $Script:ThemeMap maps every legacy hex literal still embedded in the XAML here-strings
+# to its new value so Invoke-ThemeXaml can re-skin the whole UI centrally.
+$Script:Theme = @{
+    Text      = '#E6E9EF'
+    TextDim   = '#8A93A3'
+    Muted     = '#5B6472'
+    Accent    = '#F59E0B'
+    Success   = '#22C55E'
+    Danger    = '#EF4444'
+    Warning   = '#FBBF24'
+    Border    = '#323943'
+    Card      = '#21262E'
+    Surface   = '#181B21'
+    Bg        = '#0F1115'
+    Hover     = '#1E232B'
+    Selected  = '#2A323D'
+    GridLine  = '#1E232B'
+    AltRow    = '#14171C'
+    SubHeader = '#161A20'
+    SuccessBg = '#0D2B1A'
+    DangerBg  = '#2B0D0D'
+    WarnText  = '#CC6666'
 }
 
-function Invoke-ThemeXaml([string]$Xaml) { $Xaml }
+# Legacy-hex → new-hex translation applied to every XAML string at load time.
+$Script:ThemeMap = [ordered]@{
+    '#12121C' = $Script:Theme.Bg        # window background
+    '#1C1C2A' = $Script:Theme.Surface   # surfaces / bars
+    '#242436' = $Script:Theme.Card      # cards / inputs
+    '#3C3C5A' = $Script:Theme.Border    # borders / secondary buttons
+    '#6366F1' = $Script:Theme.Accent    # accent (was indigo)
+    '#E2E2F0' = $Script:Theme.Text      # primary text
+    '#7878A0' = $Script:Theme.TextDim   # dim text
+    '#50507A' = $Script:Theme.Muted     # muted text
+    '#1E1E38' = $Script:Theme.Hover     # row hover
+    '#2A2A50' = $Script:Theme.Selected  # row selected
+    '#1E1E32' = $Script:Theme.GridLine  # grid lines
+    '#181826' = $Script:Theme.AltRow    # alternating rows
+    '#1A1A2C' = $Script:Theme.SubHeader # sub headers
+    '#C0C0E0' = '#C2C9D4'               # tab hover text
+    '#2E2E48' = $Script:Theme.Selected  # combo-item hover
+    '#7C3AED' = '#475569'               # demo button (was vivid purple → slate)
+}
+
+function Get-ThemeHex([string]$Semantic) {
+    if ($Script:Theme.ContainsKey($Semantic)) { return $Script:Theme[$Semantic] }
+    return $Semantic
+}
+
+# Re-skin a XAML here-string by swapping every legacy hex literal for its themed value.
+function Invoke-ThemeXaml([string]$Xaml) {
+    foreach ($old in $Script:ThemeMap.Keys) {
+        $Xaml = $Xaml.Replace($old, $Script:ThemeMap[$old])
+    }
+    $Xaml
+}
 
 
 # ── Shared state ───────────────────────────────────────────────────────────────
@@ -112,6 +145,34 @@ function Remove-SavedTenant {
     param([Parameter(Mandatory)][string]$TenantId)
     $remaining = @(Get-SavedTenants | Where-Object { $_.TenantId -ne $TenantId })
     ConvertTo-Json @($remaining) -Depth 3 | Set-Content -Path (Get-TenantsConfigPath) -Encoding UTF8
+}
+
+# ── App settings (small key/value store, e.g. last-used tenant) ─────────────────
+function Get-AppSettingsPath {
+    $dir = Join-Path $Global:AppRoot 'config'
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
+    Join-Path $dir 'settings.json'
+}
+
+function Get-AppSetting {
+    param([Parameter(Mandatory)][string]$Name)
+    $p = Get-AppSettingsPath
+    if (-not (Test-Path $p)) { return $null }
+    try {
+        $s = Get-Content -Path $p -Raw -ErrorAction Stop | ConvertFrom-Json
+        if ($s.PSObject.Properties.Name -contains $Name) { return $s.$Name }
+    } catch {}
+    return $null
+}
+
+function Set-AppSetting {
+    param([Parameter(Mandatory)][string]$Name, $Value)
+    $p = Get-AppSettingsPath
+    $s = if (Test-Path $p) {
+        try { Get-Content -Path $p -Raw -ErrorAction Stop | ConvertFrom-Json } catch { [PSCustomObject]@{} }
+    } else { [PSCustomObject]@{} }
+    $s | Add-Member -NotePropertyName $Name -NotePropertyValue $Value -Force
+    ConvertTo-Json $s -Depth 5 | Set-Content -Path $p -Encoding UTF8
 }
 
 function Get-TenantCacheFile {
@@ -209,20 +270,46 @@ function Start-TenantConnectAsync {
                 New-MsalClientApplication -ClientId $ClientId -TenantId $TenantId
             }
 
-            # ITokenCacheSerializer is implemented by the concrete TokenCache class and
-            # exposes SerializeMsalV3/DeserializeMsalV3 without requiring any C# compilation.
-            # Cast once; use for both load-before and save-after auth.
-            $cacheSer = $app.UserTokenCache -as [Microsoft.Identity.Client.ITokenCacheSerializer]
-            if ($cacheSer) {
-                # Populate the in-memory cache from disk so silent auth can find saved tokens.
-                # Skip for reused apps — their in-memory cache is already current.
-                if (-not $ExistingApp -and (Test-Path $CacheFile)) {
-                    try { $cacheSer.DeserializeMsalV3([System.IO.File]::ReadAllBytes($CacheFile)) } catch {}
-                }
-                $AuthRef['CacheEnabled'] = $true
-            } else {
-                $AuthRef['CacheWarning'] = 'ITokenCacheSerializer cast failed — tokens will not persist across restarts'
+            # Persist the MSAL token cache to disk so silent auth works across app restarts.
+            #
+            # MSAL.NET v4 REMOVED the parameterless TokenCache.SerializeMsalV3()/DeserializeMsalV3()
+            # methods — calling them directly throws. The supported approach is to register
+            # before/after-access callbacks and (de)serialize the cache passed in via
+            # TokenCacheNotificationArgs.TokenCache. We register them here (always, so the
+            # delegates are bound to this live runspace even when the app is reused) and store
+            # the cache DPAPI-encrypted, scoped to the current Windows user.
+            $Global:Etb_CacheFile = $CacheFile
+            $beforeAccess = [Microsoft.Identity.Client.TokenCacheCallback]{
+                param($a)
+                try {
+                    if ([System.IO.File]::Exists($Global:Etb_CacheFile)) {
+                        $enc = [System.IO.File]::ReadAllBytes($Global:Etb_CacheFile)
+                        $raw = [System.Security.Cryptography.ProtectedData]::Unprotect(
+                                   $enc, $null,
+                                   [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
+                        $a.TokenCache.DeserializeMsalV3($raw)
+                    }
+                } catch {}
             }
+            $afterAccess = [Microsoft.Identity.Client.TokenCacheCallback]{
+                param($a)
+                try {
+                    if ($a.HasStateChanged) {
+                        $raw = $a.TokenCache.SerializeMsalV3()
+                        $enc = [System.Security.Cryptography.ProtectedData]::Protect(
+                                   $raw, $null,
+                                   [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
+                        $dir = [System.IO.Path]::GetDirectoryName($Global:Etb_CacheFile)
+                        if (-not [System.IO.Directory]::Exists($dir)) {
+                            [System.IO.Directory]::CreateDirectory($dir) | Out-Null
+                        }
+                        [System.IO.File]::WriteAllBytes($Global:Etb_CacheFile, $enc)
+                    }
+                } catch {}
+            }
+            $app.UserTokenCache.SetBeforeAccess($beforeAccess)
+            $app.UserTokenCache.SetAfterAccess($afterAccess)
+            $AuthRef['CacheEnabled'] = $true
 
             # Step 1: silent auth
             $token    = $null
@@ -272,16 +359,7 @@ function Start-TenantConnectAsync {
                 $AuthRef['Token']      = $token.AccessToken
                 $AuthRef['AccountUPN'] = $token.Account.Username
                 $AuthRef['App']        = $app
-                # Write the updated cache to disk so silent auth works on next relaunch.
-                if ($cacheSer) {
-                    try {
-                        $cacheDir = [System.IO.Path]::GetDirectoryName($CacheFile)
-                        if (-not [System.IO.Directory]::Exists($cacheDir)) {
-                            [System.IO.Directory]::CreateDirectory($cacheDir) | Out-Null
-                        }
-                        [System.IO.File]::WriteAllBytes($CacheFile, $cacheSer.SerializeMsalV3())
-                    } catch {}
-                }
+                # The cache is written to disk automatically by the after-access callback above.
             } else {
                 $AuthRef['Error'] = 'Token acquisition returned null.'
             }
