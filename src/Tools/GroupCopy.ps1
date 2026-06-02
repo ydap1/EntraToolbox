@@ -14,24 +14,14 @@ $Script:GC_SourceUser   = $null
 $Script:GC_TargetUser   = $null
 $Script:GC_SourceGroups = @()
 
-$Script:GC_UserRef      = $null
 $Script:GC_UserTimer    = $null
-$Script:GC_SrcGrpRef    = $null
 $Script:GC_SrcGrpTimer  = $null
-$Script:GC_CopyRef      = $null
 $Script:GC_CopyTimer    = $null
 
 # ── Log helper ─────────────────────────────────────────────────────────────────
 function Write-GcLog {
     param([string]$Msg, [string]$Color = 'TextDim')
-    $ts   = Get-Date -Format 'HH:mm:ss'
-    $para = New-Object System.Windows.Documents.Paragraph
-    $run  = New-Object System.Windows.Documents.Run "[$ts]  $Msg"
-    $run.Foreground = Get-ThemeHex $Color
-    $para.Inlines.Add($run)
-    $para.Margin = '0'
-    $Script:GC_UI.LogBox.Document.Blocks.Add($para)
-    $Script:GC_UI.LogBox.ScrollToEnd()
+    Write-RichLog $Script:GC_UI.LogBox $Msg $Color
 }
 
 # ── Async user load ────────────────────────────────────────────────────────────
@@ -44,55 +34,32 @@ function Start-GcUserLoad {
     $Script:GC_UI.TgtList.IsEnabled   = $false
     Write-GcLog 'Fetching users from Entra ID...' 'TextDim'
 
-    $Script:GC_UserRef = [hashtable]::Synchronized(@{ Done = $false; Users = $null; Error = $null })
-    $token = $Script:AccessToken
-
-    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
-    $rs.Open()
-    $rs.SessionStateProxy.SetVariable('Ref',   $Script:GC_UserRef)
-    $rs.SessionStateProxy.SetVariable('Token', $token)
-
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    $ps.Runspace = $rs
-    [void]$ps.AddScript({
-        try {
-            $users = [System.Collections.Generic.List[object]]::new()
-            $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName&$top=999&$filter=accountEnabled eq true'
-            do {
-                $resp = Invoke-RestMethod -Uri $url `
-                    -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-                foreach ($u in $resp.value) { $users.Add($u) }
-                $url = $resp.'@odata.nextLink'
-            } while ($url)
-            $Ref['Users'] = $users.ToArray()
-        } catch {
-            if ($_.Exception.Response -and $_.Exception.Response.StatusCode.value__ -eq 401) {
-                $Ref['Error'] = '401'
-            } else { $Ref['Error'] = $_.Exception.Message }
-        } finally { $Ref['Done'] = $true }
-    })
-    $ps.BeginInvoke() | Out-Null
-
     if ($Script:GC_UserTimer) { $Script:GC_UserTimer.Stop() }
-    $Script:GC_UserTimer          = [System.Windows.Threading.DispatcherTimer]::new()
-    $Script:GC_UserTimer.Interval = [TimeSpan]::FromMilliseconds(300)
-    $Script:GC_UserTimer.Add_Tick({
+    $Script:GC_UserTimer = Start-AsyncWork -RefSeed @{ Users = $null } -Script {
+        $users = [System.Collections.Generic.List[object]]::new()
+        $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName&$top=999&$filter=accountEnabled eq true'
+        do {
+            $resp = Invoke-RestMethod -Uri $url `
+                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
+            foreach ($u in $resp.value) { $users.Add($u) }
+            $url = $resp.'@odata.nextLink'
+        } while ($url)
+        $Ref['Users'] = $users.ToArray()
+    } -OnComplete {
+        param($ref)
         try {
-            if (-not $Script:GC_UserRef['Done']) { return }
-            $Script:GC_UserTimer.Stop()
-
-            if ($Script:GC_UserRef['Error'] -eq '401') {
+            if ($ref['Error'] -eq '401') {
                 Write-GcLog 'Session expired - reconnect via the tenant selector.' 'Danger'
                 Set-MainStatus 'Session expired.' 'Danger'
                 return
             }
-            if ($Script:GC_UserRef['Error']) {
-                Write-GcLog "Error loading users: $($Script:GC_UserRef['Error'])" 'Danger'
+            if ($ref['Error']) {
+                Write-GcLog "Error loading users: $($ref['Error'])" 'Danger'
                 Set-MainStatus 'Failed to load users.' 'Danger'
                 return
             }
 
-            $Script:GC_AllUsers = @($Script:GC_UserRef['Users'] | Sort-Object { $_.displayName })
+            $Script:GC_AllUsers = @($ref['Users'] | Sort-Object { $_.displayName })
             Update-GcSrcFilter
             Update-GcTgtFilter
             $Script:GC_UI.SrcSearch.IsEnabled = $true
@@ -106,8 +73,7 @@ function Start-GcUserLoad {
         } catch {
             Write-Log "GC user-load timer error: $_" 'ERROR'
         }
-    })
-    $Script:GC_UserTimer.Start()
+    }
 }
 
 function Update-GcSrcFilter {
@@ -157,19 +123,11 @@ function Start-GcSourceGroupLoad {
     $Script:GC_UI.GrpHeader.Text            = 'Loading source user groups...'
     $Script:GC_UI.BtnCopy.IsEnabled         = $false
 
-    $Script:GC_SrcGrpRef = [hashtable]::Synchronized(@{ Done = $false; Groups = $null; Error = $null })
-    $token = $Script:AccessToken
-
-    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
-    $rs.Open()
-    $rs.SessionStateProxy.SetVariable('Ref',    $Script:GC_SrcGrpRef)
-    $rs.SessionStateProxy.SetVariable('Token',  $token)
-    $rs.SessionStateProxy.SetVariable('UserId', $UserId)
-
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    $ps.Runspace = $rs
-    [void]$ps.AddScript({
-        try {
+    if ($Script:GC_SrcGrpTimer) { $Script:GC_SrcGrpTimer.Stop() }
+    $Script:GC_SrcGrpTimer = Start-AsyncWork `
+        -Vars    @{ UserId = $UserId } `
+        -RefSeed @{ Groups = $null } `
+        -Script {
             $groups = [System.Collections.Generic.List[object]]::new()
             $url = "https://graph.microsoft.com/v1.0/users/$UserId/memberOf?`$select=id,displayName,groupTypes&`$top=999"
             do {
@@ -181,57 +139,44 @@ function Start-GcSourceGroupLoad {
                 $url = $resp.'@odata.nextLink'
             } while ($url)
             $Ref['Groups'] = $groups.ToArray()
-        } catch {
-            $sc = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode.value__ } else { 0 }
-            if ($sc -eq 401) { $Ref['Error'] = '401' } else { $Ref['Error'] = $_.Exception.Message }
-        } finally { $Ref['Done'] = $true }
-    })
-    $ps.BeginInvoke() | Out-Null
+        } -OnComplete {
+            param($ref)
+            try {
+                if ($ref['Error'] -eq '401') {
+                    $Script:GC_UI.GrpPlaceholder.Text = 'Session expired - reconnect.'
+                    return
+                }
+                if ($ref['Error']) {
+                    Write-Log "GC: source group load failed - $($ref['Error'])" 'ERROR'
+                    $Script:GC_UI.GrpPlaceholder.Text = "Error: $($ref['Error'])"
+                    return
+                }
 
-    if ($Script:GC_SrcGrpTimer) { $Script:GC_SrcGrpTimer.Stop() }
-    $Script:GC_SrcGrpTimer          = [System.Windows.Threading.DispatcherTimer]::new()
-    $Script:GC_SrcGrpTimer.Interval = [TimeSpan]::FromMilliseconds(300)
-    $Script:GC_SrcGrpTimer.Add_Tick({
-        try {
-            if (-not $Script:GC_SrcGrpRef['Done']) { return }
-            $Script:GC_SrcGrpTimer.Stop()
+                $Script:GC_SourceGroups = @($ref['Groups'] | Sort-Object { $_.displayName })
+                $n = $Script:GC_SourceGroups.Count
+                Write-Log "GC: loaded $n source groups" 'INFO'
 
-            if ($Script:GC_SrcGrpRef['Error'] -eq '401') {
-                $Script:GC_UI.GrpPlaceholder.Text = 'Session expired - reconnect.'
-                return
+                if ($n -eq 0) {
+                    $Script:GC_UI.GrpHeader.Text      = 'Source user has no group memberships'
+                    $Script:GC_UI.GrpPlaceholder.Text = 'No groups to copy.'
+                    return
+                }
+
+                $Script:GC_UI.GrpHeader.Text            = "$n group$(if ($n -ne 1) { 's' }) on source user"
+                $Script:GC_UI.GrpPlaceholder.Visibility = 'Collapsed'
+                $Script:GC_UI.GrpList.Items.Clear()
+                foreach ($g in $Script:GC_SourceGroups) {
+                    $lbi         = [System.Windows.Controls.ListBoxItem]::new()
+                    $lbi.Content = $g.displayName
+                    $lbi.Tag     = $g
+                    [void]$Script:GC_UI.GrpList.Items.Add($lbi)
+                }
+                $Script:GC_UI.GrpList.Visibility = 'Visible'
+                Update-GcCopyButton
+            } catch {
+                Write-Log "GC src-grp timer error: $_" 'ERROR'
             }
-            if ($Script:GC_SrcGrpRef['Error']) {
-                Write-Log "GC: source group load failed - $($Script:GC_SrcGrpRef['Error'])" 'ERROR'
-                $Script:GC_UI.GrpPlaceholder.Text = "Error: $($Script:GC_SrcGrpRef['Error'])"
-                return
-            }
-
-            $Script:GC_SourceGroups = @($Script:GC_SrcGrpRef['Groups'] | Sort-Object { $_.displayName })
-            $n = $Script:GC_SourceGroups.Count
-            Write-Log "GC: loaded $n source groups" 'INFO'
-
-            if ($n -eq 0) {
-                $Script:GC_UI.GrpHeader.Text      = 'Source user has no group memberships'
-                $Script:GC_UI.GrpPlaceholder.Text = 'No groups to copy.'
-                return
-            }
-
-            $Script:GC_UI.GrpHeader.Text            = "$n group$(if ($n -ne 1) { 's' }) on source user"
-            $Script:GC_UI.GrpPlaceholder.Visibility = 'Collapsed'
-            $Script:GC_UI.GrpList.Items.Clear()
-            foreach ($g in $Script:GC_SourceGroups) {
-                $lbi         = [System.Windows.Controls.ListBoxItem]::new()
-                $lbi.Content = $g.displayName
-                $lbi.Tag     = $g
-                [void]$Script:GC_UI.GrpList.Items.Add($lbi)
-            }
-            $Script:GC_UI.GrpList.Visibility = 'Visible'
-            Update-GcCopyButton
-        } catch {
-            Write-Log "GC src-grp timer error: $_" 'ERROR'
         }
-    })
-    $Script:GC_SrcGrpTimer.Start()
 }
 
 function Update-GcCopyButton {
@@ -249,31 +194,21 @@ function Start-GcCopy {
     $srcUser   = $Script:GC_SourceUser
     $tgtUser   = $Script:GC_TargetUser
     $srcGroups = $Script:GC_SourceGroups
-    $token     = $Script:AccessToken
 
     $Script:GC_UI.BtnCopy.IsEnabled = $false
     Set-MainStatus "Copying groups to $($tgtUser.displayName)..." 'TextDim'
     Write-GcLog "Starting: '$($srcUser.displayName)' -> '$($tgtUser.displayName)'" 'TextDim'
 
-    $Script:GC_CopyRef = [hashtable]::Synchronized(@{
-        Done    = $false
-        Added   = [System.Collections.Generic.List[string]]::new()
-        Skipped = [System.Collections.Generic.List[string]]::new()
-        Failed  = [System.Collections.Generic.List[string]]::new()
-        Error   = $null
-    })
-
-    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
-    $rs.Open()
-    $rs.SessionStateProxy.SetVariable('Ref',       $Script:GC_CopyRef)
-    $rs.SessionStateProxy.SetVariable('Token',     $token)
-    $rs.SessionStateProxy.SetVariable('SrcGroups', $srcGroups)
-    $rs.SessionStateProxy.SetVariable('TgtUserId', $tgtUser.id)
-
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    $ps.Runspace = $rs
-    [void]$ps.AddScript({
-        try {
+    if ($Script:GC_CopyTimer) { $Script:GC_CopyTimer.Stop() }
+    $Script:GC_CopyTimer = Start-AsyncWork `
+        -IntervalMs 500 `
+        -Vars    @{ SrcGroups = $srcGroups; TgtUserId = $tgtUser.id } `
+        -RefSeed @{
+            Added   = [System.Collections.Generic.List[string]]::new()
+            Skipped = [System.Collections.Generic.List[string]]::new()
+            Failed  = [System.Collections.Generic.List[string]]::new()
+        } `
+        -Script {
             $tgtGroupIds = [System.Collections.Generic.HashSet[string]]::new()
             $url = "https://graph.microsoft.com/v1.0/users/$TgtUserId/memberOf?`$select=id&`$top=999"
             do {
@@ -299,45 +234,33 @@ function Start-GcCopy {
                     $Ref['Failed'].Add("$($grp.displayName): $($_.Exception.Message)")
                 }
             }
-        } catch {
-            $Ref['Error'] = $_.Exception.Message
-        } finally { $Ref['Done'] = $true }
-    })
-    $ps.BeginInvoke() | Out-Null
+        } -OnComplete {
+            param($ref)
+            try {
+                if ($ref['Error']) {
+                    Write-Log "GC: copy error - $($ref['Error'])" 'ERROR'
+                    Write-GcLog "Error: $($ref['Error'])" 'Danger'
+                    Set-MainStatus 'Group copy failed.' 'Danger'
+                } else {
+                    $added   = $ref['Added']
+                    $skipped = $ref['Skipped']
+                    $failed  = $ref['Failed']
 
-    if ($Script:GC_CopyTimer) { $Script:GC_CopyTimer.Stop() }
-    $Script:GC_CopyTimer          = [System.Windows.Threading.DispatcherTimer]::new()
-    $Script:GC_CopyTimer.Interval = [TimeSpan]::FromMilliseconds(500)
-    $Script:GC_CopyTimer.Add_Tick({
-        try {
-            if (-not $Script:GC_CopyRef['Done']) { return }
-            $Script:GC_CopyTimer.Stop()
+                    foreach ($g in $added)   { Write-GcLog "Added:   $g" 'Success' }
+                    foreach ($g in $skipped) { Write-GcLog "Skipped: $g (already a member)" 'TextDim' }
+                    foreach ($g in $failed)  { Write-GcLog "Failed:  $g" 'Danger' }
 
-            if ($Script:GC_CopyRef['Error']) {
-                Write-Log "GC: copy error - $($Script:GC_CopyRef['Error'])" 'ERROR'
-                Write-GcLog "Error: $($Script:GC_CopyRef['Error'])" 'Danger'
-                Set-MainStatus 'Group copy failed.' 'Danger'
-            } else {
-                $added   = $Script:GC_CopyRef['Added']
-                $skipped = $Script:GC_CopyRef['Skipped']
-                $failed  = $Script:GC_CopyRef['Failed']
+                    $summary = "Done — added: $($added.Count)  skipped: $($skipped.Count)  failed: $($failed.Count)"
+                    Write-GcLog $summary 'Text'
+                    Set-MainStatus $summary 'Success'
+                    Write-Log "GC: $summary" 'INFO'
+                }
 
-                foreach ($g in $added)   { Write-GcLog "Added:   $g" 'Success' }
-                foreach ($g in $skipped) { Write-GcLog "Skipped: $g (already a member)" 'TextDim' }
-                foreach ($g in $failed)  { Write-GcLog "Failed:  $g" 'Danger' }
-
-                $summary = "Done — added: $($added.Count)  skipped: $($skipped.Count)  failed: $($failed.Count)"
-                Write-GcLog $summary 'Text'
-                Set-MainStatus $summary 'Success'
-                Write-Log "GC: $summary" 'INFO'
+                Update-GcCopyButton
+            } catch {
+                Write-Log "GC copy-timer error: $_" 'ERROR'
             }
-
-            Update-GcCopyButton
-        } catch {
-            Write-Log "GC copy-timer error: $_" 'ERROR'
         }
-    })
-    $Script:GC_CopyTimer.Start()
 }
 
 # ── XAML ───────────────────────────────────────────────────────────────────────
