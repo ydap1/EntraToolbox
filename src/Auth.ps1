@@ -238,18 +238,49 @@ public static class EntraToolboxCache {
                 $AuthRef['CacheWarning'] = "Token cache setup failed: $_"
             }
 
-            $token = $null
+            # Step 1: silent auth
+            $token    = $null
+            $silentEx = $null
             try {
-                if ($AccountHint) {
-                    $token = Get-MsalToken -PublicClientApplication $app -Scopes $Scopes `
-                                           -Silent -LoginHint $AccountHint -ErrorAction Stop
-                } else {
-                    $token = Get-MsalToken -PublicClientApplication $app -Scopes $Scopes `
-                                           -Silent -ErrorAction Stop
+                $silentParams = @{
+                    PublicClientApplication = $app
+                    Scopes                  = $Scopes
+                    Silent                  = $true
+                    ErrorAction             = 'Stop'
                 }
-            } catch { $token = $null }
+                if ($AccountHint) { $silentParams['LoginHint'] = $AccountHint }
+                $token = Get-MsalToken @silentParams
+            } catch {
+                $silentEx = $_.Exception
+                $token    = $null
+            }
+
+            # Step 2: interactive fallback
             if (-not $token) {
-                $token = Get-MsalToken -PublicClientApplication $app -Scopes $Scopes -Interactive
+                $iParams = @{
+                    PublicClientApplication = $app
+                    Scopes                  = $Scopes
+                    Interactive             = $true
+                }
+                # Carry the claims challenge so Azure AD prompts for MFA even when an
+                # SSO session exists — without this, AADSTS50076 loops back on itself.
+                try {
+                    $claims = $silentEx.Claims
+                    if ($claims) { $iParams['ExtraQueryParameters'] = @{ claims = $claims } }
+                } catch { }
+                try {
+                    $token = Get-MsalToken @iParams -ErrorAction Stop
+                } catch {
+                    # If AADSTS50076 still comes back from interactive, strip the stale
+                    # SSO session by adding prompt=login and try once more.
+                    if ($_.Exception.Message -match 'AADSTS5007[69]') {
+                        [void]$iParams.Remove('ExtraQueryParameters')
+                        $iParams['ExtraQueryParameters'] = @{ prompt = 'login' }
+                        $token = Get-MsalToken @iParams
+                    } else {
+                        throw
+                    }
+                }
             }
             if ($token -and $token.AccessToken) {
                 $AuthRef['Token']      = $token.AccessToken
