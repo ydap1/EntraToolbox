@@ -115,6 +115,83 @@ $Script:AuthTimer   = $null
 $Script:AuthSuccess = $null
 $Script:AuthFailure = $null
 
+# ── Token cache persistence helper ───────────────────────────────────────────────
+# MSAL.NET v4 removed the parameterless TokenCache.Serialize/DeserializeMsalV3 — they
+# may only be called on the cache handed to a before/after-access notification. We can't
+# do that with a PowerShell scriptblock delegate because MSAL fires the notification on
+# its own threads (no Runspace attached → the delegate can't run). So we compile a tiny
+# C# helper (the same technique as MSAL.PS's own TokenCacheHelper, which it disables on
+# PS7) and register it on each app. The cache is stored DPAPI-encrypted for the current
+# Windows user. Compiled once; the type is then visible to every background runspace.
+$Script:TokenCacheHelperReady = $false
+function Initialize-TokenCacheHelper {
+    if (([System.Management.Automation.PSTypeName]'EtbTokenCacheHelper').Type) {
+        $Script:TokenCacheHelperReady = $true
+        return
+    }
+    try {
+        # Force the DPAPI assembly to load so we can reference its on-disk location.
+        $null = [System.Security.Cryptography.DataProtectionScope]
+        $idClient = [AppDomain]::CurrentDomain.GetAssemblies() |
+            Where-Object { $_.GetName().Name -eq 'Microsoft.Identity.Client' } | Select-Object -First 1
+        if (-not $idClient) { throw 'Microsoft.Identity.Client assembly is not loaded' }
+        $protData = [AppDomain]::CurrentDomain.GetAssemblies() |
+            Where-Object { $_.GetName().Name -eq 'System.Security.Cryptography.ProtectedData' } | Select-Object -First 1
+        $refs = @($idClient.Location)
+        if ($protData -and $protData.Location) { $refs += $protData.Location }
+
+        $src = @'
+using System;
+using System.IO;
+using System.Security.Cryptography;
+using Microsoft.Identity.Client;
+
+public class EtbTokenCacheHelper
+{
+    private readonly string _path;
+    public EtbTokenCacheHelper(string path) { _path = path; }
+
+    public void Enable(IPublicClientApplication app)
+    {
+        app.UserTokenCache.SetBeforeAccess(Before);
+        app.UserTokenCache.SetAfterAccess(After);
+    }
+
+    private void Before(TokenCacheNotificationArgs args)
+    {
+        try
+        {
+            if (File.Exists(_path))
+            {
+                byte[] raw = ProtectedData.Unprotect(File.ReadAllBytes(_path), null, DataProtectionScope.CurrentUser);
+                args.TokenCache.DeserializeMsalV3(raw);
+            }
+        }
+        catch { }
+    }
+
+    private void After(TokenCacheNotificationArgs args)
+    {
+        if (!args.HasStateChanged) { return; }
+        try
+        {
+            byte[] enc = ProtectedData.Protect(args.TokenCache.SerializeMsalV3(), null, DataProtectionScope.CurrentUser);
+            Directory.CreateDirectory(Path.GetDirectoryName(_path));
+            File.WriteAllBytes(_path, enc);
+        }
+        catch { }
+    }
+}
+'@
+        Add-Type -TypeDefinition $src -ReferencedAssemblies $refs -IgnoreWarnings -WarningAction SilentlyContinue -ErrorAction Stop
+        $Script:TokenCacheHelperReady = $true
+        Write-Log 'Auth: token cache helper compiled — sign-in will persist across restarts' 'DEBUG'
+    } catch {
+        $Script:TokenCacheHelperReady = $false
+        Write-Log "Auth: token cache helper unavailable — sign-in will NOT persist: $($_.Exception.Message)" 'WARN'
+    }
+}
+
 # ── Tenant config ──────────────────────────────────────────────────────────────
 function Get-TenantsConfigPath {
     $dir = Join-Path $Global:AppRoot 'config'
@@ -225,6 +302,7 @@ function Start-TenantConnectAsync {
     )
 
     Write-Log "Auth: starting token acquisition for tenant $TenantId" 'DEBUG'
+    Initialize-TokenCacheHelper
     $cacheFile   = Get-TenantCacheFile  -TenantId $TenantId
     $accountHint = Get-TenantAccountHint -TenantId $TenantId
     if ($accountHint) { Write-Log "Auth: using saved account hint $accountHint" 'DEBUG' }
@@ -270,46 +348,21 @@ function Start-TenantConnectAsync {
                 New-MsalClientApplication -ClientId $ClientId -TenantId $TenantId
             }
 
-            # Persist the MSAL token cache to disk so silent auth works across app restarts.
-            #
-            # MSAL.NET v4 REMOVED the parameterless TokenCache.SerializeMsalV3()/DeserializeMsalV3()
-            # methods — calling them directly throws. The supported approach is to register
-            # before/after-access callbacks and (de)serialize the cache passed in via
-            # TokenCacheNotificationArgs.TokenCache. We register them here (always, so the
-            # delegates are bound to this live runspace even when the app is reused) and store
-            # the cache DPAPI-encrypted, scoped to the current Windows user.
-            $Global:Etb_CacheFile = $CacheFile
-            $beforeAccess = [Microsoft.Identity.Client.TokenCacheCallback]{
-                param($a)
+            # Hook the compiled token cache helper onto this app so the MSAL cache is read
+            # before, and written after, every token operation (DPAPI-encrypted on disk).
+            # The type is compiled once in the main session and is visible here via the
+            # shared AppDomain. Registering on every connect is harmless and idempotent.
+            if (([System.Management.Automation.PSTypeName]'EtbTokenCacheHelper').Type) {
                 try {
-                    if ([System.IO.File]::Exists($Global:Etb_CacheFile)) {
-                        $enc = [System.IO.File]::ReadAllBytes($Global:Etb_CacheFile)
-                        $raw = [System.Security.Cryptography.ProtectedData]::Unprotect(
-                                   $enc, $null,
-                                   [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
-                        $a.TokenCache.DeserializeMsalV3($raw)
-                    }
-                } catch {}
+                    $cacheHelper = New-Object EtbTokenCacheHelper -ArgumentList $CacheFile
+                    $cacheHelper.Enable($app)
+                    $AuthRef['CacheEnabled'] = $true
+                } catch {
+                    $AuthRef['CacheWarning'] = "Token cache persistence failed to attach: $($_.Exception.Message)"
+                }
+            } else {
+                $AuthRef['CacheWarning'] = 'Token cache helper not compiled — tokens will not persist across restarts'
             }
-            $afterAccess = [Microsoft.Identity.Client.TokenCacheCallback]{
-                param($a)
-                try {
-                    if ($a.HasStateChanged) {
-                        $raw = $a.TokenCache.SerializeMsalV3()
-                        $enc = [System.Security.Cryptography.ProtectedData]::Protect(
-                                   $raw, $null,
-                                   [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
-                        $dir = [System.IO.Path]::GetDirectoryName($Global:Etb_CacheFile)
-                        if (-not [System.IO.Directory]::Exists($dir)) {
-                            [System.IO.Directory]::CreateDirectory($dir) | Out-Null
-                        }
-                        [System.IO.File]::WriteAllBytes($Global:Etb_CacheFile, $enc)
-                    }
-                } catch {}
-            }
-            $app.UserTokenCache.SetBeforeAccess($beforeAccess)
-            $app.UserTokenCache.SetAfterAccess($afterAccess)
-            $AuthRef['CacheEnabled'] = $true
 
             # Step 1: silent auth
             $token    = $null
@@ -364,7 +417,10 @@ function Start-TenantConnectAsync {
                 $AuthRef['Error'] = 'Token acquisition returned null.'
             }
         } catch {
-            $AuthRef['Error'] = $_.Exception.Message
+            $ex = $_.Exception
+            $detail = "$($ex.GetType().Name): $($ex.Message)"
+            if ($ex.InnerException) { $detail += " | inner: $($ex.InnerException.GetType().Name): $($ex.InnerException.Message)" }
+            $AuthRef['Error'] = $detail
         } finally {
             $AuthRef['Done'] = $true
         }

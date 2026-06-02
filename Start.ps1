@@ -53,6 +53,9 @@ if (-not (Get-Module MSAL.PS -ErrorAction SilentlyContinue)) {
 
 Write-Log "Art's Entra Toolbox $Global:AppVersion starting (PS $($PSVersionTable.PSVersion))" 'INFO'
 
+# Compile the token-cache persistence helper up front so the first sign-in isn't delayed.
+Initialize-TokenCacheHelper
+
 try {
     Show-MainWindow -AppVersion $Global:AppVersion
 } catch {
