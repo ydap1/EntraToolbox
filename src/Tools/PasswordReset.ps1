@@ -61,18 +61,10 @@ function Update-PwSelectionLabel {
 # ── Log helper ─────────────────────────────────────────────────────────────────
 function Write-PwLog {
     param([string]$Msg, [string]$Color = 'TextDim')
-    $ts   = Get-Date -Format 'HH:mm:ss'
-    $para = New-Object System.Windows.Documents.Paragraph
-    $run  = New-Object System.Windows.Documents.Run "[$ts]  $Msg"
-    $run.Foreground  = Get-ThemeHex $Color
-    $para.Inlines.Add($run)
-    $para.Margin = '0'
-    $Script:PwReset_UI.LogBox.Document.Blocks.Add($para)
-    $Script:PwReset_UI.LogBox.ScrollToEnd()
+    Write-RichLog $Script:PwReset_UI.LogBox $Msg $Color
 }
 
 # ── Async user load ────────────────────────────────────────────────────────────
-$Script:PwUserRef   = $null
 $Script:PwUserTimer = $null
 
 function Start-PwUserLoad {
@@ -85,50 +77,30 @@ function Start-PwUserLoad {
     Set-MainStatus 'Loading users...' 'TextDim'
     Write-PwLog 'Fetching users from Entra ID...' 'TextDim'
 
-    $Script:PwUserRef = [hashtable]::Synchronized(@{ Done = $false; Users = $null; Error = $null })
-    $token = $Script:AccessToken
-
-    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
-    $rs.Open()
-    $rs.SessionStateProxy.SetVariable('Ref',   $Script:PwUserRef)
-    $rs.SessionStateProxy.SetVariable('Token', $token)
-
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    $ps.Runspace = $rs
-    [void]$ps.AddScript({
-        try {
-            $users = [System.Collections.Generic.List[object]]::new()
-            $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,department,accountEnabled&$top=999'
-            do {
-                $resp = Invoke-RestMethod -Uri $url `
-                    -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-                foreach ($u in $resp.value) {
-                    if ($u.accountEnabled -eq $true -and $u.department) { $users.Add($u) }
-                }
-                $url = $resp.'@odata.nextLink'
-            } while ($url)
-            $Ref['Users'] = $users.ToArray()
-        } catch { $Ref['Error'] = $_.Exception.Message }
-        finally  { $Ref['Done'] = $true }
-    })
-    $ps.BeginInvoke() | Out-Null
-
     if ($Script:PwUserTimer) { $Script:PwUserTimer.Stop() }
-    $Script:PwUserTimer          = [System.Windows.Threading.DispatcherTimer]::new()
-    $Script:PwUserTimer.Interval = [TimeSpan]::FromMilliseconds(300)
-    $Script:PwUserTimer.Add_Tick({
+    $Script:PwUserTimer = Start-AsyncWork -RefSeed @{ Users = $null } -Script {
+        $users = [System.Collections.Generic.List[object]]::new()
+        $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,department,accountEnabled&$top=999'
+        do {
+            $resp = Invoke-RestMethod -Uri $url `
+                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
+            foreach ($u in $resp.value) {
+                if ($u.accountEnabled -eq $true -and $u.department) { $users.Add($u) }
+            }
+            $url = $resp.'@odata.nextLink'
+        } while ($url)
+        $Ref['Users'] = $users.ToArray()
+    } -OnComplete {
+        param($ref)
         try {
-            if (-not $Script:PwUserRef['Done']) { return }
-            $Script:PwUserTimer.Stop()
-
-            if ($Script:PwUserRef['Error']) {
-                Write-Log "PwReset: user load failed - $($Script:PwUserRef['Error'])" 'ERROR'
-                Write-PwLog "Failed to load users: $($Script:PwUserRef['Error'])" 'Danger'
+            if ($ref['Error']) {
+                Write-Log "PwReset: user load failed - $($ref['Error'])" 'ERROR'
+                Write-PwLog "Failed to load users: $($ref['Error'])" 'Danger'
                 Set-MainStatus 'Failed to load users.' 'Danger'
                 return
             }
 
-            $Script:PwReset_GraphUsers = $Script:PwUserRef['Users']
+            $Script:PwReset_GraphUsers = $ref['Users']
             Write-Log "PwReset: loaded $($Script:PwReset_GraphUsers.Count) users" 'INFO'
             Write-PwLog "Loaded $($Script:PwReset_GraphUsers.Count) enabled users with departments." 'Success'
 
@@ -154,8 +126,7 @@ function Start-PwUserLoad {
         } catch {
             Write-Log "PwReset user-load timer error: $_" 'ERROR'
         }
-    })
-    $Script:PwUserTimer.Start()
+    }
 }
 
 # ── XAML ───────────────────────────────────────────────────────────────────────
