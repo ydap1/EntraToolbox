@@ -586,7 +586,7 @@ function Start-TpCreateTeam {
 
             $resp     = Invoke-WebRequest -Uri 'https://graph.microsoft.com/v1.0/teams' `
                             -Headers $headers -Method POST -Body $body -ErrorAction Stop
-            $location = $resp.Headers['Location']
+            $location = @($resp.Headers['Location'])[0]
             if (-not $location) { throw 'No Location header in 202 response' }
             $Ref['Log'].Enqueue('Team provisioning started — polling for completion...')
 
