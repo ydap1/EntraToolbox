@@ -248,15 +248,16 @@ public static class EntraToolboxCache {
                     $typeKnown = $false
                     try { $typeKnown = $null -ne [EntraToolboxCache] } catch { }
                     if (-not $typeKnown) {
-                        # mscorlib (or its .NET Core facade) must be referenced explicitly so
-                        # the compiler can resolve MulticastDelegate, which MSAL's callback
-                        # signatures depend on. RuntimeEnvironment points to whichever runtime
-                        # is active (.NET Framework or .NET Core) and always contains these DLLs.
-                        $runtimeDir = [System.Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory()
+                        # Resolve the actual assembly paths for each type the C# class uses.
+                        # On .NET Framework these all live in mscorlib; on .NET Core they can
+                        # be split across System.Private.CoreLib, System.IO.FileSystem, etc.
+                        # Using Assembly.Location avoids hard-coding runtime-version paths.
                         $refs = @($msalDll) + @(
-                            (Join-Path $runtimeDir 'mscorlib.dll'),
-                            (Join-Path $runtimeDir 'System.Runtime.dll')
-                        ) | Where-Object { Test-Path $_ }
+                            [System.Object].Assembly.Location,
+                            [System.IO.File].Assembly.Location,
+                            [System.IO.Path].Assembly.Location,
+                            [System.Collections.Hashtable].Assembly.Location
+                        ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
                         Add-Type -TypeDefinition $src -ReferencedAssemblies $refs -ErrorAction Stop
                     }
                     [EntraToolboxCache]::Enable($app.UserTokenCache, $CacheFile)
