@@ -589,6 +589,7 @@ function Start-TpCreateTeam {
             $location = @($resp.Headers['Location'])[0]
             if (-not $location) { throw 'No Location header in 202 response' }
             if ($location -notmatch '^https?://') {
+                if ($location -notmatch '^/v\d') { $location = "/v1.0$location" }
                 $location = "https://graph.microsoft.com$location"
             }
             $Ref['Log'].Enqueue('Team provisioning started — polling for completion...')
