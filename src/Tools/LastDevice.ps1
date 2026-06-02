@@ -11,25 +11,15 @@
 # ── Script-level state ─────────────────────────────────────────────────────────
 $Script:LD_UI          = $null
 $Script:LD_AllUsers    = @()
-$Script:LD_UserRef     = $null
 $Script:LD_UserTimer   = $null
-$Script:LD_DevRef      = $null
 $Script:LD_DevTimer    = $null
 $Script:LD_AllDevices  = @()
-$Script:LD_AllDevRef   = $null
 $Script:LD_AllDevTimer = $null
 
 # ── Log helper ─────────────────────────────────────────────────────────────────
 function Write-LdLog {
     param([string]$Msg, [string]$Color = 'TextDim')
-    $ts   = Get-Date -Format 'HH:mm:ss'
-    $para = New-Object System.Windows.Documents.Paragraph
-    $run  = New-Object System.Windows.Documents.Run "[$ts]  $Msg"
-    $run.Foreground = Get-ThemeHex $Color
-    $para.Inlines.Add($run)
-    $para.Margin = '0'
-    $Script:LD_UI.LogBox.Document.Blocks.Add($para)
-    $Script:LD_UI.LogBox.ScrollToEnd()
+    Write-RichLog $Script:LD_UI.LogBox $Msg $Color
 }
 
 # ── Async user load ────────────────────────────────────────────────────────────
@@ -47,57 +37,34 @@ function Start-LdUserLoad {
     Set-MainStatus 'Loading users...' 'TextDim'
     Write-LdLog 'Fetching users from Entra ID...' 'TextDim'
 
-    $Script:LD_UserRef = [hashtable]::Synchronized(@{ Done = $false; Users = $null; Error = $null })
-    $token = $Script:AccessToken
-
-    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
-    $rs.Open()
-    $rs.SessionStateProxy.SetVariable('Ref',   $Script:LD_UserRef)
-    $rs.SessionStateProxy.SetVariable('Token', $token)
-
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    $ps.Runspace = $rs
-    [void]$ps.AddScript({
-        try {
-            $users = [System.Collections.Generic.List[object]]::new()
-            $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName&$top=999'
-            do {
-                $resp = Invoke-RestMethod -Uri $url `
-                    -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-                foreach ($u in $resp.value) { $users.Add($u) }
-                $url = $resp.'@odata.nextLink'
-            } while ($url)
-            $Ref['Users'] = $users.ToArray()
-        } catch {
-            if ($_.Exception.Response -and $_.Exception.Response.StatusCode.value__ -eq 401) {
-                $Ref['Error'] = '401'
-            } else { $Ref['Error'] = $_.Exception.Message }
-        } finally { $Ref['Done'] = $true }
-    })
-    $ps.BeginInvoke() | Out-Null
-
     if ($Script:LD_UserTimer) { $Script:LD_UserTimer.Stop() }
-    $Script:LD_UserTimer          = [System.Windows.Threading.DispatcherTimer]::new()
-    $Script:LD_UserTimer.Interval = [TimeSpan]::FromMilliseconds(300)
-    $Script:LD_UserTimer.Add_Tick({
+    $Script:LD_UserTimer = Start-AsyncWork -RefSeed @{ Users = $null } -Script {
+        $users = [System.Collections.Generic.List[object]]::new()
+        $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName&$top=999'
+        do {
+            $resp = Invoke-RestMethod -Uri $url `
+                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
+            foreach ($u in $resp.value) { $users.Add($u) }
+            $url = $resp.'@odata.nextLink'
+        } while ($url)
+        $Ref['Users'] = $users.ToArray()
+    } -OnComplete {
+        param($ref)
         try {
-            if (-not $Script:LD_UserRef['Done']) { return }
-            $Script:LD_UserTimer.Stop()
-
-            if ($Script:LD_UserRef['Error'] -eq '401') {
+            if ($ref['Error'] -eq '401') {
                 Write-Log 'LastDevice: user load 401 - session expired' 'ERROR'
                 Write-LdLog 'Session expired - reconnect via the tenant selector.' 'Danger'
                 Set-MainStatus 'Session expired.' 'Danger'
                 return
             }
-            if ($Script:LD_UserRef['Error']) {
-                Write-Log "LastDevice: user load failed - $($Script:LD_UserRef['Error'])" 'ERROR'
-                Write-LdLog "Error loading users: $($Script:LD_UserRef['Error'])" 'Danger'
+            if ($ref['Error']) {
+                Write-Log "LastDevice: user load failed - $($ref['Error'])" 'ERROR'
+                Write-LdLog "Error loading users: $($ref['Error'])" 'Danger'
                 Set-MainStatus 'Failed to load users.' 'Danger'
                 return
             }
 
-            $Script:LD_AllUsers = @($Script:LD_UserRef['Users'] | Sort-Object { $_.displayName })
+            $Script:LD_AllUsers = @($ref['Users'] | Sort-Object { $_.displayName })
             Update-LdUserFilter
             $Script:LD_UI.UserSearch.IsEnabled = $true
             $Script:LD_UI.UserList.IsEnabled   = $true
@@ -108,8 +75,7 @@ function Start-LdUserLoad {
         } catch {
             Write-Log "LastDevice user-load timer error: $_" 'ERROR'
         }
-    })
-    $Script:LD_UserTimer.Start()
+    }
 }
 
 function Update-LdUserFilter {
@@ -144,19 +110,11 @@ function Start-LdDeviceLoad {
     $Script:LD_UI.BtnCopy.IsEnabled         = $false
     Set-MainStatus 'Searching devices...' 'TextDim'
 
-    $Script:LD_DevRef = [hashtable]::Synchronized(@{ Done = $false; Devices = $null; Error = $null })
-    $token = $Script:AccessToken
-
-    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
-    $rs.Open()
-    $rs.SessionStateProxy.SetVariable('Ref',    $Script:LD_DevRef)
-    $rs.SessionStateProxy.SetVariable('Token',  $token)
-    $rs.SessionStateProxy.SetVariable('UserId', $UserId)
-
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    $ps.Runspace = $rs
-    [void]$ps.AddScript({
-        try {
+    if ($Script:LD_DevTimer) { $Script:LD_DevTimer.Stop() }
+    $Script:LD_DevTimer = Start-AsyncWork `
+        -Vars    @{ UserId  = $UserId } `
+        -RefSeed @{ Devices = $null } `
+        -Script {
             # Intune OData does not support lambda filters on usersLoggedOn, so we page
             # all devices and match client-side.
             $matches = [System.Collections.Generic.List[object]]::new()
@@ -172,71 +130,57 @@ function Start-LdDeviceLoad {
                 $url = $resp.'@odata.nextLink'
             } while ($url)
             $Ref['Devices'] = $matches.ToArray()
-        } catch {
-            if ($_.Exception.Response -and $_.Exception.Response.StatusCode.value__ -eq 401) {
-                $Ref['Error'] = '401'
-            } else { $Ref['Error'] = $_.Exception.Message }
-        } finally { $Ref['Done'] = $true }
-    })
-    $ps.BeginInvoke() | Out-Null
-
-    if ($Script:LD_DevTimer) { $Script:LD_DevTimer.Stop() }
-    $Script:LD_DevTimer          = [System.Windows.Threading.DispatcherTimer]::new()
-    $Script:LD_DevTimer.Interval = [TimeSpan]::FromMilliseconds(300)
-    $Script:LD_DevTimer.Add_Tick({
-        try {
-            if (-not $Script:LD_DevRef['Done']) { return }
-            $Script:LD_DevTimer.Stop()
-
-            if ($Script:LD_DevRef['Error'] -eq '401') {
-                Write-Log 'LastDevice: device load 401 - session expired' 'ERROR'
-                $Script:LD_UI.DevPlaceholder.Text = 'Session expired - reconnect.'
-                Set-MainStatus 'Session expired.' 'Danger'
-                return
-            }
-            if ($Script:LD_DevRef['Error']) {
-                Write-Log "LastDevice: device load failed - $($Script:LD_DevRef['Error'])" 'ERROR'
-                $Script:LD_UI.DevPlaceholder.Text = 'Failed to load devices.'
-                Set-MainStatus "Error: $($Script:LD_DevRef['Error'])" 'Danger'
-                return
-            }
-
-            $userId  = $Script:LD_UI.UserList.SelectedItem.Tag.id
-            $devices = @($Script:LD_DevRef['Devices'] | Sort-Object {
-                $entry = $_.usersLoggedOn | Where-Object { $_.userId -eq $userId } | Select-Object -First 1
-                if ($entry -and $entry.lastLogOnDateTime) { [datetime]$entry.lastLogOnDateTime }
-                else { [datetime]::MinValue }
-            } -Descending)
-
-            Write-Log "LastDevice: $($devices.Count) device(s) found for user $userId" 'INFO'
-
-            if ($devices.Count -eq 0) {
-                $Script:LD_UI.DevPlaceholder.Text       = 'No devices found for this user.'
-                $Script:LD_UI.DevPlaceholder.Visibility = 'Visible'
-                $Script:LD_UI.DevList.Visibility        = 'Collapsed'
-                Set-MainStatus 'No devices found.' 'TextDim'
-                return
-            }
-
-            foreach ($d in $devices) {
-                $lbi         = [System.Windows.Controls.ListBoxItem]::new()
-                $lbi.Content = $d.deviceName
-                $lbi.Tag     = $d
-                $entry = $d.usersLoggedOn | Where-Object { $_.userId -eq $userId } | Select-Object -First 1
-                if ($entry -and $entry.lastLogOnDateTime) {
-                    $lbi.ToolTip = "Last check-in: $([datetime]$entry.lastLogOnDateTime)"
+        } -OnComplete {
+            param($ref)
+            try {
+                if ($ref['Error'] -eq '401') {
+                    Write-Log 'LastDevice: device load 401 - session expired' 'ERROR'
+                    $Script:LD_UI.DevPlaceholder.Text = 'Session expired - reconnect.'
+                    Set-MainStatus 'Session expired.' 'Danger'
+                    return
                 }
-                [void]$Script:LD_UI.DevList.Items.Add($lbi)
+                if ($ref['Error']) {
+                    Write-Log "LastDevice: device load failed - $($ref['Error'])" 'ERROR'
+                    $Script:LD_UI.DevPlaceholder.Text = 'Failed to load devices.'
+                    Set-MainStatus "Error: $($ref['Error'])" 'Danger'
+                    return
+                }
+
+                $userId  = $Script:LD_UI.UserList.SelectedItem.Tag.id
+                $devices = @($ref['Devices'] | Sort-Object {
+                    $entry = $_.usersLoggedOn | Where-Object { $_.userId -eq $userId } | Select-Object -First 1
+                    if ($entry -and $entry.lastLogOnDateTime) { [datetime]$entry.lastLogOnDateTime }
+                    else { [datetime]::MinValue }
+                } -Descending)
+
+                Write-Log "LastDevice: $($devices.Count) device(s) found for user $userId" 'INFO'
+
+                if ($devices.Count -eq 0) {
+                    $Script:LD_UI.DevPlaceholder.Text       = 'No devices found for this user.'
+                    $Script:LD_UI.DevPlaceholder.Visibility = 'Visible'
+                    $Script:LD_UI.DevList.Visibility        = 'Collapsed'
+                    Set-MainStatus 'No devices found.' 'TextDim'
+                    return
+                }
+
+                foreach ($d in $devices) {
+                    $lbi         = [System.Windows.Controls.ListBoxItem]::new()
+                    $lbi.Content = $d.deviceName
+                    $lbi.Tag     = $d
+                    $entry = $d.usersLoggedOn | Where-Object { $_.userId -eq $userId } | Select-Object -First 1
+                    if ($entry -and $entry.lastLogOnDateTime) {
+                        $lbi.ToolTip = "Last check-in: $([datetime]$entry.lastLogOnDateTime)"
+                    }
+                    [void]$Script:LD_UI.DevList.Items.Add($lbi)
+                }
+                $Script:LD_UI.DevPlaceholder.Visibility = 'Collapsed'
+                $Script:LD_UI.DevList.Visibility        = 'Visible'
+                $n = $devices.Count
+                Set-MainStatus "Loaded $n device$(if ($n -ne 1) { 's' })." 'Success'
+            } catch {
+                Write-Log "LastDevice device-load timer error: $_" 'ERROR'
             }
-            $Script:LD_UI.DevPlaceholder.Visibility = 'Collapsed'
-            $Script:LD_UI.DevList.Visibility        = 'Visible'
-            $n = $devices.Count
-            Set-MainStatus "Loaded $n device$(if ($n -ne 1) { 's' })." 'Success'
-        } catch {
-            Write-Log "LastDevice device-load timer error: $_" 'ERROR'
         }
-    })
-    $Script:LD_DevTimer.Start()
 }
 
 # ── Async all-devices load (for "By Device" tab) ──────────────────────────────
@@ -247,55 +191,32 @@ function Start-LdAllDevicesLoad {
     $Script:LD_UI.DevBrowserList.Items.Clear()
     Write-LdLog 'By Device: fetching all Intune devices...' 'TextDim'
 
-    $Script:LD_AllDevRef = [hashtable]::Synchronized(@{ Done = $false; Devices = $null; Error = $null })
-    $token = $Script:AccessToken
-
-    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
-    $rs.Open()
-    $rs.SessionStateProxy.SetVariable('Ref',   $Script:LD_AllDevRef)
-    $rs.SessionStateProxy.SetVariable('Token', $token)
-
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    $ps.Runspace = $rs
-    [void]$ps.AddScript({
-        try {
-            $devices = [System.Collections.Generic.List[object]]::new()
-            $url = 'https://graph.microsoft.com/beta/deviceManagement/managedDevices?$select=id,deviceName,usersLoggedOn,lastSyncDateTime&$top=999'
-            do {
-                $resp = Invoke-RestMethod -Uri $url `
-                    -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-                foreach ($d in $resp.value) { $devices.Add($d) }
-                $url = $resp.'@odata.nextLink'
-            } while ($url)
-            $Ref['Devices'] = $devices.ToArray()
-        } catch {
-            if ($_.Exception.Response -and $_.Exception.Response.StatusCode.value__ -eq 401) {
-                $Ref['Error'] = '401'
-            } else { $Ref['Error'] = $_.Exception.Message }
-        } finally { $Ref['Done'] = $true }
-    })
-    $ps.BeginInvoke() | Out-Null
-
     if ($Script:LD_AllDevTimer) { $Script:LD_AllDevTimer.Stop() }
-    $Script:LD_AllDevTimer          = [System.Windows.Threading.DispatcherTimer]::new()
-    $Script:LD_AllDevTimer.Interval = [TimeSpan]::FromMilliseconds(300)
-    $Script:LD_AllDevTimer.Add_Tick({
+    $Script:LD_AllDevTimer = Start-AsyncWork -RefSeed @{ Devices = $null } -Script {
+        $devices = [System.Collections.Generic.List[object]]::new()
+        $url = 'https://graph.microsoft.com/beta/deviceManagement/managedDevices?$select=id,deviceName,usersLoggedOn,lastSyncDateTime&$top=999'
+        do {
+            $resp = Invoke-RestMethod -Uri $url `
+                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
+            foreach ($d in $resp.value) { $devices.Add($d) }
+            $url = $resp.'@odata.nextLink'
+        } while ($url)
+        $Ref['Devices'] = $devices.ToArray()
+    } -OnComplete {
+        param($ref)
         try {
-            if (-not $Script:LD_AllDevRef['Done']) { return }
-            $Script:LD_AllDevTimer.Stop()
-
-            if ($Script:LD_AllDevRef['Error'] -eq '401') {
+            if ($ref['Error'] -eq '401') {
                 Write-Log 'LastDevice/ByDevice: device load 401 - session expired' 'ERROR'
                 Write-LdLog 'By Device: session expired - reconnect.' 'Danger'
                 return
             }
-            if ($Script:LD_AllDevRef['Error']) {
-                Write-Log "LastDevice/ByDevice: device load failed - $($Script:LD_AllDevRef['Error'])" 'ERROR'
-                Write-LdLog "By Device: failed to load devices - $($Script:LD_AllDevRef['Error'])" 'Danger'
+            if ($ref['Error']) {
+                Write-Log "LastDevice/ByDevice: device load failed - $($ref['Error'])" 'ERROR'
+                Write-LdLog "By Device: failed to load devices - $($ref['Error'])" 'Danger'
                 return
             }
 
-            $Script:LD_AllDevices = @($Script:LD_AllDevRef['Devices'] | Sort-Object { $_.deviceName })
+            $Script:LD_AllDevices = @($ref['Devices'] | Sort-Object { $_.deviceName })
             Write-Log "LastDevice/ByDevice: loaded $($Script:LD_AllDevices.Count) devices" 'INFO'
             Write-LdLog "By Device: loaded $($Script:LD_AllDevices.Count) devices." 'Success'
             Update-LdDevBrowserFilter
@@ -305,8 +226,7 @@ function Start-LdAllDevicesLoad {
         } catch {
             Write-Log "LastDevice all-devices timer error: $_" 'ERROR'
         }
-    })
-    $Script:LD_AllDevTimer.Start()
+    }
 }
 
 function Update-LdDevBrowserFilter {
