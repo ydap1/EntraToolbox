@@ -316,12 +316,14 @@ public static class EntraToolboxCache {
             Write-Log 'Auth succeeded - token acquired' 'INFO'
             $Script:AccessToken     = $Script:AuthRef['Token']
             $Script:CurrentTenantId = $Script:AuthRef['TenantId']
+            # OnSuccess may call Save-Tenant (new-tenant dialog), so run it first to
+            # ensure the tenant row exists before we write the account hint into it.
+            & $Script:AuthSuccess
             if ($Script:AuthRef['AccountUPN']) {
                 Set-TenantAccountHint -TenantId $Script:AuthRef['TenantId'] `
                                       -AccountHint $Script:AuthRef['AccountUPN']
                 Write-Log "Auth: account hint saved ($($Script:AuthRef['AccountUPN']))" 'DEBUG'
             }
-            & $Script:AuthSuccess
         } catch {
             Write-Log "Auth timer tick error: $_" 'ERROR'
         }
