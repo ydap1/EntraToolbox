@@ -588,6 +588,9 @@ function Start-TpCreateTeam {
                             -Headers $headers -Method POST -Body $body -ErrorAction Stop
             $location = @($resp.Headers['Location'])[0]
             if (-not $location) { throw 'No Location header in 202 response' }
+            if ($location -notmatch '^https?://') {
+                $location = "https://graph.microsoft.com$location"
+            }
             $Ref['Log'].Enqueue('Team provisioning started — polling for completion...')
 
             # Step 2 — Poll operation URL every 3 s (max 90 s)
