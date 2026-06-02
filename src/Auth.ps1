@@ -72,6 +72,10 @@ $Script:GraphScopes = @(
 $Script:ConnectCallbacks = [System.Collections.Generic.List[scriptblock]]::new()
 $Script:ResetCallbacks   = [System.Collections.Generic.List[scriptblock]]::new()
 
+# Reusable IPublicClientApplication per tenant — keeps the in-memory MSAL cache alive
+# across tenant switches within the same session so silent re-auth never opens the browser.
+$Script:MsalApps = @{}
+
 # Async auth state
 $Script:AuthRef     = $null
 $Script:AuthTimer   = $null
@@ -139,6 +143,7 @@ function Disconnect-Tenant {
     param([Parameter(Mandatory)][string]$TenantId)
     $Script:AccessToken     = $null
     $Script:CurrentTenantId = $null
+    $Script:MsalApps.Remove($TenantId)
     $cacheFile = Get-TenantCacheFile -TenantId $TenantId
     if (Test-Path $cacheFile) { Remove-Item $cacheFile -Force -ErrorAction SilentlyContinue }
     Set-TenantAccountHint -TenantId $TenantId -AccountHint ''
@@ -163,6 +168,11 @@ function Start-TenantConnectAsync {
     $accountHint = Get-TenantAccountHint -TenantId $TenantId
     if ($accountHint) { Write-Log "Auth: using saved account hint $accountHint" 'DEBUG' }
 
+    # Reuse the existing app for this tenant if we have one — its in-memory MSAL cache
+    # means silent auth within the same session never opens the browser.
+    $existingApp = if ($Script:MsalApps.ContainsKey($TenantId)) { $Script:MsalApps[$TenantId] } else { $null }
+    if ($existingApp) { Write-Log "Auth: reusing cached app for tenant $TenantId" 'DEBUG' }
+
     $Script:AuthRef = [hashtable]::Synchronized(@{
         Done         = $false
         Token        = $null
@@ -171,6 +181,7 @@ function Start-TenantConnectAsync {
         AccountUPN   = $null
         CacheEnabled = $false
         CacheWarning = $null
+        App          = $null
     })
     $Script:AuthSuccess = $OnSuccess
     $Script:AuthFailure = $OnFailure
@@ -180,12 +191,13 @@ function Start-TenantConnectAsync {
 
     $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
     $rs.Open()
-    $rs.SessionStateProxy.SetVariable('AuthRef',     $Script:AuthRef)
-    $rs.SessionStateProxy.SetVariable('TenantId',    $TenantId)
-    $rs.SessionStateProxy.SetVariable('ClientId',    $clientId)
-    $rs.SessionStateProxy.SetVariable('Scopes',      $scopes)
-    $rs.SessionStateProxy.SetVariable('CacheFile',   $cacheFile)
-    $rs.SessionStateProxy.SetVariable('AccountHint', $accountHint)
+    $rs.SessionStateProxy.SetVariable('AuthRef',      $Script:AuthRef)
+    $rs.SessionStateProxy.SetVariable('TenantId',     $TenantId)
+    $rs.SessionStateProxy.SetVariable('ClientId',     $clientId)
+    $rs.SessionStateProxy.SetVariable('Scopes',       $scopes)
+    $rs.SessionStateProxy.SetVariable('CacheFile',    $cacheFile)
+    $rs.SessionStateProxy.SetVariable('AccountHint',  $accountHint)
+    $rs.SessionStateProxy.SetVariable('ExistingApp',  $existingApp)
 
     $ps = [System.Management.Automation.PowerShell]::Create()
     $ps.Runspace = $rs
@@ -193,49 +205,56 @@ function Start-TenantConnectAsync {
         try {
             Import-Module MSAL.PS -ErrorAction Stop
 
-            $app = New-MsalClientApplication -ClientId $ClientId -TenantId $TenantId
+            if ($ExistingApp) {
+                # Reuse the in-session app — no file cache setup needed; tokens are in memory.
+                $app = $ExistingApp
+                $AuthRef['CacheEnabled'] = $true
+            } else {
+                $app = New-MsalClientApplication -ClientId $ClientId -TenantId $TenantId
 
-            # Hook a file-based token cache so silent re-auth works across restarts.
-            # MSAL callbacks fire from a .NET thread pool thread with no PS runspace,
-            # so we must use a compiled C# class — PS scriptblocks would crash there.
-            try {
-                # Locate Microsoft.Identity.Client.dll via the loaded MSAL.PS module
-                $msalMod = Get-Module MSAL.PS -ErrorAction SilentlyContinue
-                $msalDll = $null
-                if ($msalMod) {
-                    $msalDll = Get-ChildItem -Path $msalMod.ModuleBase `
-                                   -Filter 'Microsoft.Identity.Client.dll' -Recurse `
-                                   -ErrorAction SilentlyContinue |
-                               Select-Object -First 1 -ExpandProperty FullName
-                }
-                if (-not $msalDll) {
-                    $msalDll = ([System.AppDomain]::CurrentDomain.GetAssemblies() |
-                        Where-Object { $_.GetName().Name -eq 'Microsoft.Identity.Client' } |
-                        Select-Object -First 1).Location
-                }
-                if (-not $msalDll -or -not (Test-Path $msalDll)) {
-                    throw "Microsoft.Identity.Client.dll not found"
-                }
+                # Hook a file-based token cache so silent re-auth works across restarts.
+                # MSAL callbacks fire from a .NET thread pool thread with no PS runspace,
+                # so we must use a compiled C# class — PS scriptblocks would crash there.
+                # Hashtable (System.Collections) is used instead of Dictionary<,> because
+                # generic type resolution can fail in a minimal background runspace.
+                try {
+                    $msalMod = Get-Module MSAL.PS -ErrorAction SilentlyContinue
+                    $msalDll = $null
+                    if ($msalMod) {
+                        $msalDll = Get-ChildItem -Path $msalMod.ModuleBase `
+                                       -Filter 'Microsoft.Identity.Client.dll' -Recurse `
+                                       -ErrorAction SilentlyContinue |
+                                   Select-Object -First 1 -ExpandProperty FullName
+                    }
+                    if (-not $msalDll) {
+                        $msalDll = ([System.AppDomain]::CurrentDomain.GetAssemblies() |
+                            Where-Object { $_.GetName().Name -eq 'Microsoft.Identity.Client' } |
+                            Select-Object -First 1).Location
+                    }
+                    if (-not $msalDll -or -not (Test-Path $msalDll)) {
+                        throw "Microsoft.Identity.Client.dll not found"
+                    }
 
-                $src = @'
-using System; using System.IO; using System.Collections.Generic; using Microsoft.Identity.Client;
+                    $src = @'
+using System; using System.IO; using System.Collections; using Microsoft.Identity.Client;
 public static class EntraToolboxCache {
-    private static readonly Dictionary<object,string> _map = new Dictionary<object,string>();
+    private static readonly Hashtable _map = new Hashtable();
     private static readonly object L = new object();
     public static void Enable(ITokenCache c, string path) { lock(L){_map[c]=path;} c.SetBeforeAccess(B); c.SetAfterAccess(A); }
-    private static void B(TokenCacheNotificationArgs n) { lock(L){ string f; if(!_map.TryGetValue(n.TokenCache,out f)||!File.Exists(f))return; try{n.TokenCache.DeserializeMsalV3(File.ReadAllBytes(f));}catch{} } }
-    private static void A(TokenCacheNotificationArgs n) { if(!n.HasStateChanged)return; lock(L){ string f; if(!_map.TryGetValue(n.TokenCache,out f))return; try{ string dir=Path.GetDirectoryName(f); if(!Directory.Exists(dir))Directory.CreateDirectory(dir); File.WriteAllBytes(f,n.TokenCache.SerializeMsalV3()); }catch{} } }
+    private static void B(TokenCacheNotificationArgs n) { lock(L){ string f=(string)_map[n.TokenCache]; if(f==null||!File.Exists(f))return; try{n.TokenCache.DeserializeMsalV3(File.ReadAllBytes(f));}catch{} } }
+    private static void A(TokenCacheNotificationArgs n) { if(!n.HasStateChanged)return; lock(L){ string f=(string)_map[n.TokenCache]; if(f==null)return; try{ string dir=Path.GetDirectoryName(f); if(!Directory.Exists(dir))Directory.CreateDirectory(dir); File.WriteAllBytes(f,n.TokenCache.SerializeMsalV3()); }catch{} } }
 }
 '@
-                $typeKnown = $false
-                try { $typeKnown = $null -ne [EntraToolboxCache] } catch { }
-                if (-not $typeKnown) {
-                    Add-Type -TypeDefinition $src -ReferencedAssemblies @($msalDll) -ErrorAction Stop
+                    $typeKnown = $false
+                    try { $typeKnown = $null -ne [EntraToolboxCache] } catch { }
+                    if (-not $typeKnown) {
+                        Add-Type -TypeDefinition $src -ReferencedAssemblies @($msalDll) -ErrorAction Stop
+                    }
+                    [EntraToolboxCache]::Enable($app.UserTokenCache, $CacheFile)
+                    $AuthRef['CacheEnabled'] = $true
+                } catch {
+                    $AuthRef['CacheWarning'] = "Token cache setup failed: $_"
                 }
-                [EntraToolboxCache]::Enable($app.UserTokenCache, $CacheFile)
-                $AuthRef['CacheEnabled'] = $true
-            } catch {
-                $AuthRef['CacheWarning'] = "Token cache setup failed: $_"
             }
 
             # Step 1: silent auth
@@ -285,6 +304,7 @@ public static class EntraToolboxCache {
             if ($token -and $token.AccessToken) {
                 $AuthRef['Token']      = $token.AccessToken
                 $AuthRef['AccountUPN'] = $token.Account.Username
+                $AuthRef['App']        = $app
             } else {
                 $AuthRef['Error'] = 'Token acquisition returned null.'
             }
@@ -316,6 +336,9 @@ public static class EntraToolboxCache {
             Write-Log 'Auth succeeded - token acquired' 'INFO'
             $Script:AccessToken     = $Script:AuthRef['Token']
             $Script:CurrentTenantId = $Script:AuthRef['TenantId']
+            if ($Script:AuthRef['App']) {
+                $Script:MsalApps[$Script:AuthRef['TenantId']] = $Script:AuthRef['App']
+            }
             # OnSuccess may call Save-Tenant (new-tenant dialog), so run it first to
             # ensure the tenant row exists before we write the account hint into it.
             & $Script:AuthSuccess
