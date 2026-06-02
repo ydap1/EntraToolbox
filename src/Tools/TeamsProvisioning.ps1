@@ -1,0 +1,602 @@
+<#
+    Teams Provisioning tab for Art's Entra Toolbox.
+    Dot-sourced by Start.ps1.
+    Exposes Initialize-TeamsProvisioningTool.
+#>
+
+$Script:TP_UI          = $null
+$Script:TP_AllUsers    = @()
+$Script:TP_Rows        = New-Object System.Collections.ObjectModel.ObservableCollection[PSObject]
+$Script:TP_Creating    = $false
+$Script:TP_UserRef     = $null
+$Script:TP_UserTimer   = $null
+$Script:TP_CreateRef   = $null
+$Script:TP_CreateTimer = $null
+
+function Write-TpLog {
+    param([string]$Msg, [string]$Color = 'TextDim')
+    $ts   = Get-Date -Format 'HH:mm:ss'
+    $para = New-Object System.Windows.Documents.Paragraph
+    $run  = New-Object System.Windows.Documents.Run "[$ts]  $Msg"
+    $run.Foreground = Get-ThemeHex $Color
+    $para.Inlines.Add($run)
+    $para.Margin = '0'
+    $Script:TP_UI.LogBox.Document.Blocks.Add($para)
+    $Script:TP_UI.LogBox.ScrollToEnd()
+}
+
+function Update-TpCreateButton {
+    $nameOk  = -not [string]::IsNullOrWhiteSpace($Script:TP_UI.TeamName.Text)
+    $hasRows = $Script:TP_Rows.Count -gt 0
+    $Script:TP_UI.BtnCreate.IsEnabled = ($nameOk -and $hasRows -and -not $Script:TP_Creating)
+}
+
+function Update-TpSelectionLabel {
+    $sel   = $Script:TP_UI.Grid.SelectedItems.Count
+    $total = $Script:TP_Rows.Count
+    $Script:TP_UI.LblSelection.Text = if ($total -gt 0) { "$sel of $total members" } else { '' }
+}
+
+function Update-TpSearchFilter {
+    $q = $Script:TP_UI.Search.Text.Trim().ToLower()
+    $Script:TP_UI.SearchList.Items.Clear()
+    if ([string]::IsNullOrWhiteSpace($q) -or $Script:TP_AllUsers.Count -eq 0) { return }
+
+    $existingIds = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($r in $Script:TP_Rows) { [void]$existingIds.Add($r.Id) }
+
+    $matches = @($Script:TP_AllUsers |
+        Where-Object { $_.displayName -like "*$q*" -or $_.userPrincipalName -like "*$q*" } |
+        Where-Object { -not $existingIds.Contains($_.id) } |
+        Select-Object -First 30)
+
+    foreach ($u in $matches) {
+        $lbi         = [System.Windows.Controls.ListBoxItem]::new()
+        $lbi.Content = "$($u.displayName)  ($($u.userPrincipalName))"
+        $lbi.Tag     = $u
+        [void]$Script:TP_UI.SearchList.Items.Add($lbi)
+    }
+}
+
+$Script:TpXaml = @'
+<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      Background="#12121C">
+  <Grid.Resources>
+
+    <SolidColorBrush x:Key="Bg"      Color="#12121C"/>
+    <SolidColorBrush x:Key="Surface" Color="#1C1C2A"/>
+    <SolidColorBrush x:Key="Card"    Color="#242436"/>
+    <SolidColorBrush x:Key="Border"  Color="#3C3C5A"/>
+    <SolidColorBrush x:Key="Accent"  Color="#6366F1"/>
+    <SolidColorBrush x:Key="Text"    Color="#E2E2F0"/>
+    <SolidColorBrush x:Key="TextDim" Color="#7878A0"/>
+    <SolidColorBrush x:Key="Muted"   Color="#50507A"/>
+
+    <Style x:Key="PrimaryBtn" TargetType="Button">
+      <Setter Property="Foreground"      Value="White"/>
+      <Setter Property="FontWeight"      Value="SemiBold"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Cursor"          Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="bd" Background="{TemplateBinding Background}"
+                    CornerRadius="6" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="bd" Property="Opacity" Value="0.85"/>
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="bd" Property="Opacity" Value="0.65"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="bd" Property="Background" Value="#242436"/>
+                <Setter Property="Foreground" Value="#3C3C5A"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="SectionLbl" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="#50507A"/>
+      <Setter Property="FontSize"   Value="10"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="Margin"     Value="0,0,0,6"/>
+    </Style>
+
+    <Style TargetType="ComboBox">
+      <Setter Property="Background"        Value="#242436"/>
+      <Setter Property="Foreground"        Value="#E2E2F0"/>
+      <Setter Property="BorderBrush"       Value="#3C3C5A"/>
+      <Setter Property="BorderThickness"   Value="1"/>
+      <Setter Property="Height"            Value="32"/>
+      <Setter Property="Padding"           Value="8,0"/>
+      <Setter Property="MaxDropDownHeight" Value="220"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ComboBox">
+            <Grid>
+              <Border x:Name="bd" CornerRadius="4"
+                      Background="{TemplateBinding Background}"
+                      BorderBrush="{TemplateBinding BorderBrush}"
+                      BorderThickness="{TemplateBinding BorderThickness}"/>
+              <ContentPresenter Margin="{TemplateBinding Padding}"
+                                VerticalAlignment="Center" HorizontalAlignment="Left"
+                                Content="{TemplateBinding SelectionBoxItem}"
+                                ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                                IsHitTestVisible="False"/>
+              <Path x:Name="arrow" Data="M0,0 L4,4 L8,0 Z" Fill="#7878A0"
+                    HorizontalAlignment="Right" VerticalAlignment="Center"
+                    Margin="0,0,10,0" IsHitTestVisible="False"/>
+              <ToggleButton Focusable="False" Cursor="Hand"
+                            IsChecked="{Binding IsDropDownOpen,
+                                        RelativeSource={RelativeSource TemplatedParent},
+                                        Mode=TwoWay}">
+                <ToggleButton.Template>
+                  <ControlTemplate TargetType="ToggleButton">
+                    <Rectangle Fill="Transparent"/>
+                  </ControlTemplate>
+                </ToggleButton.Template>
+              </ToggleButton>
+              <Popup x:Name="PART_Popup" AllowsTransparency="True"
+                     IsOpen="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}}"
+                     Placement="Bottom" PopupAnimation="Slide">
+                <Border Background="#242436" BorderBrush="#3C3C5A" BorderThickness="1"
+                        CornerRadius="0,0,4,4" MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                  <ScrollViewer><ItemsPresenter/></ScrollViewer>
+                </Border>
+              </Popup>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="bd" Property="BorderBrush" Value="#6366F1"/>
+              </Trigger>
+              <Trigger Property="IsDropDownOpen" Value="True">
+                <Setter TargetName="bd"    Property="CornerRadius" Value="4,4,0,0"/>
+                <Setter TargetName="arrow" Property="Fill"         Value="#E2E2F0"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="bd" Property="Background" Value="#1C1C2A"/>
+                <Setter Property="Foreground" Value="#3C3C5A"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style TargetType="ComboBoxItem">
+      <Setter Property="Foreground" Value="#E2E2F0"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Padding"    Value="10,7"/>
+      <Setter Property="Cursor"     Value="Hand"/>
+      <Style.Triggers>
+        <Trigger Property="IsMouseOver" Value="True">
+          <Setter Property="Background" Value="#2E2E48"/>
+        </Trigger>
+        <Trigger Property="IsSelected" Value="True">
+          <Setter Property="Background" Value="#6366F1"/>
+          <Setter Property="Foreground" Value="White"/>
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+
+    <Style TargetType="RadioButton">
+      <Setter Property="Foreground" Value="#E2E2F0"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Cursor"     Value="Hand"/>
+      <Setter Property="Margin"     Value="0,4,0,0"/>
+    </Style>
+
+    <Style TargetType="DataGrid">
+      <Setter Property="Background"               Value="#12121C"/>
+      <Setter Property="Foreground"               Value="#E2E2F0"/>
+      <Setter Property="BorderThickness"          Value="0"/>
+      <Setter Property="GridLinesVisibility"      Value="Horizontal"/>
+      <Setter Property="HorizontalGridLinesBrush" Value="#1E1E32"/>
+      <Setter Property="RowBackground"            Value="#12121C"/>
+      <Setter Property="AlternatingRowBackground" Value="#181826"/>
+      <Setter Property="ColumnHeaderHeight"       Value="34"/>
+      <Setter Property="RowHeight"                Value="28"/>
+      <Setter Property="AutoGenerateColumns"      Value="False"/>
+      <Setter Property="CanUserAddRows"           Value="False"/>
+      <Setter Property="CanUserDeleteRows"        Value="False"/>
+      <Setter Property="IsReadOnly"               Value="False"/>
+      <Setter Property="SelectionMode"            Value="Extended"/>
+      <Setter Property="SelectionUnit"            Value="FullRow"/>
+      <Setter Property="CanUserSortColumns"       Value="True"/>
+      <Setter Property="FontSize"                 Value="12"/>
+    </Style>
+
+    <Style TargetType="DataGridColumnHeader">
+      <Setter Property="Background"      Value="#1C1C2A"/>
+      <Setter Property="Foreground"      Value="#7878A0"/>
+      <Setter Property="FontWeight"      Value="SemiBold"/>
+      <Setter Property="Padding"         Value="12,0"/>
+      <Setter Property="BorderBrush"     Value="#3C3C5A"/>
+      <Setter Property="BorderThickness" Value="0,0,0,1"/>
+      <Setter Property="FontSize"        Value="11"/>
+      <Setter Property="Cursor"          Value="Hand"/>
+    </Style>
+
+    <Style TargetType="DataGridRow">
+      <Setter Property="Background" Value="Transparent"/>
+      <Style.Triggers>
+        <Trigger Property="IsSelected"  Value="True">
+          <Setter Property="Background" Value="#2A2A50"/>
+        </Trigger>
+        <Trigger Property="IsMouseOver" Value="True">
+          <Setter Property="Background" Value="#1E1E38"/>
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+
+    <Style TargetType="DataGridCell">
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding"         Value="12,0"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="DataGridCell">
+            <Border Padding="{TemplateBinding Padding}" Background="{TemplateBinding Background}">
+              <ContentPresenter VerticalAlignment="Center"/>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style TargetType="TabControl">
+      <Setter Property="Background"      Value="#12121C"/>
+      <Setter Property="BorderThickness" Value="0"/>
+    </Style>
+
+    <Style TargetType="TabItem">
+      <Setter Property="Foreground"      Value="#7878A0"/>
+      <Setter Property="Background"      Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding"         Value="14,8"/>
+      <Setter Property="FontWeight"      Value="SemiBold"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TabItem">
+            <Border x:Name="bd" Padding="{TemplateBinding Padding}" Cursor="Hand">
+              <Border x:Name="ind" BorderThickness="0,0,0,2" BorderBrush="Transparent" Padding="0,0,0,3">
+                <ContentPresenter ContentSource="Header"/>
+              </Border>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Foreground" Value="#E2E2F0"/>
+                <Setter TargetName="ind" Property="BorderBrush" Value="#6366F1"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+  </Grid.Resources>
+
+  <Grid.ColumnDefinitions>
+    <ColumnDefinition Width="260" MinWidth="200"/>
+    <ColumnDefinition Width="5"/>
+    <ColumnDefinition Width="*"/>
+  </Grid.ColumnDefinitions>
+
+  <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch"
+                Background="#3C3C5A" Cursor="SizeWE" ResizeBehavior="PreviousAndNext"/>
+
+  <!-- ── Sidebar ──────────────────────────────────────────────────── -->
+  <Border Grid.Column="0" Background="#1C1C2A">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Margin="16,20,16,16">
+
+        <TextBlock Text="TEAM NAME" Style="{StaticResource SectionLbl}"/>
+        <TextBox x:Name="TpTeamName" Background="#242436" Foreground="#E2E2F0"
+                 BorderBrush="#3C3C5A" BorderThickness="1" Height="32"
+                 Padding="8,0" VerticalContentAlignment="Center" CaretBrush="#E2E2F0"
+                 Margin="0,0,0,14"/>
+
+        <TextBlock Text="TEAM TYPE" Style="{StaticResource SectionLbl}"/>
+        <RadioButton x:Name="TpRbClass"    Content="Class Team"    GroupName="tptype" IsChecked="True"/>
+        <RadioButton x:Name="TpRbStandard" Content="Standard Team" GroupName="tptype"/>
+
+        <Border Background="#3C3C5A" Height="1" Margin="0,14"/>
+
+        <TextBlock Text="POPULATION" Style="{StaticResource SectionLbl}"/>
+        <RadioButton x:Name="TpRbYearGroup" Content="Year Group"   GroupName="tppop" IsChecked="True"/>
+        <RadioButton x:Name="TpRbDirect"    Content="Direct Users" GroupName="tppop" Margin="0,4,0,8"/>
+
+        <StackPanel x:Name="TpPnlYearGroup">
+          <ComboBox x:Name="TpCboYear" IsEnabled="False"/>
+          <Button x:Name="TpBtnLoad" Content="Load Students" IsEnabled="False"
+                  Style="{StaticResource PrimaryBtn}" Background="#242436"
+                  Foreground="#7878A0" Padding="0,10" Margin="0,8,0,0"/>
+        </StackPanel>
+
+        <StackPanel x:Name="TpPnlDirect" Visibility="Collapsed">
+          <TextBox x:Name="TpSearch" Background="#242436" Foreground="#E2E2F0"
+                   BorderBrush="#3C3C5A" BorderThickness="1" Height="32"
+                   Padding="8,0" VerticalContentAlignment="Center" CaretBrush="#E2E2F0"/>
+          <Border Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="1"
+                  CornerRadius="0,0,4,4" Margin="0,1,0,0" MaxHeight="160">
+            <ListBox x:Name="TpSearchList" Background="Transparent" BorderThickness="0"
+                     Foreground="#E2E2F0" ScrollViewer.VerticalScrollBarVisibility="Auto">
+              <ListBox.ItemContainerStyle>
+                <Style TargetType="ListBoxItem">
+                  <Setter Property="Foreground" Value="#E2E2F0"/>
+                  <Setter Property="Padding"    Value="10,7"/>
+                  <Setter Property="Cursor"     Value="Hand"/>
+                  <Style.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                      <Setter Property="Background" Value="#2E2E48"/>
+                    </Trigger>
+                    <Trigger Property="IsSelected" Value="True">
+                      <Setter Property="Background" Value="#6366F1"/>
+                      <Setter Property="Foreground" Value="White"/>
+                    </Trigger>
+                  </Style.Triggers>
+                </Style>
+              </ListBox.ItemContainerStyle>
+            </ListBox>
+          </Border>
+        </StackPanel>
+
+        <Border Background="#3C3C5A" Height="1" Margin="0,14"/>
+
+        <TextBlock Text="SELECTION" Style="{StaticResource SectionLbl}"/>
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="4"/>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="4"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+          <TextBlock x:Name="TpLblSelection" Grid.Column="0"
+                     Foreground="#50507A" FontSize="11" VerticalAlignment="Center"/>
+          <Button x:Name="TpBtnSelectAll" Grid.Column="2" Content="All"
+                  Style="{StaticResource PrimaryBtn}" Background="#242436"
+                  Foreground="#7878A0" Padding="8,4" FontSize="11" IsEnabled="False"/>
+          <Button x:Name="TpBtnSelectNone" Grid.Column="4" Content="None"
+                  Style="{StaticResource PrimaryBtn}" Background="#242436"
+                  Foreground="#7878A0" Padding="8,4" FontSize="11" IsEnabled="False"/>
+        </Grid>
+
+        <Border Background="#3C3C5A" Height="1" Margin="0,14"/>
+
+        <TextBlock Text="ACTIONS" Style="{StaticResource SectionLbl}"/>
+        <Button x:Name="TpBtnCreate" Content="Create Team" IsEnabled="False"
+                Style="{StaticResource PrimaryBtn}" Background="#6366F1" Padding="0,10"/>
+
+        <Border x:Name="TpPnlStats" CornerRadius="6" Background="#242436"
+                Padding="14,12" Margin="0,14,0,0" Visibility="Collapsed">
+          <StackPanel>
+            <TextBlock x:Name="TpLblTeamStatus"    Text="Team   -" Foreground="#7878A0"
+                       FontFamily="Consolas" FontSize="12"/>
+            <TextBlock x:Name="TpLblMembersAdded"  Text="Added  -" Foreground="#22C55E"
+                       FontFamily="Consolas" FontSize="12" Margin="0,4,0,0"/>
+            <TextBlock x:Name="TpLblMembersFailed" Text="Failed -" Foreground="#7878A0"
+                       FontFamily="Consolas" FontSize="12" Margin="0,4,0,0"/>
+          </StackPanel>
+        </Border>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Border>
+
+  <!-- ── Right panel ─────────────────────────────────────────────── -->
+  <TabControl Grid.Column="2">
+    <TabControl.Template>
+      <ControlTemplate TargetType="TabControl">
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+          </Grid.RowDefinitions>
+          <Border Grid.Row="0" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
+            <TabPanel IsItemsHost="True" Margin="8,0"/>
+          </Border>
+          <ContentPresenter Grid.Row="1" ContentSource="SelectedContent"/>
+        </Grid>
+      </ControlTemplate>
+    </TabControl.Template>
+
+    <TabItem Header="Members">
+      <DataGrid x:Name="TpGrid"
+                VirtualizingPanel.IsVirtualizing="True"
+                VirtualizingPanel.VirtualizationMode="Recycling">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="Display Name"   Binding="{Binding DisplayName}" Width="*"    IsReadOnly="True" SortMemberPath="DisplayName"/>
+          <DataGridTextColumn Header="Username (UPN)" Binding="{Binding UPN}"         Width="1.4*" IsReadOnly="True" SortMemberPath="UPN"/>
+          <DataGridTextColumn Header="Department"     Binding="{Binding Department}"  Width="80"   IsReadOnly="True" SortMemberPath="Department"/>
+          <DataGridCheckBoxColumn Header="Owner" Binding="{Binding IsOwner}" Width="70"/>
+        </DataGrid.Columns>
+      </DataGrid>
+    </TabItem>
+
+    <TabItem Header="Log">
+      <RichTextBox x:Name="TpLogBox" Background="#12121C" Foreground="#7878A0"
+                   BorderThickness="0" IsReadOnly="True" FontFamily="Consolas"
+                   FontSize="12" Padding="12" VerticalScrollBarVisibility="Auto"
+                   HorizontalScrollBarVisibility="Auto"/>
+    </TabItem>
+  </TabControl>
+</Grid>
+'@
+
+function Start-TpUserLoad {
+    # Implemented in Task 4
+    Write-TpLog 'User load not yet implemented.' 'TextDim'
+}
+
+function Start-TpCreateTeam {
+    # Implemented in Task 5
+    Write-TpLog 'Team creation not yet implemented.' 'TextDim'
+}
+
+function Initialize-TeamsProvisioningTool {
+    $reader  = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new((Invoke-ThemeXaml $Script:TpXaml)))
+    $content = [System.Windows.Markup.XamlReader]::Load($reader)
+
+    $Script:TP_UI = @{
+        TeamName      = $content.FindName('TpTeamName')
+        RbClass       = $content.FindName('TpRbClass')
+        RbStandard    = $content.FindName('TpRbStandard')
+        RbYearGroup   = $content.FindName('TpRbYearGroup')
+        RbDirect      = $content.FindName('TpRbDirect')
+        PnlYearGroup  = $content.FindName('TpPnlYearGroup')
+        PnlDirect     = $content.FindName('TpPnlDirect')
+        CboYear       = $content.FindName('TpCboYear')
+        BtnLoad       = $content.FindName('TpBtnLoad')
+        Search        = $content.FindName('TpSearch')
+        SearchList    = $content.FindName('TpSearchList')
+        LblSelection  = $content.FindName('TpLblSelection')
+        BtnSelectAll  = $content.FindName('TpBtnSelectAll')
+        BtnSelectNone = $content.FindName('TpBtnSelectNone')
+        BtnCreate     = $content.FindName('TpBtnCreate')
+        PnlStats      = $content.FindName('TpPnlStats')
+        LblTeamStatus = $content.FindName('TpLblTeamStatus')
+        LblAdded      = $content.FindName('TpLblMembersAdded')
+        LblFailed     = $content.FindName('TpLblMembersFailed')
+        Grid          = $content.FindName('TpGrid')
+        LogBox        = $content.FindName('TpLogBox')
+    }
+
+    $Script:TP_UI.Grid.ItemsSource = $Script:TP_Rows
+
+    # Team name change -> re-evaluate Create button
+    $Script:TP_UI.TeamName.Add_TextChanged({
+        try { Update-TpCreateButton } catch { Write-Log "TP TeamName TextChanged error: $_" 'ERROR' }
+    })
+
+    # Population mode: Year Group
+    $Script:TP_UI.RbYearGroup.Add_Checked({
+        try {
+            $Script:TP_UI.PnlYearGroup.Visibility = 'Visible'
+            $Script:TP_UI.PnlDirect.Visibility    = 'Collapsed'
+            $Script:TP_Rows.Clear()
+            Update-TpSelectionLabel
+            Update-TpCreateButton
+        } catch { Write-Log "TP RbYearGroup Checked error: $_" 'ERROR' }
+    })
+
+    # Population mode: Direct Users
+    $Script:TP_UI.RbDirect.Add_Checked({
+        try {
+            $Script:TP_UI.PnlDirect.Visibility    = 'Visible'
+            $Script:TP_UI.PnlYearGroup.Visibility = 'Collapsed'
+            $Script:TP_Rows.Clear()
+            Update-TpSelectionLabel
+            Update-TpCreateButton
+        } catch { Write-Log "TP RbDirect Checked error: $_" 'ERROR' }
+    })
+
+    # Load Students (year group mode)
+    $Script:TP_UI.BtnLoad.Add_Click({
+        try {
+            $selItem = $Script:TP_UI.CboYear.SelectedItem
+            if (-not $selItem) { return }
+            $selGroup = $selItem.Tag
+            Write-Log "TP: loading users for group $selGroup" 'INFO'
+
+            $Script:TP_Rows.Clear()
+            $members = @($Script:TP_AllUsers | Where-Object { (Get-DeptGroup $_.department) -eq $selGroup })
+            foreach ($u in $members) {
+                $Script:TP_Rows.Add([PSCustomObject]@{
+                    Id          = $u.id
+                    DisplayName = $u.displayName
+                    UPN         = $u.userPrincipalName
+                    Department  = $u.department
+                    IsOwner     = $false
+                })
+            }
+            $Script:TP_UI.Grid.SelectAll()
+            $Script:TP_UI.BtnSelectAll.IsEnabled  = $true
+            $Script:TP_UI.BtnSelectNone.IsEnabled = $true
+            $Script:TP_UI.PnlStats.Visibility     = 'Collapsed'
+            Update-TpSelectionLabel
+            Update-TpCreateButton
+            Write-TpLog "Loaded $($members.Count) users for group: $selGroup" 'Text'
+            Set-MainStatus "Group $selGroup - $($members.Count) users loaded." 'Text'
+        } catch { Write-Log "TP BtnLoad click error: $_" 'ERROR' }
+    })
+
+    # Direct user search — filter as user types
+    $Script:TP_UI.Search.Add_TextChanged({
+        try { Update-TpSearchFilter } catch { Write-Log "TP Search TextChanged error: $_" 'ERROR' }
+    })
+
+    # Double-click a search result to add it to the grid
+    $Script:TP_UI.SearchList.Add_MouseDoubleClick({
+        try {
+            $sel = $Script:TP_UI.SearchList.SelectedItem
+            if (-not $sel) { return }
+            $u = $sel.Tag
+
+            $existingIds = [System.Collections.Generic.HashSet[string]]::new()
+            foreach ($r in $Script:TP_Rows) { [void]$existingIds.Add($r.Id) }
+            if ($existingIds.Contains($u.id)) { return }
+
+            $Script:TP_Rows.Add([PSCustomObject]@{
+                Id          = $u.id
+                DisplayName = $u.displayName
+                UPN         = $u.userPrincipalName
+                Department  = $u.department
+                IsOwner     = $false
+            })
+            $Script:TP_UI.BtnSelectAll.IsEnabled  = $true
+            $Script:TP_UI.BtnSelectNone.IsEnabled = $true
+            Update-TpSelectionLabel
+            Update-TpCreateButton
+            Update-TpSearchFilter
+            Write-TpLog "Added: $($u.displayName)  ($($u.userPrincipalName))" 'Text'
+        } catch { Write-Log "TP SearchList DoubleClick error: $_" 'ERROR' }
+    })
+
+    # Create Team button
+    $Script:TP_UI.BtnCreate.Add_Click({
+        try { Start-TpCreateTeam } catch { Write-Log "TP BtnCreate click error: $_" 'ERROR' }
+    })
+
+    # Select All / None
+    $Script:TP_UI.BtnSelectAll.Add_Click({
+        try { $Script:TP_UI.Grid.SelectAll() } catch { Write-Log "TP BtnSelectAll error: $_" 'ERROR' }
+    })
+    $Script:TP_UI.BtnSelectNone.Add_Click({
+        try { $Script:TP_UI.Grid.UnselectAll() } catch { Write-Log "TP BtnSelectNone error: $_" 'ERROR' }
+    })
+
+    # Grid selection -> update label
+    $Script:TP_UI.Grid.Add_SelectionChanged({
+        try { Update-TpSelectionLabel } catch { Write-Log "TP Grid SelectionChanged error: $_" 'ERROR' }
+    })
+
+    # Connect / reset callbacks
+    $Script:ConnectCallbacks.Add({ Start-TpUserLoad })
+    $Script:ResetCallbacks.Add({
+        $Script:TP_Rows.Clear()
+        $Script:TP_AllUsers                    = @()
+        $Script:TP_Creating                    = $false
+        $Script:TP_UI.TeamName.Text            = ''
+        $Script:TP_UI.CboYear.Items.Clear()
+        $Script:TP_UI.CboYear.IsEnabled        = $false
+        $Script:TP_UI.BtnLoad.IsEnabled        = $false
+        $Script:TP_UI.BtnCreate.IsEnabled      = $false
+        $Script:TP_UI.BtnSelectAll.IsEnabled   = $false
+        $Script:TP_UI.BtnSelectNone.IsEnabled  = $false
+        $Script:TP_UI.LblSelection.Text        = ''
+        $Script:TP_UI.PnlStats.Visibility      = 'Collapsed'
+        $Script:TP_UI.Search.Text              = ''
+        $Script:TP_UI.SearchList.Items.Clear()
+        $Script:TP_UI.RbYearGroup.IsChecked    = $true
+    })
+
+    Write-TpLog 'Teams Provisioning ready. Select a tenant to begin.' 'Muted'
+    return $content
+}
