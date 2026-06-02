@@ -8,22 +8,13 @@ $Script:TP_UI          = $null
 $Script:TP_AllUsers    = @()
 $Script:TP_Rows        = New-Object System.Collections.ObjectModel.ObservableCollection[PSObject]
 $Script:TP_Creating    = $false
-$Script:TP_UserRef     = $null
 $Script:TP_UserTimer   = $null
-$Script:TP_CreateRef   = $null
 $Script:TP_CreateTimer = $null
 
 function Write-TpLog {
     param([string]$Msg, [string]$Color = 'TextDim')
-    if (-not $Script:TP_UI) { Write-Log $Msg 'DEBUG'; return }
-    $ts   = Get-Date -Format 'HH:mm:ss'
-    $para = New-Object System.Windows.Documents.Paragraph
-    $run  = New-Object System.Windows.Documents.Run "[$ts]  $Msg"
-    $run.Foreground = Get-ThemeHex $Color
-    $para.Inlines.Add($run)
-    $para.Margin = '0'
-    $Script:TP_UI.LogBox.Document.Blocks.Add($para)
-    $Script:TP_UI.LogBox.ScrollToEnd()
+    # Write-RichLog falls back to console when LogBox is $null (e.g. UI not yet built).
+    Write-RichLog $Script:TP_UI.LogBox $Msg $Color
 }
 
 function Update-TpCreateButton {
@@ -440,51 +431,28 @@ function Start-TpUserLoad {
     Set-MainStatus 'Teams: loading users...' 'TextDim'
     Write-TpLog 'Fetching users from Entra ID...' 'TextDim'
 
-    $Script:TP_UserRef = [hashtable]::Synchronized(@{ Done = $false; Users = $null; Error = $null })
-    $token = $Script:AccessToken
-
-    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
-    $rs.Open()
-    $rs.SessionStateProxy.SetVariable('Ref',   $Script:TP_UserRef)
-    $rs.SessionStateProxy.SetVariable('Token', $token)
-
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    $ps.Runspace = $rs
-    [void]$ps.AddScript({
-        try {
-            $users = [System.Collections.Generic.List[object]]::new()
-            $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,department&$filter=accountEnabled eq true&$top=999'
-            do {
-                $resp = Invoke-RestMethod -Uri $url `
-                    -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-                foreach ($u in $resp.value) { $users.Add($u) }
-                $url = $resp.'@odata.nextLink'
-            } while ($url)
-            $Ref['Users'] = $users.ToArray()
-        } catch {
-            $Ref['Error'] = $_.Exception.Message
-        } finally {
-            $Ref['Done'] = $true
-        }
-    })
-    $ps.BeginInvoke() | Out-Null
-
     if ($Script:TP_UserTimer) { $Script:TP_UserTimer.Stop() }
-    $Script:TP_UserTimer          = [System.Windows.Threading.DispatcherTimer]::new()
-    $Script:TP_UserTimer.Interval = [TimeSpan]::FromMilliseconds(300)
-    $Script:TP_UserTimer.Add_Tick({
+    $Script:TP_UserTimer = Start-AsyncWork -RefSeed @{ Users = $null } -Script {
+        $users = [System.Collections.Generic.List[object]]::new()
+        $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,department&$filter=accountEnabled eq true&$top=999'
+        do {
+            $resp = Invoke-RestMethod -Uri $url `
+                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
+            foreach ($u in $resp.value) { $users.Add($u) }
+            $url = $resp.'@odata.nextLink'
+        } while ($url)
+        $Ref['Users'] = $users.ToArray()
+    } -OnComplete {
+        param($ref)
         try {
-            if (-not $Script:TP_UserRef['Done']) { return }
-            $Script:TP_UserTimer.Stop()
-
-            if ($Script:TP_UserRef['Error']) {
-                Write-Log "TP: user load failed - $($Script:TP_UserRef['Error'])" 'ERROR'
-                Write-TpLog "Failed to load users: $($Script:TP_UserRef['Error'])" 'Danger'
+            if ($ref['Error']) {
+                Write-Log "TP: user load failed - $($ref['Error'])" 'ERROR'
+                Write-TpLog "Failed to load users: $($ref['Error'])" 'Danger'
                 Set-MainStatus 'Teams: failed to load users.' 'Danger'
                 return
             }
 
-            $Script:TP_AllUsers = $Script:TP_UserRef['Users']
+            $Script:TP_AllUsers = $ref['Users']
             Write-Log "TP: loaded $($Script:TP_AllUsers.Count) users" 'INFO'
             Write-TpLog "Loaded $($Script:TP_AllUsers.Count) enabled users." 'Success'
 
@@ -509,8 +477,7 @@ function Start-TpUserLoad {
         } catch {
             Write-Log "TP user-load timer error: $_" 'ERROR'
         }
-    })
-    $Script:TP_UserTimer.Start()
+    }
 }
 
 function Start-TpCreateTeam {
@@ -543,29 +510,22 @@ function Start-TpCreateTeam {
     Set-MainStatus "Creating team '$teamName'..." 'TextDim'
     Write-TpLog "Creating $template team: '$teamName'  ($($memberSnap.Count) members)" 'TextDim'
 
-    $Script:TP_CreateRef = [hashtable]::Synchronized(@{
-        Done        = $false
-        TeamId      = $null
-        MembersOk   = 0
-        MembersFail = 0
-        Error       = $null
-        Log         = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
-    })
-    $token = $Script:AccessToken
-
-    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
-    $rs.Open()
-    $rs.SessionStateProxy.SetVariable('Ref',        $Script:TP_CreateRef)
-    $rs.SessionStateProxy.SetVariable('Token',      $token)
-    $rs.SessionStateProxy.SetVariable('TeamName',   $teamName)
-    $rs.SessionStateProxy.SetVariable('Template',   $template)
-    $rs.SessionStateProxy.SetVariable('AdminUpn',   $adminUpn)
-    $rs.SessionStateProxy.SetVariable('MemberSnap', $memberSnap)
-
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    $ps.Runspace = $rs
-    [void]$ps.AddScript({
-        try {
+    if ($Script:TP_CreateTimer) { $Script:TP_CreateTimer.Stop() }
+    $Script:TP_CreateTimer = Start-AsyncWork `
+        -IntervalMs 500 `
+        -Vars @{
+            TeamName   = $teamName
+            Template   = $template
+            AdminUpn   = $adminUpn
+            MemberSnap = $memberSnap
+        } `
+        -RefSeed @{
+            TeamId      = $null
+            MembersOk   = 0
+            MembersFail = 0
+            Log         = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+        } `
+        -Script {
             $headers = @{
                 Authorization  = "Bearer $Token"
                 'Content-Type' = 'application/json'
@@ -634,61 +594,48 @@ function Start-TpCreateTeam {
                     $Ref['Log'].Enqueue("FAILED: $($m.DisplayName) - $($_.Exception.Message)")
                 }
             }
-        } catch {
-            $errDetail = if ($_.ErrorDetails.Message) { " — $($_.ErrorDetails.Message)" } else { '' }
-            $Ref['Error'] = "$($_.Exception.Message)$errDetail"
-        } finally {
-            $Ref['Done'] = $true
-        }
-    })
-    $ps.BeginInvoke() | Out-Null
-
-    if ($Script:TP_CreateTimer) { $Script:TP_CreateTimer.Stop() }
-    $Script:TP_CreateTimer          = [System.Windows.Threading.DispatcherTimer]::new()
-    $Script:TP_CreateTimer.Interval = [TimeSpan]::FromMilliseconds(500)
-    $Script:TP_CreateTimer.Add_Tick({
-        try {
-            # Drain log queue on every tick for real-time progress
+        } -OnProgress {
+            param($ref)
+            # Real-time drain: surface each enqueued message as the worker produces them.
             $msg = $null
-            while ($Script:TP_CreateRef['Log'].TryDequeue([ref]$msg)) {
+            while ($ref['Log'].TryDequeue([ref]$msg)) {
                 $color = if ($msg -like 'FAILED:*') { 'Danger' } elseif ($msg -like 'Added:*') { 'Success' } else { 'TextDim' }
                 Write-TpLog $msg $color
             }
+        } -OnComplete {
+            param($ref)
+            try {
+                $Script:TP_Creating = $false
 
-            if (-not $Script:TP_CreateRef['Done']) { return }
-            $Script:TP_CreateTimer.Stop()
-            $Script:TP_Creating = $false
+                if ($ref['Error']) {
+                    Write-Log "TP: creation failed - $($ref['Error'])" 'ERROR'
+                    Write-TpLog "ERROR: $($ref['Error'])" 'Danger'
+                    Set-MainStatus 'Team creation failed.' 'Danger'
+                    $Script:TP_UI.LblTeamStatus.Text       = 'Team   FAILED'
+                    $Script:TP_UI.LblTeamStatus.Foreground = (Get-ThemeHex 'Danger')
+                } else {
+                    $ok   = $ref['MembersOk']
+                    $fail = $ref['MembersFail']
+                    $col  = if ($fail -gt 0) { 'Warning' } else { 'Success' }
+                    Write-Log "TP: done - $ok added, $fail failed" 'INFO'
+                    Write-TpLog "Done — $ok members added, $fail failed." $col
+                    Set-MainStatus "Team created: $ok added, $fail failed." $col
+                    $Script:TP_UI.LblTeamStatus.Text       = 'Team   Created'
+                    $Script:TP_UI.LblTeamStatus.Foreground = (Get-ThemeHex 'Success')
+                    $Script:TP_UI.LblAdded.Text            = "Added  $ok"
+                    $Script:TP_UI.LblFailed.Text           = "Failed $fail"
+                    $Script:TP_UI.LblFailed.Foreground     = if ($fail -gt 0) { (Get-ThemeHex 'Danger') } else { (Get-ThemeHex 'TextDim') }
+                }
 
-            if ($Script:TP_CreateRef['Error']) {
-                Write-Log "TP: creation failed - $($Script:TP_CreateRef['Error'])" 'ERROR'
-                Write-TpLog "ERROR: $($Script:TP_CreateRef['Error'])" 'Danger'
-                Set-MainStatus 'Team creation failed.' 'Danger'
-                $Script:TP_UI.LblTeamStatus.Text       = 'Team   FAILED'
-                $Script:TP_UI.LblTeamStatus.Foreground = (Get-ThemeHex 'Danger')
-            } else {
-                $ok   = $Script:TP_CreateRef['MembersOk']
-                $fail = $Script:TP_CreateRef['MembersFail']
-                $col  = if ($fail -gt 0) { 'Warning' } else { 'Success' }
-                Write-Log "TP: done - $ok added, $fail failed" 'INFO'
-                Write-TpLog "Done — $ok members added, $fail failed." $col
-                Set-MainStatus "Team created: $ok added, $fail failed." $col
-                $Script:TP_UI.LblTeamStatus.Text       = 'Team   Created'
-                $Script:TP_UI.LblTeamStatus.Foreground = (Get-ThemeHex 'Success')
-                $Script:TP_UI.LblAdded.Text            = "Added  $ok"
-                $Script:TP_UI.LblFailed.Text           = "Failed $fail"
-                $Script:TP_UI.LblFailed.Foreground     = if ($fail -gt 0) { (Get-ThemeHex 'Danger') } else { (Get-ThemeHex 'TextDim') }
+                $Script:TP_UI.PnlStats.Visibility     = 'Visible'
+                $Script:TP_UI.BtnLoad.IsEnabled       = $true
+                $Script:TP_UI.BtnSelectAll.IsEnabled  = $true
+                $Script:TP_UI.BtnSelectNone.IsEnabled = $true
+                Update-TpCreateButton
+            } catch {
+                Write-Log "TP create timer error: $_" 'ERROR'
             }
-
-            $Script:TP_UI.PnlStats.Visibility     = 'Visible'
-            $Script:TP_UI.BtnLoad.IsEnabled       = $true
-            $Script:TP_UI.BtnSelectAll.IsEnabled  = $true
-            $Script:TP_UI.BtnSelectNone.IsEnabled = $true
-            Update-TpCreateButton
-        } catch {
-            Write-Log "TP create timer error: $_" 'ERROR'
         }
-    })
-    $Script:TP_CreateTimer.Start()
 }
 
 function Initialize-TeamsProvisioningTool {

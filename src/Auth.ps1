@@ -48,12 +48,15 @@ function Write-RichLog {
 # (current access token unless -NoToken), and any extra $Vars set as session vars.
 # When the runspace sets $Ref['Done']=$true, the DispatcherTimer stops itself,
 # disposes the runspace, and invokes $OnComplete on the UI thread with $Ref as $args[0].
+# Optional $OnProgress is called on every tick (UI thread) with $Ref before the Done
+# check — useful for draining streaming progress queues that the worker fills as it runs.
 # 401 responses are caught centrally and reported as $Ref['Error']='401'.
 # Returns the DispatcherTimer so callers can Stop() a prior in-flight invocation.
 function Start-AsyncWork {
     param(
         [Parameter(Mandatory)][scriptblock]$Script,
         [Parameter(Mandatory)][scriptblock]$OnComplete,
+        [scriptblock]$OnProgress = $null,
         [hashtable]$Vars     = @{},
         [hashtable]$RefSeed  = @{},
         [int]$IntervalMs     = 300,
@@ -90,8 +93,19 @@ function Start-AsyncWork {
     $timer.Interval = [TimeSpan]::FromMilliseconds($IntervalMs)
     # Stash state on Tag — scriptblocks attached to events don't capture locals
     # like $OnComplete by closure, but $this gives them the timer at tick time.
-    $timer.Tag = @{ Ref = $ref; PS = $ps; RS = $rs; Async = $async; OnComplete = $OnComplete }
+    $timer.Tag = @{
+        Ref        = $ref
+        PS         = $ps
+        RS         = $rs
+        Async      = $async
+        OnComplete = $OnComplete
+        OnProgress = $OnProgress
+    }
     $timer.Add_Tick({
+        if ($this.Tag.OnProgress) {
+            try { & $this.Tag.OnProgress $this.Tag.Ref }
+            catch { Write-Log "Async OnProgress error: $_" 'ERROR' }
+        }
         if (-not $this.Tag.Ref['Done']) { return }
         $this.Stop()
         try { $this.Tag.PS.EndInvoke($this.Tag.Async) | Out-Null } catch {}
