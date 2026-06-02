@@ -731,9 +731,6 @@ function Initialize-TeamsProvisioningTool {
         try {
             $Script:TP_UI.PnlYearGroup.Visibility = 'Visible'
             $Script:TP_UI.PnlDirect.Visibility    = 'Collapsed'
-            $Script:TP_Rows.Clear()
-            Update-TpSelectionLabel
-            Update-TpCreateButton
         } catch { Write-Log "TP RbYearGroup Checked error: $_" 'ERROR' }
     })
 
@@ -742,9 +739,6 @@ function Initialize-TeamsProvisioningTool {
         try {
             $Script:TP_UI.PnlDirect.Visibility    = 'Visible'
             $Script:TP_UI.PnlYearGroup.Visibility = 'Collapsed'
-            $Script:TP_Rows.Clear()
-            Update-TpSelectionLabel
-            Update-TpCreateButton
         } catch { Write-Log "TP RbDirect Checked error: $_" 'ERROR' }
     })
 
