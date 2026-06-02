@@ -254,6 +254,7 @@ $Script:MainXaml = @'
       <TabItem x:Name="TabLastDevice"  Header="Last Device"/>
       <TabItem x:Name="TabSignIn"      Header="Sign-In Logs"/>
       <TabItem x:Name="TabGroupCopy"   Header="Group Copy"/>
+      <TabItem x:Name="TabTeams"       Header="Teams Provisioning"/>
     </TabControl>
 
     <!-- Status bar -->
@@ -511,6 +512,7 @@ function Show-MainWindow {
         TabLastDevice    = $window.FindName('TabLastDevice')
         TabSignIn        = $window.FindName('TabSignIn')
         TabGroupCopy     = $window.FindName('TabGroupCopy')
+        TabTeams         = $window.FindName('TabTeams')
         Status           = $window.FindName('MainStatus')
         Version          = $window.FindName('MainVersion')
         BtnDemo          = $window.FindName('BtnDemo')
@@ -531,6 +533,8 @@ function Show-MainWindow {
     $Script:MainUI.TabSignIn.Content     = Initialize-SignInLogsTool
     Write-Log 'MainWindow: initializing Group Copy tool' 'DEBUG'
     $Script:MainUI.TabGroupCopy.Content  = Initialize-GroupCopyTool
+    Write-Log 'MainWindow: initializing Teams Provisioning tool' 'DEBUG'
+    $Script:MainUI.TabTeams.Content      = Initialize-TeamsProvisioningTool
     Write-Log 'MainWindow: tools initialized' 'INFO'
 
     # Demo mode button
