@@ -23,6 +23,7 @@ $Script:CurrentNavItem = $null
 # Lazy-init maps: populated in Show-MainWindow, consumed in Set-NavSelection.
 $Script:NavInitializers = @{}   # name → 'Initialize-*Tool' function name
 $Script:NavConnectFns   = @{}   # name → array of connect-load function names
+$Script:_LazyPanel      = $null # staging var: Set-NavSelection writes to it via InvokeScript
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 $Script:BrushCache = @{}
@@ -129,15 +130,19 @@ function Set-NavSelection {
     if (-not $Script:NavContents.ContainsKey($Name)) {
         $fn = $Script:NavInitializers[$Name]
         if (-not $fn) { return }
-        Write-Log "Lazy init: $Name ($fn)" 'DEBUG'
-        $raw   = Invoke-EtbCommand $fn
-        # InvokeScript wraps output in PSObject — unwrap to get the WPF UIElement
-        $panel = $null
-        foreach ($o in @($raw)) {
-            $base = if ($o -is [System.Management.Automation.PSObject]) { $o.BaseObject } else { $o }
-            if ($base -is [System.Windows.UIElement]) { $panel = $base; break }
+        Write-Log "Lazy init: $Name" 'DEBUG'
+        # Use a staging variable: InvokeScript return-value propagation is unreliable
+        # for WPF UIElements, but writing to a $Script: var in the child scope is not.
+        $Script:_LazyPanel = $null
+        $Script:EtbSessionState.InvokeCommand.InvokeScript(
+            "`$Script:_LazyPanel = & $fn", @()
+        )
+        $panel = $Script:_LazyPanel
+        $Script:_LazyPanel = $null
+        if (-not ($panel -is [System.Windows.UIElement])) {
+            Write-Log "Lazy init '$Name': no panel (got: $(if ($null -ne $panel) { $panel.GetType().Name } else { 'null' }))" 'ERROR'
+            return
         }
-        if (-not $panel) { Write-Log "Lazy init '$Name': no UIElement returned" 'ERROR'; return }
         $Script:NavContents[$Name] = $panel
 
         # If a tenant is already connected, trigger the tool's data-load functions
