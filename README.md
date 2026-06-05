@@ -1,5 +1,7 @@
 # Entra Toolbox
 
+> **Note:** This tool was built for my own specific IT workflow managing school Entra ID tenants. It is published publicly for reference but may be completely useless for your use case.
+
 WPF PowerShell GUI for Entra ID (Azure AD) tenant management. Requires Windows and [PowerShell 7](https://aka.ms/powershell).
 
 ## Tools
