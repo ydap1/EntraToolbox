@@ -15,7 +15,7 @@ $Script:SL_LogsTimer = $null
 # ── Log helper ─────────────────────────────────────────────────────────────────
 function Write-SlLog {
     param([string]$Msg, [string]$Color = 'TextDim')
-    Write-RichLog $Script:SL_UI.LogBox $Msg $Color
+    Write-AppLog $Msg $Color
 }
 
 # ── Async user load ────────────────────────────────────────────────────────────
@@ -432,13 +432,7 @@ $Script:SlXaml = @'
       </Grid>
     </TabItem>
 
-    <!-- Log tab -->
-    <TabItem Header="Log">
-      <RichTextBox x:Name="SlLogBox" Background="#12121C" Foreground="#7878A0"
-                   BorderThickness="0" IsReadOnly="True"
-                   FontFamily="Consolas" FontSize="12" Padding="12"
-                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
-    </TabItem>
+    <!-- Log tab removed — use the global Log pane -->
 
   </TabControl>
 </Grid>
@@ -454,7 +448,7 @@ function Initialize-SignInLogsTool {
         UserList        = $content.FindName('SlUserList')
         LogsPlaceholder = $content.FindName('SlLogsPlaceholder')
         LogsGrid        = $content.FindName('SlLogsGrid')
-        LogBox          = $content.FindName('SlLogBox')
+        # LogBox removed — use Write-AppLog to the global Log pane
     }
 
     $Script:SL_UI.UserSearch.Add_TextChanged({

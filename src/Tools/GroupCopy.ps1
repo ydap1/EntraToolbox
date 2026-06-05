@@ -21,7 +21,7 @@ $Script:GC_CopyTimer    = $null
 # ── Log helper ─────────────────────────────────────────────────────────────────
 function Write-GcLog {
     param([string]$Msg, [string]$Color = 'TextDim')
-    Write-RichLog $Script:GC_UI.LogBox $Msg $Color
+    Write-AppLog $Msg $Color
 }
 
 # ── Async user load ────────────────────────────────────────────────────────────
@@ -190,6 +190,15 @@ function Update-GcCopyButton {
 # ── Async group copy ───────────────────────────────────────────────────────────
 function Start-GcCopy {
     if ($Script:DemoMode) { Start-GcCopyDemo; return }
+
+    if ($Script:DryMode) {
+        $srcUser = $Script:GC_SourceUser
+        $tgtUser = $Script:GC_TargetUser
+        Write-GcLog "[DRY] Would copy group memberships: $($srcUser.displayName) → $($tgtUser.displayName)" 'Warning'
+        Write-GcLog "[DRY] Source has $($Script:GC_SourceGroups.Count) group(s)" 'Warning'
+        Write-Log 'GC: dry run - would copy groups' 'INFO'
+        return
+    }
 
     $srcUser   = $Script:GC_SourceUser
     $tgtUser   = $Script:GC_TargetUser
@@ -525,13 +534,7 @@ $Script:GcXaml = @'
         </Grid>
       </TabItem>
 
-      <!-- Log tab: operation output -->
-      <TabItem Header="Log">
-        <RichTextBox x:Name="GcLogBox" Background="#12121C" Foreground="#7878A0"
-                     BorderThickness="0" IsReadOnly="True"
-                     FontFamily="Consolas" FontSize="12" Padding="12"
-                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
-      </TabItem>
+    <!-- Log tab removed — use the global Log pane -->
 
     </TabControl>
   </Grid>
@@ -555,7 +558,7 @@ function Initialize-GroupCopyTool {
         BtnCopy        = $content.FindName('GcBtnCopy')
         GrpList        = $content.FindName('GcGrpList')
         GrpPlaceholder = $content.FindName('GcGrpPlaceholder')
-        LogBox         = $content.FindName('GcLogBox')
+        # LogBox removed — use Write-AppLog to the global Log pane
     }
 
     $Script:GC_UI.SrcSearch.Add_TextChanged({

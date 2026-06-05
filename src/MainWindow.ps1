@@ -266,6 +266,8 @@ $Script:MainXaml = @'
       <RowDefinition Height="60"/>
       <RowDefinition Height="50"/>
       <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="4"/>
       <RowDefinition Height="32"/>
     </Grid.RowDefinitions>
 
@@ -315,6 +317,12 @@ $Script:MainXaml = @'
         <Button x:Name="BtnDisconnect" Content="Disconnect" Style="{StaticResource FlatBtn}"
                 Background="#EF4444" Padding="10,6" Margin="12,0,0,0"
                 ToolTip="Sign out and clear saved credentials for this tenant" IsEnabled="False"/>
+        <Button x:Name="BtnDryRun" Content="Dry Run" Style="{StaticResource FlatBtn}"
+                Background="#3C3C5A" Padding="10,6" Margin="12,0,0,0"
+                ToolTip="Toggle dry mode — actions are logged but not executed"/>
+        <Button x:Name="BtnLog" Content="Log" Style="{StaticResource FlatBtn}"
+                Background="#3C3C5A" Padding="10,6" Margin="8,0,0,0"
+                ToolTip="Show/hide activity log"/>
         <Button x:Name="BtnDemo" Content="Demo" Style="{StaticResource FlatBtn}"
                 Background="#7C3AED" Padding="10,6" Margin="12,0,0,0"
                 ToolTip="Run in demo mode with fake Contoso Academy data"/>
@@ -350,8 +358,35 @@ $Script:MainXaml = @'
       <ContentControl x:Name="MainContentArea" Grid.Column="2" Focusable="False"/>
     </Grid>
 
+    <!-- ── Log pane (slide-up) ──────────────────────────────────────────────── -->
+    <Grid Grid.Row="3" Visibility="Collapsed">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="4"/>
+        <RowDefinition Height="180" MinHeight="60"/>
+      </Grid.RowDefinitions>
+      <GridSplitter Grid.Row="0" Height="4" HorizontalAlignment="Stretch"
+                    Background="#3C3C5A" Cursor="SizeNS" ResizeBehavior="PreviousAndNext"
+                    ShowsPreview="True"/>
+      <Border Grid.Row="1" Background="#0F1115" BorderBrush="#3C3C5A" BorderThickness="0,1,0,0">
+        <Grid Margin="8,4">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+          <RichTextBox x:Name="AppLogBox" Grid.Column="0" Background="Transparent"
+                       Foreground="#7878A0" BorderThickness="0" IsReadOnly="True"
+                       FontFamily="Consolas" FontSize="11" Padding="4,2"
+                       VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+          <Button x:Name="BtnClearLog" Grid.Column="1" Content="Clear"
+                  Style="{StaticResource FlatBtn}" Background="#3C3C5A"
+                  Padding="8,4" FontSize="11" Margin="8,0,0,0"
+                  VerticalAlignment="Top" ToolTip="Clear log"/>
+        </Grid>
+      </Border>
+    </Grid>
+
     <!-- ── Status bar ──────────────────────────────────────────────────────── -->
-    <Border Grid.Row="3" x:Name="MainStatusBar" Background="#1C1C2A"
+    <Border Grid.Row="5" x:Name="MainStatusBar" Background="#1C1C2A"
             BorderBrush="#3C3C5A" BorderThickness="0,1,0,0">
       <Grid Margin="14,0">
         <TextBlock x:Name="MainStatus" Text="Ready — select a tenant to begin"
@@ -604,10 +639,20 @@ function Show-MainWindow {
         Status          = $window.FindName('MainStatus')
         Version         = $window.FindName('MainVersion')
         BtnDemo         = $window.FindName('BtnDemo')
+        BtnDryRun       = $window.FindName('BtnDryRun')
+        BtnLog          = $window.FindName('BtnLog')
+        BtnClearLog     = $window.FindName('BtnClearLog')
+        LogPane         = $window.FindName('AppLogBox')
+        LogPaneGrid     = $window.FindName('AppLogBox').Parent.Parent.Parent  # Grid containing the log pane
         HeaderBorder    = $window.FindName('MainHeaderBorder')
         TenantBarBorder = $window.FindName('MainTenantBar')
         StatusBarBorder = $window.FindName('MainStatusBar')
     }
+
+    $Script:AppLogBox = $Script:MainUI.LogPane
+    # LogPaneGrid is the parent Grid of the RichTextBox (LogPane → Grid → Grid → Grid)
+    # Walk up: LogPane.Parent = Grid (inner), .Parent = Border, .Parent = Grid (outer)
+    $Script:MainUI.LogPaneGrid = $Script:MainUI.LogPane.Parent.Parent.Parent
 
     if ($AppVersion) { $Script:MainUI.Version.Text = "v$AppVersion" }
 
@@ -663,6 +708,53 @@ function Show-MainWindow {
             Invoke-PostConnect
         } catch {
             Write-Log "BtnDemo click error: $_" 'ERROR'
+        }
+    })
+
+    # ── Dry Run toggle ───────────────────────────────────────────────────────
+    $Script:MainUI.BtnDryRun.Add_Click({
+        try {
+            $Script:DryMode = -not $Script:DryMode
+            if ($Script:DryMode) {
+                $Script:MainUI.BtnDryRun.Background = New-SolidBrush 'Warning'
+                $Script:MainUI.BtnDryRun.Content     = 'Dry Run ON'
+                $Script:MainUI.HeaderBorder.Background = New-SolidBrush 'DangerBg'
+                Write-AppLog 'Dry mode ENABLED — actions will be simulated, not executed.' 'Warning'
+                Set-MainStatus 'DRY RUN ACTIVE — no changes will be made.' 'Warning'
+            } else {
+                $Script:MainUI.BtnDryRun.Background = New-SolidBrush 'Border'
+                $Script:MainUI.BtnDryRun.Content     = 'Dry Run'
+                $Script:MainUI.HeaderBorder.Background = New-SolidBrush 'Surface'
+                Write-AppLog 'Dry mode DISABLED — actions will execute normally.' 'Success'
+                Set-MainStatus 'Ready.' 'TextDim'
+            }
+        } catch {
+            Write-Log "BtnDryRun click error: $_" 'ERROR'
+        }
+    })
+
+    # ── Log pane toggle ──────────────────────────────────────────────────────
+    $Script:MainUI.BtnLog.Add_Click({
+        try {
+            $vis = $Script:MainUI.LogPaneGrid.Visibility
+            if ($vis -eq 'Visible') {
+                $Script:MainUI.LogPaneGrid.Visibility = 'Collapsed'
+                $Script:MainUI.BtnLog.Background = New-SolidBrush 'Border'
+            } else {
+                $Script:MainUI.LogPaneGrid.Visibility = 'Visible'
+                $Script:MainUI.BtnLog.Background = New-SolidBrush 'Accent'
+            }
+        } catch {
+            Write-Log "BtnLog click error: $_" 'ERROR'
+        }
+    })
+
+    # ── Clear log ─────────────────────────────────────────────────────────────
+    $Script:MainUI.BtnClearLog.Add_Click({
+        try {
+            $Script:MainUI.LogPane.Document.Blocks.Clear()
+        } catch {
+            Write-Log "BtnClearLog click error: $_" 'ERROR'
         }
     })
 

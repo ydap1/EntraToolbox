@@ -19,7 +19,7 @@ $Script:UPR_GrpTimer   = $null
 # ── Log helper ─────────────────────────────────────────────────────────────────
 function Write-UprLog {
     param([string]$Msg, [string]$Color = 'TextDim')
-    Write-RichLog $Script:UPR_UI.LogBox $Msg $Color
+    Write-AppLog $Msg $Color
 }
 
 # ── Async user load ────────────────────────────────────────────────────────────
@@ -479,14 +479,6 @@ $Script:UprXaml = @'
       </Grid>
     </TabItem>
 
-    <!-- Log tab -->
-    <TabItem Header="Log">
-      <RichTextBox x:Name="UprLogBox" Background="#12121C" Foreground="#7878A0"
-                   BorderThickness="0" IsReadOnly="True"
-                   FontFamily="Consolas" FontSize="12" Padding="12"
-                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
-    </TabItem>
-
     <!-- Groups tab -->
     <TabItem Header="Groups">
       <Grid Background="#12121C">
@@ -537,7 +529,7 @@ function Initialize-UserPasswordResetTool {
         ChkForce      = $content.FindName('UprChkForce')
         BtnReset      = $content.FindName('UprBtnReset')
         InlineStatus  = $content.FindName('UprInlineStatus')
-        LogBox        = $content.FindName('UprLogBox')
+        # LogBox removed — use Write-AppLog to the global Log pane
         GrpHeader     = $content.FindName('UprGrpHeader')
         GrpSearch     = $content.FindName('UprGrpSearch')
         GrpList       = $content.FindName('UprGrpList')
@@ -611,7 +603,11 @@ function Initialize-UserPasswordResetTool {
             Set-MainStatus "Resetting password for $($user.displayName)..." 'TextDim'
 
             try {
-                if (-not $Script:DemoMode) {
+                if ($Script:DryMode) {
+                    $forceLabel = if ($force) { 'will prompt on next sign-in' } else { 'no prompt required' }
+                    Write-UprLog "[DRY] Would reset password for $($user.displayName) ($forceLabel)" 'Warning'
+                    Write-Log "UPR: dry run - would reset password for $($user.userPrincipalName)" 'INFO'
+                } elseif (-not $Script:DemoMode) {
                     Invoke-GraphPatch -Path "/v1.0/users/$($user.id)" -Body @{
                         passwordProfile = @{
                             password                      = $pw

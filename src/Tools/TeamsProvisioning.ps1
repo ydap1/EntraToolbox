@@ -13,8 +13,7 @@ $Script:TP_CreateTimer = $null
 
 function Write-TpLog {
     param([string]$Msg, [string]$Color = 'TextDim')
-    # Write-RichLog falls back to console when LogBox is $null (e.g. UI not yet built).
-    Write-RichLog $Script:TP_UI.LogBox $Msg $Color
+    Write-AppLog $Msg $Color
 }
 
 function Update-TpCreateButton {
@@ -412,12 +411,7 @@ $Script:TpXaml = @'
       </DataGrid>
     </TabItem>
 
-    <TabItem Header="Log">
-      <RichTextBox x:Name="TpLogBox" Background="#12121C" Foreground="#7878A0"
-                   BorderThickness="0" IsReadOnly="True" FontFamily="Consolas"
-                   FontSize="12" Padding="12" VerticalScrollBarVisibility="Auto"
-                   HorizontalScrollBarVisibility="Auto"/>
-    </TabItem>
+    <!-- Log tab removed — use the global Log pane -->
   </TabControl>
 </Grid>
 '@
@@ -482,6 +476,14 @@ function Start-TpUserLoad {
 
 function Start-TpCreateTeam {
     if ($Script:DemoMode) { Start-TpCreateDemo; return }
+
+    if ($Script:DryMode) {
+        $teamName = $Script:TP_UI.TeamName.Text.Trim()
+        $count    = $Script:TP_Rows.Count
+        Write-TpLog "[DRY] Would create team '$teamName' with $count member(s)" 'Warning'
+        Write-Log 'TP: dry run - would create team' 'INFO'
+        return
+    }
 
     # Commit any pending DataGrid edit (e.g. Owner checkbox still active)
     $Script:TP_UI.Grid.CommitEdit([System.Windows.Controls.DataGridEditingUnit]::Row, $true) | Out-Null
@@ -663,7 +665,7 @@ function Initialize-TeamsProvisioningTool {
         LblAdded      = $content.FindName('TpLblMembersAdded')
         LblFailed     = $content.FindName('TpLblMembersFailed')
         Grid          = $content.FindName('TpGrid')
-        LogBox        = $content.FindName('TpLogBox')
+        # LogBox removed — use Write-AppLog to the global Log pane
     }
 
     $Script:TP_UI.Grid.ItemsSource = $Script:TP_Rows

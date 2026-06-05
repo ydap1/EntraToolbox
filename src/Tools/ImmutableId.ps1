@@ -135,9 +135,7 @@ $Script:IID_Xaml = @'
   <Grid.RowDefinitions>
     <RowDefinition Height="Auto"/>
     <RowDefinition Height="Auto"/>
-    <RowDefinition Height="Auto"/>
     <RowDefinition Height="*"/>
-    <RowDefinition Height="Auto"/>
   </Grid.RowDefinitions>
 
   <!-- ── Title bar ──────────────────────────────────────────────────────── -->
@@ -251,31 +249,13 @@ $Script:IID_Xaml = @'
     </DataGrid.Columns>
   </DataGrid>
 
-  <!-- ── Log ────────────────────────────────────────────────────────────── -->
-  <Border Grid.Row="4" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,1,0,0"
-          MaxHeight="120">
-    <RichTextBox x:Name="IidLog" IsReadOnly="True" Background="Transparent"
-                 BorderThickness="0" Foreground="#7878A0" FontSize="11"
-                 FontFamily="Consolas" Margin="12,6" VerticalScrollBarVisibility="Auto"/>
-  </Border>
-
 </Grid>
 '@
 
 # ── Log helper ─────────────────────────────────────────────────────────────────
 function Write-IidLog {
-    param([string]$Message, [string]$Color = '#7878A0')
-    $Script:MainUI.Window.Dispatcher.Invoke([Action]{
-        try {
-            $rtb  = $Script:IID_UI.Log
-            $para = [System.Windows.Documents.Paragraph]::new()
-            $run  = [System.Windows.Documents.Run]::new($Message)
-            $run.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($Color)
-            $para.Inlines.Add($run)
-            $rtb.Document.Blocks.Add($para)
-            $rtb.ScrollToEnd()
-        } catch {}
-    }, 'Normal')
+    param([string]$Message, [string]$Color = 'TextDim')
+    Write-AppLog $Message $Color
 }
 
 # ── Row factory ────────────────────────────────────────────────────────────────
@@ -355,7 +335,7 @@ function Invoke-IidGenerate {
     }
     $Script:IID_UI.Grid.Items.Refresh()
     Update-IidCounts
-    Write-IidLog "Generated ImmutableId for $count selected user(s)." '#6366F1'
+    Write-IidLog "Generated ImmutableId for $count selected user(s)." 'Accent'
     Write-Log    "ImmutableId: generated $count new values" 'INFO'
 }
 
@@ -368,6 +348,13 @@ function Start-IidApply {
         [System.Windows.MessageBox]::Show(
             'No selected rows have a generated ImmutableId ready to assign.`n`nGenerate IDs first, then click Assign.',
             'Nothing to Assign', 'OK', 'Information') | Out-Null
+        return
+    }
+
+    if ($Script:DryMode) {
+        Write-IidLog "[DRY] Would assign ImmutableId to $($toAssign.Count) user(s):" 'Warning'
+        foreach ($r in $toAssign) { Write-IidLog "  $($r.Name) → $($r.NewId)" 'Warning' }
+        Write-Log "ImmutableId: dry run - would assign $($toAssign.Count) IDs" 'INFO'
         return
     }
 
@@ -397,7 +384,7 @@ Type YES (all capitals) to confirm.
     Add-Type -AssemblyName Microsoft.VisualBasic
     $confirm = [Microsoft.VisualBasic.Interaction]::InputBox($msg, 'Confirm ImmutableId Assignment', '')
     if ($confirm -ne 'YES') {
-        Write-IidLog 'Assignment cancelled.' '#F59E0B'
+        Write-IidLog 'Assignment cancelled.' 'Warning'
         return
     }
 
@@ -406,7 +393,7 @@ Type YES (all capitals) to confirm.
     $Script:IID_UI.BtnCheckAll.IsEnabled   = $false
     $Script:IID_UI.BtnUncheckAll.IsEnabled = $false
 
-    Write-IidLog "Assigning ImmutableIds to $($toAssign.Count) user(s)…" '#6366F1'
+    Write-IidLog "Assigning ImmutableIds to $($toAssign.Count) user(s)…" 'Accent'
     Write-Log    "ImmutableId: starting assignment for $($toAssign.Count) user(s)" 'INFO'
 
     $workItems = @($toAssign | ForEach-Object { @{ Id = $_.Id; Name = $_.Name; NewId = $_.NewId } })
@@ -430,7 +417,7 @@ Type YES (all capitals) to confirm.
         param($ref)
         try {
             if ($ref['Error']) {
-                Write-IidLog "Assignment error: $($ref['Error'])" '#EF4444'
+                Write-IidLog "Assignment error: $($ref['Error'])" 'Danger'
                 Write-Log "ImmutableId: assignment error: $($ref['Error'])" 'ERROR'
             } else {
                 $ok = 0; $err = 0
@@ -445,12 +432,12 @@ Type YES (all capitals) to confirm.
                         $ok++
                     } else {
                         $row.Status = 'Error'
-                        Write-IidLog "  Error on $($row.Name): $($res.Error)" '#EF4444'
+                        Write-IidLog "  Error on $($row.Name): $($res.Error)" 'Danger'
                         $err++
                     }
                 }
                 $Script:IID_UI.Grid.Items.Refresh()
-                Write-IidLog "Done — $ok assigned, $err error(s)." '#22C55E'
+                Write-IidLog "Done — $ok assigned, $err error(s)." 'Success'
                 Write-Log "ImmutableId: $ok assigned, $err errors" 'INFO'
             }
             $Script:IID_UI.BtnCheckAll.IsEnabled   = $true
@@ -471,7 +458,7 @@ function Start-IidLoad {
     $Script:IID_UI.BtnApply.IsEnabled      = $false
     $Script:IID_UI.BtnCheckAll.IsEnabled   = $false
     $Script:IID_UI.BtnUncheckAll.IsEnabled = $false
-    Write-IidLog 'Loading cloud-only users from Entra…' '#6366F1'
+    Write-IidLog 'Loading cloud-only users from Entra…' 'Accent'
 
     if ($Script:IID_LoadTimer) { $Script:IID_LoadTimer.Stop() }
     $Script:IID_LoadTimer = Start-AsyncWork -RefSeed @{ Users = $null } -Script {
@@ -489,7 +476,7 @@ function Start-IidLoad {
         param($ref)
         try {
             if ($ref['Error']) {
-                Write-IidLog "Load failed: $($ref['Error'])" '#EF4444'
+                Write-IidLog "Load failed: $($ref['Error'])" 'Danger'
                 Write-Log "ImmutableId: load error: $($ref['Error'])" 'ERROR'
                 $Script:IID_UI.LblCount.Text = 'Load failed.'
                 return
@@ -500,7 +487,7 @@ function Start-IidLoad {
             Rebuild-IidRows
             $Script:IID_UI.BtnCheckAll.IsEnabled   = $true
             $Script:IID_UI.BtnUncheckAll.IsEnabled = $true
-            Write-IidLog "Loaded $($Script:IID_Rows.Count) user(s)." '#22C55E'
+            Write-IidLog "Loaded $($Script:IID_Rows.Count) user(s)." 'Success'
         } catch {
             Write-Log "ImmutableId load timer error: $_" 'ERROR'
         }
@@ -520,7 +507,7 @@ function Start-IidLoadDemo {
     Rebuild-IidRows
     $Script:IID_UI.BtnCheckAll.IsEnabled   = $true
     $Script:IID_UI.BtnUncheckAll.IsEnabled = $true
-    Write-IidLog '[DEMO] 5 Contoso Academy users loaded (2 already have an ImmutableId).' '#7C3AED'
+    Write-IidLog '[DEMO] 5 Contoso Academy users loaded (2 already have an ImmutableId).' 'TextDim'
 }
 
 function Start-IidApplyDemo {
@@ -533,7 +520,7 @@ function Start-IidApplyDemo {
     }
     $Script:IID_UI.Grid.Items.Refresh()
     Update-IidCounts
-    Write-IidLog "[DEMO] Assigned ImmutableId to $($toAssign.Count) user(s)." '#7C3AED'
+    Write-IidLog "[DEMO] Assigned ImmutableId to $($toAssign.Count) user(s)." 'TextDim'
 }
 
 function Invoke-IidOnConnect {
@@ -554,7 +541,7 @@ function Initialize-ImmutableIdTool {
         BtnUncheckAll = $panel.FindName('IidBtnUncheckAll')
         ChkEmptyOnly  = $panel.FindName('IidChkEmptyOnly')
         ChkOverwrite  = $panel.FindName('IidChkOverwrite')
-        Log           = $panel.FindName('IidLog')
+        # Log removed — use the global Log pane
     }
 
     $Script:IID_Rows = [System.Collections.ObjectModel.ObservableCollection[PSObject]]::new()
@@ -595,10 +582,10 @@ function Initialize-ImmutableIdTool {
         try { Rebuild-IidRows } catch { Write-Log "IID EmptyOnly unchecked error: $_" 'ERROR' }
     })
     $Script:IID_UI.ChkOverwrite.Add_Checked({
-        try { Write-IidLog 'Overwrite enabled — existing ImmutableIds may be replaced.' '#F59E0B' } catch {}
+        try { Write-IidLog 'Overwrite enabled — existing ImmutableIds may be replaced.' 'Warning' } catch {}
     })
     $Script:IID_UI.ChkOverwrite.Add_Unchecked({
-        try { Write-IidLog 'Overwrite disabled.' '#7878A0' } catch {}
+        try { Write-IidLog 'Overwrite disabled.' 'TextDim' } catch {}
     })
 
     $Script:IID_UI.BtnGenerate.Add_Click({

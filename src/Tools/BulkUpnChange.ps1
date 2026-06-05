@@ -17,7 +17,7 @@ $Script:BUC_ApplyTimer = $null
 
 function Write-BucLog {
     param([string]$Msg, [string]$Color = 'TextDim')
-    Write-RichLog $Script:BUC_UI.LogBox $Msg $Color
+    Write-AppLog $Msg $Color
 }
 
 function Update-BucUserFilter {
@@ -148,6 +148,15 @@ function Start-BucLoad {
 # ── Async apply ───────────────────────────────────────────────────────────────
 function Start-BucApply {
     $pending = @($Script:BUC_Rows | Where-Object { $_.Status -eq 'Pending' })
+    if ($pending.Count -eq 0) { return }
+
+    if ($Script:DryMode) {
+        Write-BucLog "[DRY] Would change UPN domain for $($pending.Count) user(s):" 'Warning'
+        foreach ($p in $pending) { Write-BucLog "  $($p.OldUpn) → $($p.NewUpn)" 'Warning' }
+        Write-Log "BUC: dry run - would change $($pending.Count) UPNs" 'INFO'
+        return
+    }
+
     $work    = @($pending | ForEach-Object {
         @{ Id = $_.Id; OldUpn = $_.OldUpn; NewUpn = $_.NewUpn }
     })
@@ -569,12 +578,6 @@ $Script:BucXaml = @'
       </DataGrid.Columns>
     </DataGrid>
 
-    <!-- Log -->
-    <Border Grid.Row="2" BorderBrush="#3C3C5A" BorderThickness="0,1,0,0">
-      <RichTextBox x:Name="BucLogBox" Background="#0F1115" Foreground="#7878A0"
-                   BorderThickness="0" IsReadOnly="True" FontFamily="Consolas" FontSize="12"
-                   Padding="12" VerticalScrollBarVisibility="Auto"/>
-    </Border>
   </Grid>
 
 </Grid>
@@ -594,7 +597,7 @@ function Initialize-BulkUpnChangeTool {
         BtnRemove   = $content.FindName('BucBtnRemove')
         BtnClear    = $content.FindName('BucBtnClear')
         BtnApply    = $content.FindName('BucBtnApply')
-        LogBox      = $content.FindName('BucLogBox')
+        # LogBox removed — use Write-AppLog to the global Log pane
     }
 
     $Script:BUC_UI.PreviewGrid.ItemsSource = $Script:BUC_Rows

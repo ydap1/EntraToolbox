@@ -19,7 +19,7 @@ $Script:LD_AllDevTimer = $null
 # ── Log helper ─────────────────────────────────────────────────────────────────
 function Write-LdLog {
     param([string]$Msg, [string]$Color = 'TextDim')
-    Write-RichLog $Script:LD_UI.LogBox $Msg $Color
+    Write-AppLog $Msg $Color
 }
 
 # ── Async user load ────────────────────────────────────────────────────────────
@@ -766,13 +766,7 @@ $Script:LastDeviceXaml = @'
       </Grid>
     </TabItem>
 
-    <!-- Log tab -->
-    <TabItem Header="Log">
-      <RichTextBox x:Name="LdLogBox" Background="#12121C" Foreground="#7878A0"
-                   BorderThickness="0" IsReadOnly="True"
-                   FontFamily="Consolas" FontSize="12" Padding="12"
-                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
-    </TabItem>
+    <!-- Log tab removed — use the global Log pane -->
 
   </TabControl>
   </Grid>
@@ -797,7 +791,7 @@ function Initialize-LastDeviceTool {
         DevUserDetail     = $content.FindName('LdDevUserDetail')
         DevUserDetailPanel= $content.FindName('LdDevUserDetailPanel')
         DevUserPlaceholder= $content.FindName('LdDevUserPlaceholder')
-        LogBox            = $content.FindName('LdLogBox')
+        # LogBox removed — use Write-AppLog to the global Log pane
         StaleDays         = $content.FindName('LdStaleDays')
         StaleGrid         = $content.FindName('LdStaleGrid')
         StaleCount        = $content.FindName('LdStaleCount')

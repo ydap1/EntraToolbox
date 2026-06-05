@@ -61,7 +61,7 @@ function Update-PwSelectionLabel {
 # ── Log helper ─────────────────────────────────────────────────────────────────
 function Write-PwLog {
     param([string]$Msg, [string]$Color = 'TextDim')
-    Write-RichLog $Script:PwReset_UI.LogBox $Msg $Color
+    Write-AppLog $Msg $Color
 }
 
 # ── Async user load ────────────────────────────────────────────────────────────
@@ -511,14 +511,7 @@ $Script:PwResetXaml = @'
       </Grid>
     </TabItem>
 
-    <!-- Log tab -->
-    <TabItem Header="Log">
-      <RichTextBox x:Name="PwLogBox" Background="#12121C" Foreground="#7878A0"
-                   BorderThickness="0" IsReadOnly="True"
-                   FontFamily="Consolas" FontSize="12" Padding="12"
-                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
-    </TabItem>
-
+    <!-- Log tab removed — use the global Log pane at the bottom of the window -->
   </TabControl>
 </Grid>
 '@
@@ -541,7 +534,7 @@ function Initialize-PasswordResetTool {
         BtnExport      = $content.FindName('PwBtnExport')
         Grid           = $content.FindName('PwGrid')
         Progress       = $content.FindName('PwProgress')
-        LogBox         = $content.FindName('PwLogBox')
+        # LogBox removed — use Write-AppLog to the global Log pane
         PnlStats       = $content.FindName('PwPnlStats')
         LblTotal       = $content.FindName('PwLblTotal')
         LblOK          = $content.FindName('PwLblOK')
@@ -640,8 +633,8 @@ function Initialize-PasswordResetTool {
             $selected = @($Script:PwReset_UI.Grid.SelectedItems)
             if ($selected.Count -eq 0) { return }
 
-            $isLive = $Script:PwReset_UI.RbLive.IsChecked
-            $mode   = if ($isLive) { 'Live' } else { 'Dry' }
+            $isLive = $Script:PwReset_UI.RbLive.IsChecked -and -not $Script:DryMode
+            $mode   = if ($isLive) { 'Live' } elseif ($Script:DryMode) { 'Dry (global)' } else { 'Dry' }
             Write-Log "PwReset: starting $mode run for $($selected.Count) selected rows" 'INFO'
 
             if ($isLive) {

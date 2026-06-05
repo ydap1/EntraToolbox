@@ -23,9 +23,36 @@ function Write-Log {
     Write-Host "[$ts][$Level] $Message" -ForegroundColor $color
 }
 
+# ── Global app log ──────────────────────────────────────────────────────────
+# Shared RichTextBox for the slide-up log pane at the bottom of the window.
+# Set by MainWindow after XAML is loaded; tools call Write-AppLog.
+$Script:AppLogBox = $null
+$Script:DryMode   = $false
+
+function Write-AppLog {
+    param(
+        [string]$Msg,
+        [string]$Color = 'TextDim'
+    )
+    $ts   = Get-Date -Format 'HH:mm:ss'
+    $line = "[$ts]  $Msg"
+    Write-Log $line 'DEBUG'
+    if (-not $Script:AppLogBox) { return }
+    $Script:MainUI.Window.Dispatcher.Invoke([Action]{
+        try {
+            $para = New-Object System.Windows.Documents.Paragraph
+            $run  = New-Object System.Windows.Documents.Run $line
+            $run.Foreground = Get-ThemeHex $Color
+            $para.Inlines.Add($run)
+            $para.Margin = '0'
+            $Script:AppLogBox.Document.Blocks.Add($para)
+            $Script:AppLogBox.ScrollToEnd()
+        } catch {}
+    }, 'Normal')
+}
+
 # ── In-tab rich-text log ──────────────────────────────────────────────────────
-# Appends a themed, timestamped paragraph to a WPF RichTextBox. If the log box
-# isn't ready yet (early init), falls back to the console logger.
+# Deprecated — tools should use Write-AppLog instead.  Kept for backward compat.
 function Write-RichLog {
     param(
         $LogBox,
