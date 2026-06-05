@@ -49,6 +49,8 @@ if (-not (Get-Module MSAL.PS -ErrorAction SilentlyContinue)) {
 . (Join-Path $PSScriptRoot 'src\Tools\SignInLogs.ps1')
 . (Join-Path $PSScriptRoot 'src\Tools\GroupCopy.ps1')
 . (Join-Path $PSScriptRoot 'src\Tools\TeamsProvisioning.ps1')
+. (Join-Path $PSScriptRoot 'src\Tools\BulkUpnChange.ps1')
+. (Join-Path $PSScriptRoot 'src\Tools\ImmutableId.ps1')
 . (Join-Path $PSScriptRoot 'src\MainWindow.ps1')
 
 Write-Log "Art's Entra Toolbox $Global:AppVersion starting (PS $($PSVersionTable.PSVersion))" 'INFO'

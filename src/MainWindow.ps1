@@ -255,6 +255,8 @@ $Script:MainXaml = @'
       <TabItem x:Name="TabSignIn"      Header="Sign-In Logs"/>
       <TabItem x:Name="TabGroupCopy"   Header="Group Copy"/>
       <TabItem x:Name="TabTeams"       Header="Teams Provisioning"/>
+      <TabItem x:Name="TabBulkUpn"     Header="Bulk UPN Change"/>
+      <TabItem x:Name="TabImmutableId" Header="Immutable ID"/>
     </TabControl>
 
     <!-- Status bar -->
@@ -517,6 +519,8 @@ function Show-MainWindow {
         TabSignIn        = $window.FindName('TabSignIn')
         TabGroupCopy     = $window.FindName('TabGroupCopy')
         TabTeams         = $window.FindName('TabTeams')
+        TabBulkUpn       = $window.FindName('TabBulkUpn')
+        TabImmutableId   = $window.FindName('TabImmutableId')
         Status           = $window.FindName('MainStatus')
         Version          = $window.FindName('MainVersion')
         BtnDemo          = $window.FindName('BtnDemo')
@@ -539,6 +543,10 @@ function Show-MainWindow {
     $Script:MainUI.TabGroupCopy.Content  = Initialize-GroupCopyTool
     Write-Log 'MainWindow: initializing Teams Provisioning tool' 'DEBUG'
     $Script:MainUI.TabTeams.Content      = Initialize-TeamsProvisioningTool
+    Write-Log 'MainWindow: initializing Bulk UPN Change tool' 'DEBUG'
+    $Script:MainUI.TabBulkUpn.Content    = Initialize-BulkUpnChangeTool
+    Write-Log 'MainWindow: initializing Immutable ID tool' 'DEBUG'
+    $Script:MainUI.TabImmutableId.Content = Initialize-ImmutableIdTool
     Write-Log 'MainWindow: tools initialized' 'INFO'
 
     # Demo mode button
