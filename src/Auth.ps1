@@ -60,13 +60,18 @@ function Invoke-EtbScript {
         if ($ArgumentList.Count) { & $Script @ArgumentList } else { & $Script }
         return
     }
-    # useLocalScope=$false: run in the app session state, not the scriptblock's
-    # definition scope (WPF handlers are often defined inside Initialize-*).
-    if ($ArgumentList.Count) {
-        $Script:EtbSessionState.InvokeCommand.InvokeScript($false, $Script, $ArgumentList)
-    } else {
-        $Script:EtbSessionState.InvokeCommand.InvokeScript($false, $Script, @())
-    }
+    # InvokeScript(string, useNewScope, writeToPipeline, input, args) is the
+    # unambiguous 5-param overload present in all supported PS versions.
+    # Passing $Script as a string and $ArgumentList as trailing args lets us
+    # run the scriptblock body in the captured session state where dot-sourced
+    # functions like Write-Log are visible.
+    $Script:EtbSessionState.InvokeCommand.InvokeScript(
+        $Script.ToString(),
+        $false,
+        [System.Management.Automation.PipelineResultTypes]::None,
+        $null,
+        $ArgumentList
+    )
 }
 
 # Invoke a dot-sourced function by name. Scriptblocks like { Start-Foo } capture the
@@ -76,20 +81,23 @@ function Invoke-EtbCommand {
         [Parameter(Mandatory)][string]$Command,
         [object[]]$ArgumentList = @()
     )
-    $sb = if ($ArgumentList.Count) {
-        [scriptblock]::Create("param(`$EtbArgs) & $Command @EtbArgs")
+    $scriptText = if ($ArgumentList.Count) {
+        "param(`$EtbArgs) & $Command @EtbArgs"
     } else {
-        [scriptblock]::Create("& $Command")
+        "& $Command"
     }
     if (-not $Script:EtbSessionState) {
+        $sb = [scriptblock]::Create($scriptText)
         if ($ArgumentList.Count) { & $sb $ArgumentList } else { & $sb }
         return
     }
-    if ($ArgumentList.Count) {
-        $Script:EtbSessionState.InvokeCommand.InvokeScript($false, $sb, $ArgumentList)
-    } else {
-        $Script:EtbSessionState.InvokeCommand.InvokeScript($false, $sb, @())
-    }
+    $Script:EtbSessionState.InvokeCommand.InvokeScript(
+        $scriptText,
+        $false,
+        [System.Management.Automation.PipelineResultTypes]::None,
+        $null,
+        $ArgumentList
+    )
 }
 
 function Register-ConnectCallback {
@@ -131,16 +139,12 @@ function Invoke-ConnectCallbacks {
 }
 
 # ── Background runspace factory ───────────────────────────────────────────────
-# CreateRunspace() without an InitialSessionState is empty — no built-in cmdlets.
-# Always use CreateDefault() so workers can call Invoke-RestMethod, Get-Date, etc.
+# CreateRunspace() with no arguments inherits the host's session state, so all
+# built-in cmdlets (Invoke-RestMethod, Get-Date, etc.) are immediately available.
+# CreateDefault() + ImportPSModule can miss cmdlets in some hosts because module
+# auto-discovery depends on PSModulePath being set identically.
 function New-BackgroundRunspace {
-    $iss = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
-    # CreateDefault() alone omits utility cmdlets (e.g. Invoke-RestMethod) in some hosts.
-    $null = $iss.ImportPSModule(@(
-        'Microsoft.PowerShell.Utility',
-        'Microsoft.PowerShell.Management'
-    ))
-    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace($iss)
+    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
     $rs.Open()
     $rs
 }
