@@ -60,16 +60,12 @@ function Invoke-EtbScript {
         if ($ArgumentList.Count) { & $Script @ArgumentList } else { & $Script }
         return
     }
-    # InvokeScript(string, useNewScope, writeToPipeline, input, args) is the
-    # unambiguous 5-param overload present in all supported PS versions.
-    # Passing $Script as a string and $ArgumentList as trailing args lets us
-    # run the scriptblock body in the captured session state where dot-sourced
-    # functions like Write-Log are visible.
+    # InvokeScript(string, object[]) runs the script in a child scope of the
+    # captured session state so dot-sourced functions (Write-Log, etc.) are visible.
+    # PowerShell unwraps $ArgumentList into individual positional $args entries
+    # that map to the script's param() block.
     $Script:EtbSessionState.InvokeCommand.InvokeScript(
         $Script.ToString(),
-        $false,
-        [System.Management.Automation.PipelineResultTypes]::None,
-        $null,
         $ArgumentList
     )
 }
@@ -93,9 +89,6 @@ function Invoke-EtbCommand {
     }
     $Script:EtbSessionState.InvokeCommand.InvokeScript(
         $scriptText,
-        $false,
-        [System.Management.Automation.PipelineResultTypes]::None,
-        $null,
         $ArgumentList
     )
 }
