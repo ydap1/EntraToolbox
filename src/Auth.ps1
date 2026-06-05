@@ -43,6 +43,108 @@ function Write-RichLog {
     $LogBox.ScrollToEnd()
 }
 
+# ── WPF callback session bridge ───────────────────────────────────────────────
+# Dot-sourced functions live in the Start.ps1 script scope. WPF DispatcherTimer
+# ticks and deferred UI callbacks can run in a child scope where those commands
+# are not visible — causing "term X is not recognized" crashes. Set
+# $Script:EtbSessionState once at startup (see Start.ps1) and route every
+# dispatcher/async completion through Invoke-EtbScript.
+$Script:EtbSessionState = $null
+
+function Invoke-EtbScript {
+    param(
+        [Parameter(Mandatory)][scriptblock]$Script,
+        [object[]]$ArgumentList = @()
+    )
+    if (-not $Script:EtbSessionState) {
+        if ($ArgumentList.Count) { & $Script @ArgumentList } else { & $Script }
+        return
+    }
+    # useLocalScope=$false: run in the app session state, not the scriptblock's
+    # definition scope (WPF handlers are often defined inside Initialize-*).
+    if ($ArgumentList.Count) {
+        $Script:EtbSessionState.InvokeCommand.InvokeScript($false, $Script, $ArgumentList)
+    } else {
+        $Script:EtbSessionState.InvokeCommand.InvokeScript($false, $Script, @())
+    }
+}
+
+# Invoke a dot-sourced function by name. Scriptblocks like { Start-Foo } capture the
+# Initialize-* scope and break under InvokeScript — building the call from a string avoids that.
+function Invoke-EtbCommand {
+    param(
+        [Parameter(Mandatory)][string]$Command,
+        [object[]]$ArgumentList = @()
+    )
+    $sb = if ($ArgumentList.Count) {
+        [scriptblock]::Create("param(`$EtbArgs) & $Command @EtbArgs")
+    } else {
+        [scriptblock]::Create("& $Command")
+    }
+    if (-not $Script:EtbSessionState) {
+        if ($ArgumentList.Count) { & $sb $ArgumentList } else { & $sb }
+        return
+    }
+    if ($ArgumentList.Count) {
+        $Script:EtbSessionState.InvokeCommand.InvokeScript($false, $sb, $ArgumentList)
+    } else {
+        $Script:EtbSessionState.InvokeCommand.InvokeScript($false, $sb, @())
+    }
+}
+
+function Register-ConnectCallback {
+    param([Parameter(Mandatory)][string]$Command)
+    $Script:ConnectCallbacks.Add($Command)
+}
+
+function New-EtbDispatcherTimer {
+    param([int]$IntervalMs = 300)
+    $dispatcher = if ($Script:MainUI -and $Script:MainUI.Window) {
+        $Script:MainUI.Window.Dispatcher
+    } else {
+        [System.Windows.Threading.Dispatcher]::CurrentDispatcher
+    }
+    $timer = New-Object System.Windows.Threading.DispatcherTimer(
+        [System.Windows.Threading.DispatcherPriority]::Background, $dispatcher)
+    $timer.Interval = [TimeSpan]::FromMilliseconds($IntervalMs)
+    $timer
+}
+
+# Runs all tool ConnectCallbacks on the next dispatcher frame so auth completion
+# and UI setup finish before nine parallel Graph loads start. Each callback is
+# isolated — one tool failing does not block the rest.
+function Invoke-ConnectCallbacks {
+    $dispatcher = if ($Script:MainUI -and $Script:MainUI.Window) {
+        $Script:MainUI.Window.Dispatcher
+    } else {
+        [System.Windows.Threading.Dispatcher]::CurrentDispatcher
+    }
+    $null = $dispatcher.BeginInvoke([Action]{
+        Invoke-EtbScript {
+            foreach ($cmd in $Script:ConnectCallbacks) {
+                try { Invoke-EtbCommand $cmd }
+                catch { Write-Log "Connect callback error: $_" 'ERROR' }
+            }
+            Set-MainStatus 'Connected.' 'Success'
+        }
+    })
+}
+
+# ── Background runspace factory ───────────────────────────────────────────────
+# CreateRunspace() without an InitialSessionState is empty — no built-in cmdlets.
+# Always use CreateDefault() so workers can call Invoke-RestMethod, Get-Date, etc.
+function New-BackgroundRunspace {
+    $iss = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+    # CreateDefault() alone omits utility cmdlets (e.g. Invoke-RestMethod) in some hosts.
+    $null = $iss.ImportPSModule(@(
+        'Microsoft.PowerShell.Utility',
+        'Microsoft.PowerShell.Management'
+    ))
+    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace($iss)
+    $rs.Open()
+    $rs
+}
+
 # ── WPF-safe async runspace + completion timer ────────────────────────────────
 # Runs $Script in a background Runspace with $Ref (synchronized hashtable), $Token
 # (current access token unless -NoToken), and any extra $Vars set as session vars.
@@ -66,17 +168,21 @@ function Start-AsyncWork {
     foreach ($k in $RefSeed.Keys) { $seed[$k] = $RefSeed[$k] }
     $ref = [hashtable]::Synchronized($seed)
 
-    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
-    $rs.Open()
+    $rs = New-BackgroundRunspace
     $rs.SessionStateProxy.SetVariable('Ref', $ref)
     if (-not $NoToken) { $rs.SessionStateProxy.SetVariable('Token', $Script:AccessToken) }
     foreach ($k in $Vars.Keys) { $rs.SessionStateProxy.SetVariable($k, $Vars[$k]) }
+    # Compile worker source inside the background runspace so Invoke-RestMethod etc.
+    # resolve against that runspace — passing a main-session scriptblock does not.
+    $rs.SessionStateProxy.SetVariable('WorkerText', $Script.ToString())
 
     $ps = [System.Management.Automation.PowerShell]::Create()
     $ps.Runspace = $rs
     [void]$ps.AddScript({
-        param($Body)
-        try { & $Body }
+        try {
+            $body = [scriptblock]::Create($WorkerText)
+            & $body
+        }
         catch {
             if ($_.Exception.Response -and $_.Exception.Response.StatusCode.value__ -eq 401) {
                 $Ref['Error'] = '401'
@@ -86,11 +192,9 @@ function Start-AsyncWork {
         }
         finally { $Ref['Done'] = $true }
     })
-    [void]$ps.AddArgument($Script)
     $async = $ps.BeginInvoke()
 
-    $timer = [System.Windows.Threading.DispatcherTimer]::new()
-    $timer.Interval = [TimeSpan]::FromMilliseconds($IntervalMs)
+    $timer = New-EtbDispatcherTimer -IntervalMs $IntervalMs
     # Stash state on Tag — scriptblocks attached to events don't capture locals
     # like $OnComplete by closure, but $this gives them the timer at tick time.
     $timer.Tag = @{
@@ -103,8 +207,8 @@ function Start-AsyncWork {
     }
     $timer.Add_Tick({
         if ($this.Tag.OnProgress) {
-            try { & $this.Tag.OnProgress $this.Tag.Ref }
-            catch { Write-Log "Async OnProgress error: $_" 'ERROR' }
+            try { Invoke-EtbScript $this.Tag.OnProgress @($this.Tag.Ref) }
+            catch { Invoke-EtbScript { Write-Log "Async OnProgress error: $_" 'ERROR' } }
         }
         if (-not $this.Tag.Ref['Done']) { return }
         $this.Stop()
@@ -112,8 +216,8 @@ function Start-AsyncWork {
         $this.Tag.PS.Dispose()
         $this.Tag.RS.Close()
         $this.Tag.RS.Dispose()
-        try { & $this.Tag.OnComplete $this.Tag.Ref }
-        catch { Write-Log "Async OnComplete error: $_" 'ERROR' }
+        try { Invoke-EtbScript $this.Tag.OnComplete @($this.Tag.Ref) }
+        catch { Invoke-EtbScript { Write-Log "Async OnComplete error: $_" 'ERROR' } }
     })
     $timer.Start()
     return $timer
@@ -198,7 +302,7 @@ $Script:GraphScopes = @(
 )
 
 # Per-tool callbacks fired after a new tenant connects (token ready) or before reset (token null)
-$Script:ConnectCallbacks = [System.Collections.Generic.List[scriptblock]]::new()
+$Script:ConnectCallbacks = [System.Collections.Generic.List[string]]::new()
 $Script:ResetCallbacks   = [System.Collections.Generic.List[scriptblock]]::new()
 
 # Reusable IPublicClientApplication per tenant — keeps the in-memory MSAL cache alive
@@ -208,8 +312,25 @@ $Script:MsalApps = @{}
 # Async auth state
 $Script:AuthRef     = $null
 $Script:AuthTimer   = $null
+$Script:AuthPS      = $null
+$Script:AuthRS      = $null
+$Script:AuthAsync   = $null
 $Script:AuthSuccess = $null
 $Script:AuthFailure = $null
+
+function Complete-AuthWorker {
+    if ($Script:AuthPS) {
+        try { $Script:AuthPS.EndInvoke($Script:AuthAsync) | Out-Null } catch {}
+        $Script:AuthPS.Dispose()
+        $Script:AuthPS = $null
+    }
+    if ($Script:AuthRS) {
+        $Script:AuthRS.Close()
+        $Script:AuthRS.Dispose()
+        $Script:AuthRS = $null
+    }
+    $Script:AuthAsync = $null
+}
 
 # ── Token cache persistence helper ───────────────────────────────────────────────
 # MSAL.NET v4 removed the parameterless TokenCache.Serialize/DeserializeMsalV3 — they
@@ -424,8 +545,7 @@ function Start-TenantConnectAsync {
     $clientId = $Script:GraphClientId
     $scopes   = $Script:GraphScopes
 
-    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
-    $rs.Open()
+    $rs = New-BackgroundRunspace
     $rs.SessionStateProxy.SetVariable('AuthRef',      $Script:AuthRef)
     $rs.SessionStateProxy.SetVariable('TenantId',     $TenantId)
     $rs.SessionStateProxy.SetVariable('ClientId',     $clientId)
@@ -521,41 +641,46 @@ function Start-TenantConnectAsync {
             $AuthRef['Done'] = $true
         }
     })
-    $ps.BeginInvoke() | Out-Null
+    $Script:AuthPS    = $ps
+    $Script:AuthRS    = $rs
+    $Script:AuthAsync = $ps.BeginInvoke()
 
     if ($Script:AuthTimer) { $Script:AuthTimer.Stop() }
-    $Script:AuthTimer          = [System.Windows.Threading.DispatcherTimer]::new()
-    $Script:AuthTimer.Interval = [TimeSpan]::FromMilliseconds(500)
+    $Script:AuthTimer = New-EtbDispatcherTimer -IntervalMs 500
     $Script:AuthTimer.Add_Tick({
+        if (-not $Script:AuthRef['Done']) { return }
+        $Script:AuthTimer.Stop()
+        Complete-AuthWorker
         try {
-            if (-not $Script:AuthRef['Done']) { return }
-            $Script:AuthTimer.Stop()
-            if ($Script:AuthRef['Error']) {
-                Write-Log "Auth failed: $($Script:AuthRef['Error'])" 'ERROR'
-                & $Script:AuthFailure $Script:AuthRef['Error']
-                return
-            }
-            if ($Script:AuthRef['CacheWarning']) {
-                Write-Log "Auth: $($Script:AuthRef['CacheWarning'])" 'WARN'
-            } elseif ($Script:AuthRef['CacheEnabled']) {
-                Write-Log 'Auth: token cache hooked successfully' 'DEBUG'
-            }
-            Write-Log 'Auth succeeded - token acquired' 'INFO'
-            $Script:AccessToken     = $Script:AuthRef['Token']
-            $Script:CurrentTenantId = $Script:AuthRef['TenantId']
-            if ($Script:AuthRef['App']) {
-                $Script:MsalApps[$Script:AuthRef['TenantId']] = $Script:AuthRef['App']
-            }
-            # OnSuccess may call Save-Tenant (new-tenant dialog), so run it first to
-            # ensure the tenant row exists before we write the account hint into it.
-            & $Script:AuthSuccess
-            if ($Script:AuthRef['AccountUPN']) {
-                Set-TenantAccountHint -TenantId $Script:AuthRef['TenantId'] `
-                                      -AccountHint $Script:AuthRef['AccountUPN']
-                Write-Log "Auth: account hint saved ($($Script:AuthRef['AccountUPN']))" 'DEBUG'
+            Invoke-EtbScript {
+                if ($Script:AuthRef['Error']) {
+                    Write-Log "Auth failed: $($Script:AuthRef['Error'])" 'ERROR'
+                    Invoke-EtbScript $Script:AuthFailure @($Script:AuthRef['Error'])
+                    return
+                }
+                if ($Script:AuthRef['CacheWarning']) {
+                    Write-Log "Auth: $($Script:AuthRef['CacheWarning'])" 'WARN'
+                } elseif ($Script:AuthRef['CacheEnabled']) {
+                    Write-Log 'Auth: token cache hooked successfully' 'DEBUG'
+                }
+                Write-Log 'Auth succeeded - token acquired' 'INFO'
+                $Script:AccessToken     = $Script:AuthRef['Token']
+                $Script:CurrentTenantId = $Script:AuthRef['TenantId']
+                if ($Script:AuthRef['App']) {
+                    $Script:MsalApps[$Script:AuthRef['TenantId']] = $Script:AuthRef['App']
+                }
+                # OnSuccess may call Save-Tenant (new-tenant dialog), so run it first to
+                # ensure the tenant row exists before we write the account hint into it.
+                Invoke-EtbScript $Script:AuthSuccess
+                if ($Script:AuthRef['AccountUPN']) {
+                    Set-TenantAccountHint -TenantId $Script:AuthRef['TenantId'] `
+                                          -AccountHint $Script:AuthRef['AccountUPN']
+                    Write-Log "Auth: account hint saved ($($Script:AuthRef['AccountUPN']))" 'DEBUG'
+                }
             }
         } catch {
-            Write-Log "Auth timer tick error: $_" 'ERROR'
+            try { Invoke-EtbScript { Write-Log "Auth timer tick error: $_" 'ERROR' } }
+            catch { Write-Host "[ERROR] Auth timer tick error: $_" -ForegroundColor Red }
         }
     })
     $Script:AuthTimer.Start()

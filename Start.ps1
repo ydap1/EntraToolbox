@@ -53,6 +53,10 @@ if (-not (Get-Module MSAL.PS -ErrorAction SilentlyContinue)) {
 . (Join-Path $PSScriptRoot 'src\Tools\ImmutableId.ps1')
 . (Join-Path $PSScriptRoot 'src\MainWindow.ps1')
 
+# Capture the fully-loaded script session so WPF dispatcher callbacks can resolve
+# dot-sourced functions (Write-Log, Start-BucLoad, etc.) via Invoke-EtbScript.
+$Script:EtbSessionState = $ExecutionContext.SessionState
+
 Write-Log "Art's Entra Toolbox $Global:AppVersion starting (PS $($PSVersionTable.PSVersion))" 'INFO'
 
 # Compile the token-cache persistence helper up front so the first sign-in isn't delayed.

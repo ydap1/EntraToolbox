@@ -12,22 +12,12 @@ $Script:BUC_UI         = $null
 $Script:BUC_AllUsers   = @()
 $Script:BUC_Rows       = New-Object System.Collections.ObjectModel.ObservableCollection[PSObject]
 $Script:BUC_Domains    = @()
-$Script:BUC_LoadRef    = $null
 $Script:BUC_LoadTimer  = $null
-$Script:BUC_ApplyRef   = $null
 $Script:BUC_ApplyTimer = $null
 
 function Write-BucLog {
     param([string]$Msg, [string]$Color = 'TextDim')
-    if (-not $Script:BUC_UI) { Write-Log $Msg 'DEBUG'; return }
-    $ts   = Get-Date -Format 'HH:mm:ss'
-    $para = New-Object System.Windows.Documents.Paragraph
-    $run  = New-Object System.Windows.Documents.Run "[$ts]  $Msg"
-    $run.Foreground = Get-ThemeHex $Color
-    $para.Inlines.Add($run)
-    $para.Margin = '0'
-    $Script:BUC_UI.LogBox.Document.Blocks.Add($para)
-    $Script:BUC_UI.LogBox.ScrollToEnd()
+    Write-RichLog $Script:BUC_UI.LogBox $Msg $Color
 }
 
 function Update-BucUserFilter {
@@ -102,70 +92,41 @@ function Start-BucLoad {
     $Script:BUC_UI.DomainCombo.Items.Clear()
     Write-BucLog 'Loading users and verified domains...' 'TextDim'
 
-    $Script:BUC_LoadRef = [hashtable]::Synchronized(@{
-        Done    = $false
-        Users   = $null
-        Domains = $null
-        Error   = $null
-    })
-    $token = $Script:AccessToken
-
-    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
-    $rs.Open()
-    $rs.SessionStateProxy.SetVariable('Ref',   $Script:BUC_LoadRef)
-    $rs.SessionStateProxy.SetVariable('Token', $token)
-
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    $ps.Runspace = $rs
-    [void]$ps.AddScript({
-        try {
-            # Cloud-only users only
-            $users = [System.Collections.Generic.List[object]]::new()
-            $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,onPremisesSyncEnabled&$top=999&$filter=accountEnabled eq true'
-            do {
-                $resp = Invoke-RestMethod -Uri $url `
-                    -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-                foreach ($u in $resp.value) {
-                    if (-not $u.onPremisesSyncEnabled) { $users.Add($u) }
-                }
-                $url = $resp.'@odata.nextLink'
-            } while ($url)
-
-            # Verified tenant domains
-            $dResp   = Invoke-RestMethod `
-                -Uri 'https://graph.microsoft.com/v1.0/domains?$select=id,isVerified' `
-                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-            $domains = @($dResp.value | Where-Object { $_.isVerified } | ForEach-Object { $_.id } | Sort-Object)
-
-            $Ref['Users']   = $users.ToArray()
-            $Ref['Domains'] = $domains
-        } catch {
-            $sc = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode.value__ } else { 0 }
-            $Ref['Error'] = if ($sc -eq 401) { '401' } else { $_.Exception.Message }
-        } finally { $Ref['Done'] = $true }
-    })
-    $ps.BeginInvoke() | Out-Null
-
     if ($Script:BUC_LoadTimer) { $Script:BUC_LoadTimer.Stop() }
-    $Script:BUC_LoadTimer          = [System.Windows.Threading.DispatcherTimer]::new()
-    $Script:BUC_LoadTimer.Interval = [TimeSpan]::FromMilliseconds(300)
-    $Script:BUC_LoadTimer.Add_Tick({
-        try {
-            if (-not $Script:BUC_LoadRef['Done']) { return }
-            $Script:BUC_LoadTimer.Stop()
+    $Script:BUC_LoadTimer = Start-AsyncWork -RefSeed @{ Users = $null; Domains = $null } -Script {
+        $users = [System.Collections.Generic.List[object]]::new()
+        $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,onPremisesSyncEnabled&$top=999&$filter=accountEnabled eq true'
+        do {
+            $resp = Invoke-RestMethod -Uri $url `
+                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
+            foreach ($u in $resp.value) {
+                if (-not $u.onPremisesSyncEnabled) { $users.Add($u) }
+            }
+            $url = $resp.'@odata.nextLink'
+        } while ($url)
 
-            if ($Script:BUC_LoadRef['Error'] -eq '401') {
+        $dResp = Invoke-RestMethod `
+            -Uri 'https://graph.microsoft.com/v1.0/domains?$select=id,isVerified' `
+            -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
+        $domains = @($dResp.value | Where-Object { $_.isVerified } | ForEach-Object { $_.id } | Sort-Object)
+
+        $Ref['Users']   = $users.ToArray()
+        $Ref['Domains'] = $domains
+    } -OnComplete {
+        param($ref)
+        try {
+            if ($ref['Error'] -eq '401') {
                 Write-BucLog 'Session expired — reconnect via the tenant selector.' 'Danger'
                 Set-MainStatus 'Session expired.' 'Danger'
                 return
             }
-            if ($Script:BUC_LoadRef['Error']) {
-                Write-BucLog "Load error: $($Script:BUC_LoadRef['Error'])" 'Danger'
+            if ($ref['Error']) {
+                Write-BucLog "Load error: $($ref['Error'])" 'Danger'
                 return
             }
 
-            $Script:BUC_AllUsers = @($Script:BUC_LoadRef['Users'] | Sort-Object { $_.displayName })
-            $Script:BUC_Domains  = $Script:BUC_LoadRef['Domains']
+            $Script:BUC_AllUsers = @($ref['Users'] | Sort-Object { $_.displayName })
+            $Script:BUC_Domains  = $ref['Domains']
 
             foreach ($d in $Script:BUC_Domains) { [void]$Script:BUC_UI.DomainCombo.Items.Add($d) }
             if ($Script:BUC_UI.DomainCombo.Items.Count -gt 0) {
@@ -181,32 +142,22 @@ function Start-BucLoad {
         } catch {
             Write-Log "BUC load-timer error: $_" 'ERROR'
         }
-    })
-    $Script:BUC_LoadTimer.Start()
+    }
 }
 
 # ── Async apply ───────────────────────────────────────────────────────────────
 function Start-BucApply {
     $pending = @($Script:BUC_Rows | Where-Object { $_.Status -eq 'Pending' })
-    $token   = $Script:AccessToken
+    $work    = @($pending | ForEach-Object {
+        @{ Id = $_.Id; OldUpn = $_.OldUpn; NewUpn = $_.NewUpn }
+    })
 
     $Script:BUC_UI.BtnApply.IsEnabled = $false
     Write-BucLog "Changing UPN domain for $($pending.Count) user(s)..." 'TextDim'
 
-    $Script:BUC_ApplyRef = [hashtable]::Synchronized(@{
-        Done    = $false
-        Results = [System.Collections.Generic.List[hashtable]]::new()
-    })
-
-    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
-    $rs.Open()
-    $rs.SessionStateProxy.SetVariable('Ref',     $Script:BUC_ApplyRef)
-    $rs.SessionStateProxy.SetVariable('Token',   $token)
-    $rs.SessionStateProxy.SetVariable('Pending', $pending)
-
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    $ps.Runspace = $rs
-    [void]$ps.AddScript({
+    if ($Script:BUC_ApplyTimer) { $Script:BUC_ApplyTimer.Stop() }
+    $Script:BUC_ApplyTimer = Start-AsyncWork -RefSeed @{ Results = @() } -Vars @{ Pending = $work } -IntervalMs 500 -Script {
+        $out = [System.Collections.Generic.List[object]]::new()
         foreach ($r in $Pending) {
             $res = @{ Id = $r.Id; OldUpn = $r.OldUpn; NewUpn = $r.NewUpn; Ok = $false; Err = '' }
             try {
@@ -220,22 +171,14 @@ function Start-BucApply {
             } catch {
                 $res['Err'] = $_.Exception.Message
             }
-            $Ref['Results'].Add($res)
+            $out.Add($res)
         }
-        $Ref['Done'] = $true
-    })
-    $ps.BeginInvoke() | Out-Null
-
-    if ($Script:BUC_ApplyTimer) { $Script:BUC_ApplyTimer.Stop() }
-    $Script:BUC_ApplyTimer          = [System.Windows.Threading.DispatcherTimer]::new()
-    $Script:BUC_ApplyTimer.Interval = [TimeSpan]::FromMilliseconds(500)
-    $Script:BUC_ApplyTimer.Add_Tick({
+        $Ref['Results'] = $out.ToArray()
+    } -OnComplete {
+        param($ref)
         try {
-            if (-not $Script:BUC_ApplyRef['Done']) { return }
-            $Script:BUC_ApplyTimer.Stop()
-
             $ok = 0; $fail = 0
-            foreach ($res in $Script:BUC_ApplyRef['Results']) {
+            foreach ($res in $ref['Results']) {
                 $row = $Script:BUC_Rows | Where-Object { $_.Id -eq $res['Id'] } | Select-Object -First 1
                 if ($res['Ok']) {
                     $ok++
@@ -255,8 +198,7 @@ function Start-BucApply {
         } catch {
             Write-Log "BUC apply-timer error: $_" 'ERROR'
         }
-    })
-    $Script:BUC_ApplyTimer.Start()
+    }
 }
 
 # ── Demo stubs ─────────────────────────────────────────────────────────────────
@@ -730,8 +672,10 @@ function Initialize-BulkUpnChangeTool {
         } catch { Write-Log "BUC BtnApply click error: $_" 'ERROR' }
     })
 
-    $Script:ConnectCallbacks.Add({ Start-BucLoad })
+    Register-ConnectCallback 'Start-BucLoad'
     $Script:ResetCallbacks.Add({
+        if ($Script:BUC_LoadTimer)  { $Script:BUC_LoadTimer.Stop();  $Script:BUC_LoadTimer  = $null }
+        if ($Script:BUC_ApplyTimer) { $Script:BUC_ApplyTimer.Stop(); $Script:BUC_ApplyTimer = $null }
         $Script:BUC_AllUsers = @()
         $Script:BUC_Domains  = @()
         $Script:BUC_Rows.Clear()

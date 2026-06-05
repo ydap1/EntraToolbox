@@ -918,8 +918,8 @@ function Initialize-LastDeviceTool {
     })
 
     # Register with global connect/reset hooks
-    $Script:ConnectCallbacks.Add({ Start-LdUserLoad })
-    $Script:ConnectCallbacks.Add({ Start-LdAllDevicesLoad })
+    Register-ConnectCallback 'Start-LdUserLoad'
+    Register-ConnectCallback 'Start-LdAllDevicesLoad'
     $Script:ResetCallbacks.Add({
         $Script:LD_AllUsers   = @()
         $Script:LD_AllDevices = @()

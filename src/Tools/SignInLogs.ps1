@@ -473,7 +473,7 @@ function Initialize-SignInLogsTool {
         }
     })
 
-    $Script:ConnectCallbacks.Add({ Start-SlUserLoad })
+    Register-ConnectCallback 'Start-SlUserLoad'
     $Script:ResetCallbacks.Add({
         $Script:SL_AllUsers = @()
         $Script:SL_UI.UserList.Items.Clear()

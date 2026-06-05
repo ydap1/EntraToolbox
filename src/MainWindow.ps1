@@ -551,8 +551,7 @@ function Invoke-PostConnect {
     if (-not $Script:DemoMode -and $Script:CurrentTenantId) {
         try { Set-AppSetting -Name 'LastTenantId' -Value $Script:CurrentTenantId } catch {}
     }
-    foreach ($cb in $Script:ConnectCallbacks) { & $cb }
-    Set-MainStatus 'Connected.' 'Success'
+    Invoke-ConnectCallbacks
 }
 
 function Invoke-ResetTools {

@@ -742,7 +742,7 @@ function Initialize-PasswordResetTool {
     })
 
     # Register with the global connect/reset hooks
-    $Script:ConnectCallbacks.Add({ Start-PwUserLoad })
+    Register-ConnectCallback 'Start-PwUserLoad'
     $Script:ResetCallbacks.Add({
         $Script:PwReset_Rows.Clear()
         $Script:PwReset_GraphUsers = @()

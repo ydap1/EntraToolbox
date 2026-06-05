@@ -15,6 +15,8 @@ $Script:IID_UI           = @{}
 $Script:IID_Rows         = $null   # ObservableCollection[PSObject]
 $Script:IID_CheckboxCol  = $null   # reference to col 0 for hit-testing
 $Script:IID_LoadState    = @{ Done = $false; Users = $null; Error = $null }
+$Script:IID_LoadTimer    = $null
+$Script:IID_ApplyTimer   = $null
 
 # ── New-ImmutableIdValue ───────────────────────────────────────────────────────
 function New-ImmutableIdValue {
@@ -407,57 +409,38 @@ Type YES (all capitals) to confirm.
     Write-IidLog "Assigning ImmutableIds to $($toAssign.Count) user(s)…" '#6366F1'
     Write-Log    "ImmutableId: starting assignment for $($toAssign.Count) user(s)" 'INFO'
 
-    $ref = [hashtable]::Synchronized(@{ Done = $false; Results = @(); Error = $null })
     $workItems = @($toAssign | ForEach-Object { @{ Id = $_.Id; Name = $_.Name; NewId = $_.NewId } })
-    $token = $Script:AccessToken
 
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    [void]$ps.AddScript({
-        param($Ref, $Items, $Token)
-        try {
-            $out = @()
-            foreach ($item in $Items) {
-                try {
-                    $body = ConvertTo-Json @{ onPremisesImmutableId = $item.NewId } -Compress
-                    $null = Invoke-RestMethod "https://graph.microsoft.com/v1.0/users/$($item.Id)" `
-                        -Method PATCH -Headers @{ Authorization = "Bearer $Token" } `
-                        -Body $body -ContentType 'application/json'
-                    $out += @{ Id = $item.Id; Success = $true }
-                } catch {
-                    $out += @{ Id = $item.Id; Success = $false; Error = $_.Exception.Message }
-                }
+    if ($Script:IID_ApplyTimer) { $Script:IID_ApplyTimer.Stop() }
+    $Script:IID_ApplyTimer = Start-AsyncWork -RefSeed @{ Results = @() } -Vars @{ Pending = $workItems } -Script {
+        $out = [System.Collections.Generic.List[object]]::new()
+        foreach ($item in $Pending) {
+            try {
+                $body = ConvertTo-Json @{ onPremisesImmutableId = $item.NewId } -Compress
+                $null = Invoke-RestMethod "https://graph.microsoft.com/v1.0/users/$($item.Id)" `
+                    -Method PATCH -Headers @{ Authorization = "Bearer $Token" } `
+                    -Body $body -ContentType 'application/json' -ErrorAction Stop
+                $out.Add(@{ Id = $item.Id; Success = $true })
+            } catch {
+                $out.Add(@{ Id = $item.Id; Success = $false; Error = $_.Exception.Message })
             }
-            $Ref.Results = $out
-        } catch {
-            $Ref.Error = $_.Exception.Message
-        } finally {
-            $Ref.Done = $true
         }
-    })
-    [void]$ps.AddParameters(@{ Ref = $ref; Items = $workItems; Token = $token })
-    [void]$ps.BeginInvoke()
-
-    $resultRef = $ref
-    $rowsRef   = $Script:IID_Rows
-    $uiRef     = $Script:IID_UI
-    $timer = [System.Windows.Threading.DispatcherTimer]::new()
-    $timer.Interval = [TimeSpan]::FromMilliseconds(500)
-    $timer.Add_Tick({
+        $Ref['Results'] = $out.ToArray()
+    } -OnComplete {
+        param($ref)
         try {
-            if (-not $resultRef.Done) { return }
-            $timer.Stop()
-            if ($resultRef.Error) {
-                Write-IidLog "Assignment error: $($resultRef.Error)" '#EF4444'
-                Write-Log "ImmutableId: assignment error: $($resultRef.Error)" 'ERROR'
+            if ($ref['Error']) {
+                Write-IidLog "Assignment error: $($ref['Error'])" '#EF4444'
+                Write-Log "ImmutableId: assignment error: $($ref['Error'])" 'ERROR'
             } else {
                 $ok = 0; $err = 0
-                foreach ($res in $resultRef.Results) {
-                    $row = $rowsRef | Where-Object { $_.Id -eq $res.Id } | Select-Object -First 1
+                foreach ($res in $ref['Results']) {
+                    $row = $Script:IID_Rows | Where-Object { $_.Id -eq $res.Id } | Select-Object -First 1
                     if (-not $row) { continue }
                     if ($res.Success) {
-                        $row.Status     = 'Assigned'
-                        $row.CurrentId  = $row.NewId
-                        $row.NewId      = ''
+                        $row.Status      = 'Assigned'
+                        $row.CurrentId   = $row.NewId
+                        $row.NewId       = ''
                         $row.HasExisting = $true
                         $ok++
                     } else {
@@ -466,19 +449,17 @@ Type YES (all capitals) to confirm.
                         $err++
                     }
                 }
-                $uiRef.Grid.Items.Refresh()
+                $Script:IID_UI.Grid.Items.Refresh()
                 Write-IidLog "Done — $ok assigned, $err error(s)." '#22C55E'
                 Write-Log "ImmutableId: $ok assigned, $err errors" 'INFO'
             }
-            $uiRef.BtnCheckAll.IsEnabled   = $true
-            $uiRef.BtnUncheckAll.IsEnabled = $true
+            $Script:IID_UI.BtnCheckAll.IsEnabled   = $true
+            $Script:IID_UI.BtnUncheckAll.IsEnabled = $true
             Update-IidCounts
         } catch {
             Write-Log "ImmutableId apply timer error: $_" 'ERROR'
-            $timer.Stop()
         }
-    })
-    $timer.Start()
+    }
 }
 
 # ── Load from Graph (async) ────────────────────────────────────────────────────
@@ -490,59 +471,40 @@ function Start-IidLoad {
     $Script:IID_UI.BtnApply.IsEnabled      = $false
     $Script:IID_UI.BtnCheckAll.IsEnabled   = $false
     $Script:IID_UI.BtnUncheckAll.IsEnabled = $false
-    $Script:IID_LoadState.Done  = $false
-    $Script:IID_LoadState.Users = $null
-    $Script:IID_LoadState.Error = $null
     Write-IidLog 'Loading cloud-only users from Entra…' '#6366F1'
 
-    $ref   = $Script:IID_LoadState
-    $token = $Script:AccessToken
-
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    [void]$ps.AddScript({
-        param($Ref, $Token)
+    if ($Script:IID_LoadTimer) { $Script:IID_LoadTimer.Stop() }
+    $Script:IID_LoadTimer = Start-AsyncWork -RefSeed @{ Users = $null } -Script {
+        $all = [System.Collections.Generic.List[object]]::new()
+        $url = "https://graph.microsoft.com/v1.0/users?`$select=id,displayName,userPrincipalName,onPremisesImmutableId,onPremisesSyncEnabled&`$top=999&`$filter=userType eq 'Member'"
+        do {
+            $r = Invoke-RestMethod $url -Method GET -Headers @{ Authorization = "Bearer $Token" } -ErrorAction Stop
+            foreach ($u in $r.value) {
+                if (-not $u.onPremisesSyncEnabled) { $all.Add($u) }
+            }
+            $url = $r.'@odata.nextLink'
+        } while ($url)
+        $Ref['Users'] = $all.ToArray()
+    } -OnComplete {
+        param($ref)
         try {
-            $all = @()
-            $url = "https://graph.microsoft.com/v1.0/users?`$select=id,displayName,userPrincipalName,onPremisesImmutableId,onPremisesSyncEnabled&`$top=999&`$filter=userType eq 'Member'"
-            do {
-                $r   = Invoke-RestMethod $url -Method GET -Headers @{ Authorization = "Bearer $Token" }
-                $all += @($r.value | Where-Object { -not $_.onPremisesSyncEnabled })
-                $url  = $r.'@odata.nextLink'
-            } while ($url)
-            $Ref.Users = $all
-        } catch {
-            $Ref.Error = $_.Exception.Message
-        } finally {
-            $Ref.Done = $true
-        }
-    })
-    [void]$ps.AddParameters(@{ Ref = $ref; Token = $token })
-    [void]$ps.BeginInvoke()
-
-    $loadRef = $ref
-    $timer = [System.Windows.Threading.DispatcherTimer]::new()
-    $timer.Interval = [TimeSpan]::FromMilliseconds(500)
-    $timer.Add_Tick({
-        try {
-            if (-not $loadRef.Done) { return }
-            $timer.Stop()
-            if ($loadRef.Error) {
-                Write-IidLog "Load failed: $($loadRef.Error)" '#EF4444'
-                Write-Log "ImmutableId: load error: $($loadRef.Error)" 'ERROR'
+            if ($ref['Error']) {
+                Write-IidLog "Load failed: $($ref['Error'])" '#EF4444'
+                Write-Log "ImmutableId: load error: $($ref['Error'])" 'ERROR'
                 $Script:IID_UI.LblCount.Text = 'Load failed.'
                 return
             }
-            Write-Log "ImmutableId: loaded $($loadRef.Users.Count) cloud-only members" 'INFO'
+            $Script:IID_LoadState.Users = $ref['Users']
+            $Script:IID_LoadState.Done  = $true
+            Write-Log "ImmutableId: loaded $($ref['Users'].Count) cloud-only members" 'INFO'
             Rebuild-IidRows
             $Script:IID_UI.BtnCheckAll.IsEnabled   = $true
             $Script:IID_UI.BtnUncheckAll.IsEnabled = $true
             Write-IidLog "Loaded $($Script:IID_Rows.Count) user(s)." '#22C55E'
         } catch {
             Write-Log "ImmutableId load timer error: $_" 'ERROR'
-            $timer.Stop()
         }
-    })
-    $timer.Start()
+    }
 }
 
 # ── Demo stubs ─────────────────────────────────────────────────────────────────
@@ -572,6 +534,10 @@ function Start-IidApplyDemo {
     $Script:IID_UI.Grid.Items.Refresh()
     Update-IidCounts
     Write-IidLog "[DEMO] Assigned ImmutableId to $($toAssign.Count) user(s)." '#7C3AED'
+}
+
+function Invoke-IidOnConnect {
+    if ($Script:DemoMode) { Start-IidLoadDemo } else { Start-IidLoad }
 }
 
 # ── Initialize-ImmutableIdTool ─────────────────────────────────────────────────
@@ -647,13 +613,11 @@ function Initialize-ImmutableIdTool {
     })
 
     # ── Lifecycle ──────────────────────────────────────────────────────────────
-    $Script:ConnectCallbacks.Add({
-        try {
-            if ($Script:DemoMode) { Start-IidLoadDemo } else { Start-IidLoad }
-        } catch { Write-Log "ImmutableId ConnectCallback error: $_" 'ERROR' }
-    })
+    Register-ConnectCallback 'Invoke-IidOnConnect'
     $Script:ResetCallbacks.Add({
         try {
+            if ($Script:IID_LoadTimer)  { $Script:IID_LoadTimer.Stop();  $Script:IID_LoadTimer  = $null }
+            if ($Script:IID_ApplyTimer) { $Script:IID_ApplyTimer.Stop(); $Script:IID_ApplyTimer = $null }
             $Script:IID_Rows.Clear()
             $Script:IID_LoadState.Done  = $false
             $Script:IID_LoadState.Users = $null

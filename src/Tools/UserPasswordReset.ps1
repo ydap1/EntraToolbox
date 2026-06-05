@@ -657,7 +657,7 @@ function Initialize-UserPasswordResetTool {
     })
 
     # Register with global connect/reset hooks
-    $Script:ConnectCallbacks.Add({ Start-UprUserLoad })
+    Register-ConnectCallback 'Start-UprUserLoad'
     $Script:ResetCallbacks.Add({
         $Script:UPR_AllUsers = @()
         $Script:UPR_UI.UserList.Items.Clear()

@@ -770,7 +770,7 @@ function Initialize-TeamsProvisioningTool {
     })
 
     # Connect / reset callbacks
-    $Script:ConnectCallbacks.Add({ Start-TpUserLoad })
+    Register-ConnectCallback 'Start-TpUserLoad'
     $Script:ResetCallbacks.Add({
         if ($Script:TP_UserTimer)  { $Script:TP_UserTimer.Stop() }
         if ($Script:TP_CreateTimer) { $Script:TP_CreateTimer.Stop() }

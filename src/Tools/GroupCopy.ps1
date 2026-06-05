@@ -609,7 +609,7 @@ function Initialize-GroupCopyTool {
         }
     })
 
-    $Script:ConnectCallbacks.Add({ Start-GcUserLoad })
+    Register-ConnectCallback 'Start-GcUserLoad'
     $Script:ResetCallbacks.Add({
         $Script:GC_AllUsers     = @()
         $Script:GC_SourceUser   = $null
