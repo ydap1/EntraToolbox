@@ -666,6 +666,7 @@ function Show-MainWindow {
     $Script:NavContents['SignIn']      = Initialize-SignInLogsTool
     $Script:NavContents['GroupCopy']   = Initialize-GroupCopyTool
     $Script:NavContents['Teams']       = Initialize-TeamsProvisioningTool
+    $Script:NavContents['Changelog']   = Initialize-UpdateHistoryTool
     Write-Log 'MainWindow: tools initialised' 'INFO'
 
     # ── Build nav sidebar ─────────────────────────────────────────────────────
@@ -682,6 +683,8 @@ function Show-MainWindow {
         @{ Type = 'cat';  Label = 'GROUPS & TEAMS' }
         @{ Type = 'tool'; Name = 'GroupCopy';   Title = 'Group Copy';           Desc = 'Copy memberships from one user to another' }
         @{ Type = 'tool'; Name = 'Teams';        Title = 'Teams Provisioning';  Desc = 'Create and populate Microsoft Teams' }
+        @{ Type = 'cat';  Label = 'APP' }
+        @{ Type = 'tool'; Name = 'Changelog';   Title = 'Update History';       Desc = 'Version changelog and release notes' }
     )
 
     foreach ($def in $navDef) {
