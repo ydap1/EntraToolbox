@@ -44,6 +44,24 @@ Uses the Microsoft Intune PowerShell public client ID — no app registration re
 | `Team.Create` | Create new Teams |
 | `TeamMember.ReadWrite.All` | Add members and owners to Teams |
 
+## Screenshots
+
+**Year Group Passwords** — bulk password reset for an entire year group with dry-run preview and CSV export.
+
+![Year Group Passwords](assets/screenshot1.png)
+
+**User Password Reset** — reset a single account, regenerate passwords, and toggle forced sign-in prompt.
+
+![User Password Reset](assets/screenshot2.png)
+
+**Sign-In Logs** — browse the last 50 sign-in events for any user with app, result, IP, and location detail.
+
+![Sign-In Logs](assets/screenshot3.png)
+
+**Last Device (By Device)** — look up which users have signed into a specific device, with full sidebar navigation visible.
+
+![Last Device](assets/screenshot4.png)
+
 ## License
 
 MIT
