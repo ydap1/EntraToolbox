@@ -88,7 +88,9 @@ function New-NavItem {
         try { if ($Script:CurrentNavItem -ne $cn) { $ci.Border.Background = [System.Windows.Media.Brushes]::Transparent } }
         catch {}
     })
-    $border.Add_MouseLeftButtonUp({
+    # PreviewMouseLeftButtonDown tunnels from root → target before ScrollViewer
+    # can capture the mouse for scrolling, so it fires reliably on every click.
+    $border.Add_PreviewMouseLeftButtonDown({
         try { Set-NavSelection -Name $cn }
         catch { Write-Log "NavItem '$cn' click error: $_" 'ERROR' }
     })
