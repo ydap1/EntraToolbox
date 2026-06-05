@@ -75,36 +75,37 @@ function New-NavItem {
 
     $item = @{ Name = $Name; Border = $border; TitleTb = $titleTb }
 
-    # Capture locals for event handler closures
-    $cn          = $Name
-    $ci          = $item
+    $border.Tag = $Name   # stash name so event handlers can read it via $this
     $hoverBrush  = New-SolidBrush 'SubHeader'
 
+    # MouseEnter / MouseLeave: $this is the sender Border, $this.Tag = item name.
     $border.Add_MouseEnter({
-        try { if ($Script:CurrentNavItem -ne $cn) { $ci.Border.Background = $hoverBrush } }
-        catch {}
+        try {
+            if ($Script:CurrentNavItem -ne $this.Tag) { $this.Background = $hoverBrush }
+        } catch {}
     })
     $border.Add_MouseLeave({
-        try { if ($Script:CurrentNavItem -ne $cn) { $ci.Border.Background = [System.Windows.Media.Brushes]::Transparent } }
-        catch {}
+        try {
+            if ($Script:CurrentNavItem -ne $this.Tag) { $this.Background = [System.Windows.Media.Brushes]::Transparent }
+        } catch {}
     })
-    # ScrollViewer captures the mouse on MouseLeftButtonDown to enable drag-
-    # scrolling, which redirects all subsequent mouse events away from child
-    # elements.  Use AddHandler with handledEventsToo=$true so our handler
-    # fires even after the ScrollViewer has taken mouse capture.
+
+    # Click: typed-delegate creation breaks PowerShell closure capture in some
+    # hosts (all closure variables resolve to empty string).  Read the item
+    # name from $s.Tag (sender's Tag) instead of a closure variable.
     $clickHandler = [System.Windows.Input.MouseButtonEventHandler]{
         param($s, $e)
-        Write-Host "[NAV] click on '$cn'" -ForegroundColor DarkGray
-        try { Set-NavSelection -Name $cn }
+        $n = $s.Tag
+        try { Set-NavSelection -Name $n }
         catch {
-            Write-Host "[ERROR] NavItem '$cn' click: $_" -ForegroundColor Red
-            try { Write-Log "NavItem '$cn' click error: $_" 'ERROR' } catch {}
+            Write-Host "[ERROR] NavItem '$n' click: $_" -ForegroundColor Red
+            try { Write-Log "NavItem '$n' click error: $_" 'ERROR' } catch {}
         }
     }
     $border.AddHandler(
         [System.Windows.UIElement]::MouseLeftButtonDownEvent,
         $clickHandler,
-        $true   # handledEventsToo
+        $true
     )
 
     return $item
@@ -112,8 +113,8 @@ function New-NavItem {
 
 function Set-NavSelection {
     param([string]$Name)
-    Write-Host "[NAV] Set-NavSelection called: $Name" -ForegroundColor DarkGray
-    if ($Script:CurrentNavItem -eq $Name) { Write-Host "[NAV] already selected, skipping" -ForegroundColor DarkGray; return }
+    if ([string]::IsNullOrEmpty($Name)) { return }
+    if ($Script:CurrentNavItem -eq $Name) { return }
 
     $accentBrush = New-SolidBrush 'Accent'
     $selBrush    = New-SolidBrush 'Hover'
