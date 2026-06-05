@@ -1,280 +1,45 @@
 <#
-    Immutable ID tab for Art's Entra Toolbox.
-    Dot-sourced by Start.ps1.
-    Exposes Initialize-ImmutableIdTool.
+    ImmutableId.ps1 — assign onPremisesImmutableId to cloud-only Entra users.
 
-    Generates and assigns onPremisesImmutableId (Base64 of a fresh GUID) to
-    cloud-only users. Cloud-synced accounts are excluded — their ImmutableId is
-    managed by Azure AD Connect.
+    Uses a per-row checkbox column so you can pick exactly which accounts get an
+    ID.  The DataGrid uses IsHitTestVisible="False" on the checkbox so clicks
+    pass through to a PreviewMouseLeftButtonDown handler at the Grid level that
+    manually toggles the Selected property and calls Items.Refresh().
 
-    Common use-case: anchor cloud-only accounts before enabling AD Connect sync,
-    so Connect matches on ImmutableId rather than UPN.
+    Prefix: IID_
+    Exposes: Initialize-ImmutableIdTool
 #>
 
-$Script:IID_UI         = $null
-$Script:IID_AllUsers   = @()
-$Script:IID_Rows       = New-Object System.Collections.ObjectModel.ObservableCollection[PSObject]
-$Script:IID_LoadRef    = $null
-$Script:IID_LoadTimer  = $null
-$Script:IID_ApplyRef   = $null
-$Script:IID_ApplyTimer = $null
+# ── Shared state ───────────────────────────────────────────────────────────────
+$Script:IID_UI           = @{}
+$Script:IID_Rows         = $null   # ObservableCollection[PSObject]
+$Script:IID_CheckboxCol  = $null   # reference to col 0 for hit-testing
+$Script:IID_LoadState    = @{ Done = $false; Users = $null; Error = $null }
 
-function Write-IidLog {
-    param([string]$Msg, [string]$Color = 'TextDim')
-    if (-not $Script:IID_UI) { Write-Log $Msg 'DEBUG'; return }
-    $ts   = Get-Date -Format 'HH:mm:ss'
-    $para = New-Object System.Windows.Documents.Paragraph
-    $run  = New-Object System.Windows.Documents.Run "[$ts]  $Msg"
-    $run.Foreground = Get-ThemeHex $Color
-    $para.Inlines.Add($run)
-    $para.Margin = '0'
-    $Script:IID_UI.LogBox.Document.Blocks.Add($para)
-    $Script:IID_UI.LogBox.ScrollToEnd()
-}
-
+# ── New-ImmutableIdValue ───────────────────────────────────────────────────────
 function New-ImmutableIdValue {
     [Convert]::ToBase64String([System.Guid]::NewGuid().ToByteArray())
 }
 
-function Rebuild-IidRows {
-    $emptyOnly = $Script:IID_UI.ChkEmptyOnly.IsChecked -eq $true
-    $Script:IID_Rows.Clear()
-    foreach ($u in $Script:IID_AllUsers) {
-        $hasId = -not [string]::IsNullOrEmpty($u.onPremisesImmutableId)
-        if ($emptyOnly -and $hasId) { continue }
-        $row = [PSCustomObject]@{
-            Id          = $u.id
-            Name        = $u.displayName
-            Upn         = $u.userPrincipalName
-            CurrentId   = if ($hasId) { $u.onPremisesImmutableId } else { '(none)' }
-            NewId       = ''
-            HasExisting = $hasId
-            Status      = 'Pending'
-        }
-        [void]$Script:IID_Rows.Add($row)
+# ── Visual-tree helper ─────────────────────────────────────────────────────────
+function Find-IidAncestor {
+    param($Element, [type]$AncestorType)
+    $cur = $Element -as [System.Windows.DependencyObject]
+    while ($cur) {
+        if ($cur -is $AncestorType) { return $cur }
+        $cur = [System.Windows.Media.VisualTreeHelper]::GetParent($cur)
     }
-    Update-IidButtons
-}
-
-function Invoke-IidGenerate {
-    $overwrite = $Script:IID_UI.ChkOverwrite.IsChecked -eq $true
-    $generated = 0
-    foreach ($r in $Script:IID_Rows) {
-        if ($r.Status -ne 'Pending') { continue }
-        if ($r.HasExisting -and -not $overwrite) { continue }
-        $r.NewId = New-ImmutableIdValue
-        $generated++
-    }
-    $Script:IID_UI.PreviewGrid.Items.Refresh()
-    Update-IidButtons
-    Write-IidLog "Generated $generated new ImmutableId value(s)." 'Success'
-}
-
-function Update-IidButtons {
-    $readyCount = ($Script:IID_Rows | Where-Object { $_.Status -eq 'Pending' -and $_.NewId -ne '' }).Count
-    $Script:IID_UI.BtnApply.IsEnabled    = $readyCount -gt 0
-    $Script:IID_UI.BtnGenerate.IsEnabled = $Script:IID_Rows.Count -gt 0
-    $Script:IID_UI.LblCount.Text = if ($Script:IID_Rows.Count -gt 0) {
-        "$($Script:IID_Rows.Count) user(s) shown  ·  $readyCount ready to apply"
-    } else { '' }
-}
-
-# ── Async load ─────────────────────────────────────────────────────────────────
-function Start-IidLoad {
-    if ($Script:DemoMode) { Start-IidLoadDemo; return }
-
-    $Script:IID_UI.BtnGenerate.IsEnabled = $false
-    $Script:IID_UI.BtnApply.IsEnabled    = $false
-    $Script:IID_UI.LblCount.Text         = 'Loading...'
-    Write-IidLog 'Loading cloud-only users...' 'TextDim'
-
-    $Script:IID_LoadRef = [hashtable]::Synchronized(@{
-        Done  = $false
-        Users = $null
-        Error = $null
-    })
-    $token = $Script:AccessToken
-
-    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
-    $rs.Open()
-    $rs.SessionStateProxy.SetVariable('Ref',   $Script:IID_LoadRef)
-    $rs.SessionStateProxy.SetVariable('Token', $token)
-
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    $ps.Runspace = $rs
-    [void]$ps.AddScript({
-        try {
-            $users = [System.Collections.Generic.List[object]]::new()
-            $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,onPremisesImmutableId,onPremisesSyncEnabled&$top=999&$filter=accountEnabled eq true'
-            do {
-                $resp = Invoke-RestMethod -Uri $url `
-                    -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-                foreach ($u in $resp.value) {
-                    if (-not $u.onPremisesSyncEnabled) { $users.Add($u) }
-                }
-                $url = $resp.'@odata.nextLink'
-            } while ($url)
-            $Ref['Users'] = $users.ToArray()
-        } catch {
-            $sc = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode.value__ } else { 0 }
-            $Ref['Error'] = if ($sc -eq 401) { '401' } else { $_.Exception.Message }
-        } finally { $Ref['Done'] = $true }
-    })
-    $ps.BeginInvoke() | Out-Null
-
-    if ($Script:IID_LoadTimer) { $Script:IID_LoadTimer.Stop() }
-    $Script:IID_LoadTimer          = [System.Windows.Threading.DispatcherTimer]::new()
-    $Script:IID_LoadTimer.Interval = [TimeSpan]::FromMilliseconds(300)
-    $Script:IID_LoadTimer.Add_Tick({
-        try {
-            if (-not $Script:IID_LoadRef['Done']) { return }
-            $Script:IID_LoadTimer.Stop()
-
-            if ($Script:IID_LoadRef['Error'] -eq '401') {
-                Write-IidLog 'Session expired — reconnect.' 'Danger'
-                Set-MainStatus 'Session expired.' 'Danger'
-                $Script:IID_UI.LblCount.Text = ''
-                return
-            }
-            if ($Script:IID_LoadRef['Error']) {
-                Write-IidLog "Load error: $($Script:IID_LoadRef['Error'])" 'Danger'
-                $Script:IID_UI.LblCount.Text = ''
-                return
-            }
-
-            $Script:IID_AllUsers = @($Script:IID_LoadRef['Users'] | Sort-Object { $_.displayName })
-            $withId    = ($Script:IID_AllUsers | Where-Object { $_.onPremisesImmutableId }).Count
-            $withoutId = $Script:IID_AllUsers.Count - $withId
-            Rebuild-IidRows
-
-            Write-IidLog "Loaded $($Script:IID_AllUsers.Count) cloud-only user(s): $withId already have an ImmutableId, $withoutId do not." 'Success'
-            Set-MainStatus "IID: $($Script:IID_AllUsers.Count) users loaded." 'Success'
-        } catch {
-            Write-Log "IID load-timer error: $_" 'ERROR'
-        }
-    })
-    $Script:IID_LoadTimer.Start()
-}
-
-# ── Async apply ─────────────────────────────────────────────────────────────────
-function Start-IidApply {
-    $ready = @($Script:IID_Rows | Where-Object { $_.Status -eq 'Pending' -and $_.NewId -ne '' })
-    $token = $Script:AccessToken
-
-    $Script:IID_UI.BtnApply.IsEnabled    = $false
-    $Script:IID_UI.BtnGenerate.IsEnabled = $false
-    Write-IidLog "Assigning ImmutableId to $($ready.Count) user(s)..." 'TextDim'
-
-    $Script:IID_ApplyRef = [hashtable]::Synchronized(@{
-        Done    = $false
-        Results = [System.Collections.Generic.List[hashtable]]::new()
-    })
-
-    $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
-    $rs.Open()
-    $rs.SessionStateProxy.SetVariable('Ref',   $Script:IID_ApplyRef)
-    $rs.SessionStateProxy.SetVariable('Token', $token)
-    $rs.SessionStateProxy.SetVariable('Ready', $ready)
-
-    $ps = [System.Management.Automation.PowerShell]::Create()
-    $ps.Runspace = $rs
-    [void]$ps.AddScript({
-        foreach ($r in $Ready) {
-            $res = @{ Id = $r.Id; Upn = $r.Upn; NewId = $r.NewId; Ok = $false; Err = '' }
-            try {
-                $escaped = $r.NewId -replace '\\','\\' -replace '"','\"'
-                $body    = "{`"onPremisesImmutableId`":`"$escaped`"}"
-                Invoke-RestMethod `
-                    -Uri "https://graph.microsoft.com/v1.0/users/$($r.Id)" `
-                    -Headers @{ Authorization = "Bearer $Token"; 'Content-Type' = 'application/json' } `
-                    -Method PATCH -Body $body -ErrorAction Stop
-                $res['Ok'] = $true
-            } catch {
-                $res['Err'] = $_.Exception.Message
-            }
-            $Ref['Results'].Add($res)
-        }
-        $Ref['Done'] = $true
-    })
-    $ps.BeginInvoke() | Out-Null
-
-    if ($Script:IID_ApplyTimer) { $Script:IID_ApplyTimer.Stop() }
-    $Script:IID_ApplyTimer          = [System.Windows.Threading.DispatcherTimer]::new()
-    $Script:IID_ApplyTimer.Interval = [TimeSpan]::FromMilliseconds(500)
-    $Script:IID_ApplyTimer.Add_Tick({
-        try {
-            if (-not $Script:IID_ApplyRef['Done']) { return }
-            $Script:IID_ApplyTimer.Stop()
-
-            $ok = 0; $fail = 0
-            foreach ($res in $Script:IID_ApplyRef['Results']) {
-                $row = $Script:IID_Rows | Where-Object { $_.Id -eq $res['Id'] } | Select-Object -First 1
-                if ($res['Ok']) {
-                    $ok++
-                    Write-IidLog "Assigned: $($res['Upn'])  =  $($res['NewId'])" 'Success'
-                    if ($row) { $row.Status = 'Done'; $row.CurrentId = $row.NewId; $row.NewId = '' }
-                } else {
-                    $fail++
-                    Write-IidLog "Failed: $($res['Upn']) — $($res['Err'])" 'Danger'
-                    if ($row) { $row.Status = 'Error' }
-                }
-            }
-            $Script:IID_UI.PreviewGrid.Items.Refresh()
-            $summary = "Done — assigned: $ok  failed: $fail"
-            Write-IidLog $summary 'Text'
-            Set-MainStatus $summary (if ($fail -gt 0) { 'Warning' } else { 'Success' })
-            $Script:IID_UI.BtnGenerate.IsEnabled = $true
-            Update-IidButtons
-        } catch {
-            Write-Log "IID apply-timer error: $_" 'ERROR'
-        }
-    })
-    $Script:IID_ApplyTimer.Start()
-}
-
-# ── Demo stubs ─────────────────────────────────────────────────────────────────
-function Start-IidLoadDemo {
-    $Script:IID_AllUsers = @(
-        [PSCustomObject]@{ id='d1'; displayName='Alice Smith';  userPrincipalName='alice@contoso.edu';  onPremisesImmutableId=$null;          onPremisesSyncEnabled=$false }
-        [PSCustomObject]@{ id='d2'; displayName='Bob Jones';    userPrincipalName='bob@contoso.edu';    onPremisesImmutableId='AAAA+mocked1='; onPremisesSyncEnabled=$false }
-        [PSCustomObject]@{ id='d3'; displayName='Carol White';  userPrincipalName='carol@contoso.edu';  onPremisesImmutableId=$null;          onPremisesSyncEnabled=$false }
-        [PSCustomObject]@{ id='d4'; displayName='Dave Black';   userPrincipalName='dave@contoso.edu';   onPremisesImmutableId=$null;          onPremisesSyncEnabled=$false }
-        [PSCustomObject]@{ id='d5'; displayName='Eve Green';    userPrincipalName='eve@contoso.edu';    onPremisesImmutableId='BBBB+mocked2='; onPremisesSyncEnabled=$false }
-    )
-    Rebuild-IidRows
-    Write-IidLog "Demo: loaded $($Script:IID_AllUsers.Count) users (2 have existing ImmutableId)." 'Success'
-}
-
-function Start-IidApplyDemo {
-    $ready = @($Script:IID_Rows | Where-Object { $_.Status -eq 'Pending' -and $_.NewId -ne '' })
-    Write-IidLog "Demo: simulating ImmutableId assignment for $($ready.Count) user(s)..." 'TextDim'
-    foreach ($r in $ready) {
-        Write-IidLog "Demo assigned: $($r.Upn)  =  $($r.NewId)" 'Success'
-        $r.Status = 'Done'; $r.CurrentId = $r.NewId; $r.NewId = ''
-    }
-    $Script:IID_UI.PreviewGrid.Items.Refresh()
-    Write-IidLog 'Demo complete.' 'Text'
-    $Script:IID_UI.BtnGenerate.IsEnabled = $true
-    Update-IidButtons
+    return $null
 }
 
 # ── XAML ───────────────────────────────────────────────────────────────────────
-$Script:IidXaml = @'
+$Script:IID_Xaml = @'
 <Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       Background="#12121C">
   <Grid.Resources>
 
-    <SolidColorBrush x:Key="Bg"      Color="#12121C"/>
-    <SolidColorBrush x:Key="Surface" Color="#1C1C2A"/>
-    <SolidColorBrush x:Key="Card"    Color="#242436"/>
-    <SolidColorBrush x:Key="Border"  Color="#3C3C5A"/>
-    <SolidColorBrush x:Key="Accent"  Color="#6366F1"/>
-    <SolidColorBrush x:Key="Text"    Color="#E2E2F0"/>
-    <SolidColorBrush x:Key="TextDim" Color="#7878A0"/>
-    <SolidColorBrush x:Key="Muted"   Color="#50507A"/>
-
-    <Style x:Key="PrimaryBtn" TargetType="Button">
+    <Style x:Key="Btn" TargetType="Button">
       <Setter Property="Foreground"      Value="White"/>
       <Setter Property="FontWeight"      Value="SemiBold"/>
       <Setter Property="BorderThickness" Value="0"/>
@@ -283,12 +48,12 @@ $Script:IidXaml = @'
         <Setter.Value>
           <ControlTemplate TargetType="Button">
             <Border x:Name="bd" Background="{TemplateBinding Background}"
-                    CornerRadius="6" Padding="{TemplateBinding Padding}">
+                    CornerRadius="5" Padding="{TemplateBinding Padding}">
               <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="bd" Property="Opacity" Value="0.85"/>
+                <Setter TargetName="bd" Property="Opacity" Value="0.82"/>
               </Trigger>
               <Trigger Property="IsPressed" Value="True">
                 <Setter TargetName="bd" Property="Opacity" Value="0.65"/>
@@ -304,202 +69,601 @@ $Script:IidXaml = @'
     </Style>
 
     <Style TargetType="CheckBox">
-      <Setter Property="Foreground"  Value="#E2E2F0"/>
-      <Setter Property="FontSize"    Value="12"/>
-      <Setter Property="Cursor"      Value="Hand"/>
-      <Setter Property="Margin"      Value="0,0,20,0"/>
+      <Setter Property="Foreground" Value="#C2C2E0"/>
       <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="Cursor" Value="Hand"/>
     </Style>
 
     <Style TargetType="DataGrid">
-      <Setter Property="Background"               Value="#12121C"/>
-      <Setter Property="Foreground"               Value="#E2E2F0"/>
-      <Setter Property="BorderThickness"          Value="0"/>
-      <Setter Property="GridLinesVisibility"      Value="Horizontal"/>
-      <Setter Property="HorizontalGridLinesBrush" Value="#1E1E32"/>
-      <Setter Property="RowBackground"            Value="#12121C"/>
-      <Setter Property="AlternatingRowBackground" Value="#181826"/>
-      <Setter Property="ColumnHeaderHeight"       Value="34"/>
-      <Setter Property="RowHeight"                Value="28"/>
-      <Setter Property="AutoGenerateColumns"      Value="False"/>
-      <Setter Property="CanUserAddRows"           Value="False"/>
-      <Setter Property="CanUserDeleteRows"        Value="False"/>
-      <Setter Property="IsReadOnly"               Value="True"/>
-      <Setter Property="SelectionMode"            Value="Extended"/>
-      <Setter Property="SelectionUnit"            Value="FullRow"/>
-      <Setter Property="CanUserSortColumns"       Value="True"/>
-      <Setter Property="FontSize"                 Value="12"/>
+      <Setter Property="Background"           Value="#1C1C2A"/>
+      <Setter Property="Foreground"           Value="#E2E2F0"/>
+      <Setter Property="BorderBrush"          Value="#3C3C5A"/>
+      <Setter Property="BorderThickness"      Value="1"/>
+      <Setter Property="RowBackground"        Value="Transparent"/>
+      <Setter Property="AlternatingRowBackground" Value="#17172A"/>
+      <Setter Property="GridLinesVisibility"  Value="Horizontal"/>
+      <Setter Property="HorizontalGridLinesBrush" Value="#23233A"/>
+      <Setter Property="SelectionMode"        Value="Single"/>
+      <Setter Property="SelectionUnit"        Value="FullRow"/>
+      <Setter Property="CanUserAddRows"       Value="False"/>
+      <Setter Property="CanUserDeleteRows"    Value="False"/>
+      <Setter Property="CanUserResizeRows"    Value="False"/>
+      <Setter Property="AutoGenerateColumns"  Value="False"/>
+      <Setter Property="HeadersVisibility"    Value="Column"/>
+      <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
     </Style>
 
     <Style TargetType="DataGridColumnHeader">
-      <Setter Property="Background"      Value="#1C1C2A"/>
-      <Setter Property="Foreground"      Value="#7878A0"/>
-      <Setter Property="FontWeight"      Value="SemiBold"/>
-      <Setter Property="Padding"         Value="12,0"/>
-      <Setter Property="BorderBrush"     Value="#3C3C5A"/>
-      <Setter Property="BorderThickness" Value="0,0,0,1"/>
-      <Setter Property="FontSize"        Value="11"/>
-      <Setter Property="Cursor"          Value="Hand"/>
+      <Setter Property="Background"    Value="#242436"/>
+      <Setter Property="Foreground"    Value="#7878A0"/>
+      <Setter Property="FontSize"      Value="11"/>
+      <Setter Property="FontWeight"    Value="Bold"/>
+      <Setter Property="Padding"       Value="10,8"/>
+      <Setter Property="BorderBrush"   Value="#3C3C5A"/>
+      <Setter Property="BorderThickness" Value="0,0,1,1"/>
     </Style>
 
     <Style TargetType="DataGridRow">
-      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Cursor" Value="Hand"/>
       <Style.Triggers>
-        <Trigger Property="IsSelected"  Value="True">
-          <Setter Property="Background" Value="#2A2A50"/>
-        </Trigger>
         <Trigger Property="IsMouseOver" Value="True">
-          <Setter Property="Background" Value="#1E1E38"/>
+          <Setter Property="Background" Value="#1E1E32"/>
+        </Trigger>
+        <Trigger Property="IsSelected" Value="True">
+          <Setter Property="Background" Value="#26264A"/>
         </Trigger>
       </Style.Triggers>
     </Style>
 
     <Style TargetType="DataGridCell">
-      <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="Padding"         Value="12,0"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="DataGridCell">
-            <Border Padding="{TemplateBinding Padding}" Background="{TemplateBinding Background}">
-              <ContentPresenter VerticalAlignment="Center"/>
-            </Border>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
+      <Setter Property="Padding"           Value="10,6"/>
+      <Setter Property="BorderThickness"   Value="0"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="FocusVisualStyle"  Value="{x:Null}"/>
+      <Style.Triggers>
+        <Trigger Property="IsSelected" Value="True">
+          <Setter Property="Background" Value="Transparent"/>
+          <Setter Property="Foreground" Value="#E2E2F0"/>
+        </Trigger>
+      </Style.Triggers>
     </Style>
 
   </Grid.Resources>
 
   <Grid.RowDefinitions>
     <RowDefinition Height="Auto"/>
+    <RowDefinition Height="Auto"/>
+    <RowDefinition Height="Auto"/>
     <RowDefinition Height="*"/>
-    <RowDefinition Height="170"/>
+    <RowDefinition Height="Auto"/>
   </Grid.RowDefinitions>
 
-  <!-- ── Toolbar ──────────────────────────────────────────────────────────── -->
-  <Border Grid.Row="0" Background="#1C1C2A" BorderBrush="#3C3C5A"
-          BorderThickness="0,0,0,1" Padding="16,14">
-    <Grid>
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="*"/>
-        <ColumnDefinition Width="Auto"/>
-        <ColumnDefinition Width="8"/>
-        <ColumnDefinition Width="Auto"/>
-      </Grid.ColumnDefinitions>
-
-      <!-- Filter options and count label -->
-      <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-        <CheckBox x:Name="IidChkEmptyOnly" IsChecked="True"
-                  ToolTip="Only show users who have no ImmutableId yet">
-          <TextBlock Text="Skip users with an existing ImmutableId" Foreground="#E2E2F0" FontSize="12"/>
-        </CheckBox>
-        <CheckBox x:Name="IidChkOverwrite" IsChecked="False" Margin="0,0,24,0"
-                  ToolTip="Also generate new IDs for users that already have one">
-          <TextBlock Text="Overwrite existing ImmutableIds" Foreground="#FBBF24" FontSize="12"/>
-        </CheckBox>
-        <TextBlock x:Name="IidLblCount" Foreground="#50507A" FontSize="11"
-                   VerticalAlignment="Center"/>
-      </StackPanel>
-
-      <Button x:Name="IidBtnGenerate" Grid.Column="1" Content="Generate IDs"
-              Style="{StaticResource PrimaryBtn}" Background="#6366F1"
-              Padding="16,8" IsEnabled="False"
-              ToolTip="Fill the New ImmutableId column with fresh Base64(GUID) values"/>
-      <Button x:Name="IidBtnApply" Grid.Column="3" Content="Assign ImmutableIds"
-              Style="{StaticResource PrimaryBtn}" Background="#F59E0B"
-              Padding="18,8" IsEnabled="False"
-              ToolTip="Write the generated IDs to Entra ID for all ready rows"/>
-    </Grid>
+  <!-- ── Title bar ──────────────────────────────────────────────────────── -->
+  <Border Grid.Row="0" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1"
+          Padding="20,14">
+    <StackPanel>
+      <TextBlock Text="Immutable ID Assignment" Foreground="White"
+                 FontSize="16" FontWeight="Bold"/>
+      <TextBlock Margin="0,4,0,0" TextWrapping="Wrap" FontSize="12"
+                 Foreground="#7878A0"
+                 Text="Assigns a permanent onPremisesImmutableId to cloud-only users, enabling AD Connect sync. Use the checkboxes to select exactly which accounts receive an ID, then generate and assign."/>
+    </StackPanel>
   </Border>
 
-  <!-- ── DataGrid ────────────────────────────────────────────────────────── -->
-  <DataGrid x:Name="IidPreviewGrid" Grid.Row="1" Margin="0">
+  <!-- ── Filter toolbar ─────────────────────────────────────────────────── -->
+  <Border Grid.Row="1" Background="#191927" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1"
+          Padding="16,10">
+    <WrapPanel Orientation="Horizontal">
+      <CheckBox x:Name="IidChkEmptyOnly" Content="Show only users without an existing ImmutableId"
+                IsChecked="True" Margin="0,0,24,0" VerticalAlignment="Center"/>
+      <CheckBox x:Name="IidChkOverwrite"
+                Content="Allow overwriting existing ImmutableIds  &#x26A0; permanent" Foreground="#F59E0B"
+                IsChecked="False" VerticalAlignment="Center"/>
+    </WrapPanel>
+  </Border>
+
+  <!-- ── Action toolbar ─────────────────────────────────────────────────── -->
+  <Border Grid.Row="2" Background="#16162A" Padding="12,8">
+    <DockPanel LastChildFill="False">
+
+      <!-- Selection buttons + count -->
+      <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+        <Button x:Name="IidBtnCheckAll" Content="Select All"
+                Style="{StaticResource Btn}" Background="#3C3C5A" Padding="10,6"
+                ToolTip="Mark every visible row for ID assignment"
+                IsEnabled="False" Margin="0,0,6,0"/>
+        <Button x:Name="IidBtnUncheckAll" Content="Deselect All"
+                Style="{StaticResource Btn}" Background="#3C3C5A" Padding="10,6"
+                ToolTip="Clear all row selections"
+                IsEnabled="False" Margin="0,0,16,0"/>
+        <TextBlock x:Name="IidLblCount" VerticalAlignment="Center"
+                   Foreground="#7878A0" FontSize="12"/>
+      </StackPanel>
+
+      <!-- Action buttons -->
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+        <Button x:Name="IidBtnGenerate"
+                Content="Generate IDs for selected rows"
+                Style="{StaticResource Btn}" Background="#6366F1" Padding="12,7"
+                ToolTip="Creates a new random Base64 ImmutableId for each checked row that does not yet have one generated"
+                IsEnabled="False" Margin="0,0,8,0"/>
+        <Button x:Name="IidBtnApply"
+                Content="Assign ImmutableIds to selected rows"
+                Style="{StaticResource Btn}" Background="#D97706" Padding="12,7"
+                ToolTip="Permanently writes the generated ID to Entra for each checked row that has a generated ID ready"
+                IsEnabled="False"/>
+      </StackPanel>
+
+    </DockPanel>
+  </Border>
+
+  <!-- ── DataGrid ───────────────────────────────────────────────────────── -->
+  <DataGrid x:Name="IidGrid" Grid.Row="3" Margin="12,10">
     <DataGrid.Columns>
-      <DataGridTextColumn Header="Display Name"        Binding="{Binding Name}"      Width="180"/>
-      <DataGridTextColumn Header="UPN"                 Binding="{Binding Upn}"       Width="*"/>
-      <DataGridTextColumn Header="Current ImmutableId" Binding="{Binding CurrentId}" Width="200"/>
-      <DataGridTextColumn Header="New ImmutableId"     Binding="{Binding NewId}"     Width="200"/>
-      <DataGridTextColumn Header="Status"              Binding="{Binding Status}"    Width="70"/>
+
+      <!-- col 0: Include checkbox. IsHitTestVisible=False so clicks bubble up -->
+      <DataGridTemplateColumn Header="Include" Width="72" CanUserSort="True"
+                              SortMemberPath="Selected">
+        <DataGridTemplateColumn.CellTemplate>
+          <DataTemplate>
+            <CheckBox IsChecked="{Binding Selected, Mode=OneWay}"
+                      IsHitTestVisible="False"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </DataTemplate>
+        </DataGridTemplateColumn.CellTemplate>
+      </DataGridTemplateColumn>
+
+      <DataGridTextColumn Header="Display Name"         Binding="{Binding Name}"      Width="190"/>
+      <DataGridTextColumn Header="User Principal Name"  Binding="{Binding Upn}"       Width="250"/>
+      <DataGridTextColumn Header="Current ImmutableId"  Binding="{Binding CurrentId}" Width="210"
+                          Foreground="#7878A0"/>
+      <DataGridTextColumn Header="New ImmutableId (to be assigned)" Binding="{Binding NewId}" Width="*"/>
+
+      <!-- Status with colour-coded text -->
+      <DataGridTemplateColumn Header="Status" Width="120">
+        <DataGridTemplateColumn.CellTemplate>
+          <DataTemplate>
+            <TextBlock Text="{Binding Status}" FontWeight="SemiBold" FontSize="11"
+                       Padding="4,2" VerticalAlignment="Center">
+              <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                  <Setter Property="Foreground" Value="#7878A0"/>
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding Status}" Value="Ready">
+                      <Setter Property="Foreground" Value="#6366F1"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding Status}" Value="Assigned">
+                      <Setter Property="Foreground" Value="#22C55E"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding Status}" Value="Error">
+                      <Setter Property="Foreground" Value="#EF4444"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBlock.Style>
+            </TextBlock>
+          </DataTemplate>
+        </DataGridTemplateColumn.CellTemplate>
+      </DataGridTemplateColumn>
+
     </DataGrid.Columns>
   </DataGrid>
 
-  <!-- ── Log ─────────────────────────────────────────────────────────────── -->
-  <Border Grid.Row="2" BorderBrush="#3C3C5A" BorderThickness="0,1,0,0">
-    <RichTextBox x:Name="IidLogBox" Background="#0F1115" Foreground="#7878A0"
-                 BorderThickness="0" IsReadOnly="True" FontFamily="Consolas" FontSize="12"
-                 Padding="12" VerticalScrollBarVisibility="Auto"/>
+  <!-- ── Log ────────────────────────────────────────────────────────────── -->
+  <Border Grid.Row="4" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,1,0,0"
+          MaxHeight="120">
+    <RichTextBox x:Name="IidLog" IsReadOnly="True" Background="Transparent"
+                 BorderThickness="0" Foreground="#7878A0" FontSize="11"
+                 FontFamily="Consolas" Margin="12,6" VerticalScrollBarVisibility="Auto"/>
   </Border>
 
 </Grid>
 '@
 
-# ── Initialize ─────────────────────────────────────────────────────────────────
-function Initialize-ImmutableIdTool {
-    $reader  = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new((Invoke-ThemeXaml $Script:IidXaml)))
-    $content = [System.Windows.Markup.XamlReader]::Load($reader)
+# ── Log helper ─────────────────────────────────────────────────────────────────
+function Write-IidLog {
+    param([string]$Message, [string]$Color = '#7878A0')
+    $Script:MainUI.Window.Dispatcher.Invoke([Action]{
+        try {
+            $rtb  = $Script:IID_UI.Log
+            $para = [System.Windows.Documents.Paragraph]::new()
+            $run  = [System.Windows.Documents.Run]::new($Message)
+            $run.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($Color)
+            $para.Inlines.Add($run)
+            $rtb.Document.Blocks.Add($para)
+            $rtb.ScrollToEnd()
+        } catch {}
+    }, 'Normal')
+}
 
-    $Script:IID_UI = @{
-        ChkEmptyOnly = $content.FindName('IidChkEmptyOnly')
-        ChkOverwrite = $content.FindName('IidChkOverwrite')
-        LblCount     = $content.FindName('IidLblCount')
-        BtnGenerate  = $content.FindName('IidBtnGenerate')
-        BtnApply     = $content.FindName('IidBtnApply')
-        PreviewGrid  = $content.FindName('IidPreviewGrid')
-        LogBox       = $content.FindName('IidLogBox')
+# ── Row factory ────────────────────────────────────────────────────────────────
+function New-IidRow {
+    param($User, [bool]$Selected, [string]$CurrentId, [string]$NewId = '', [string]$Status = 'Pending')
+    [PSCustomObject]@{
+        Id          = $User.id
+        Name        = $User.displayName
+        Upn         = $User.userPrincipalName
+        CurrentId   = if ($CurrentId) { $CurrentId } else { '—' }
+        HasExisting = [bool]$CurrentId
+        NewId       = $NewId
+        Status      = $Status
+        Selected    = $Selected
+    }
+}
+
+# ── Rebuild rows from raw load ─────────────────────────────────────────────────
+function Rebuild-IidRows {
+    if (-not $Script:IID_LoadState.Done -or -not $Script:IID_LoadState.Users) { return }
+    $emptyOnly = $Script:IID_UI.ChkEmptyOnly.IsChecked
+
+    # Preserve existing per-user selections and generated IDs
+    $prevSel = @{}
+    $prevNew = @{}
+    if ($Script:IID_Rows) {
+        foreach ($r in $Script:IID_Rows) {
+            $prevSel[$r.Id] = $r.Selected
+            $prevNew[$r.Id] = $r.NewId
+        }
     }
 
-    $Script:IID_UI.PreviewGrid.ItemsSource = $Script:IID_Rows
+    $Script:IID_Rows.Clear()
+    foreach ($u in $Script:IID_LoadState.Users) {
+        $cid = $u.onPremisesImmutableId
+        if ($emptyOnly -and $cid) { continue }
+        $defaultSel = -not [bool]$cid
+        $sel = if ($prevSel.ContainsKey($u.id)) { $prevSel[$u.id] } else { $defaultSel }
+        $nid = if ($prevNew.ContainsKey($u.id))  { $prevNew[$u.id]  } else { '' }
+        $Script:IID_Rows.Add((New-IidRow -User $u -Selected $sel -CurrentId $cid -NewId $nid))
+    }
+
+    $Script:IID_UI.Grid.Items.Refresh()
+    Update-IidCounts
+}
+
+# ── Count / button state ───────────────────────────────────────────────────────
+function Update-IidCounts {
+    $total   = $Script:IID_Rows.Count
+    $checked = ($Script:IID_Rows | Where-Object Selected).Count
+    $ready   = ($Script:IID_Rows | Where-Object { $_.Selected -and $_.NewId -and $_.NewId -ne '' }).Count
+
+    $Script:IID_UI.LblCount.Text = "$total shown  ·  $checked selected  ·  $ready ready to assign"
+
+    $anyPending = ($Script:IID_Rows | Where-Object { $_.Selected -and (-not $_.NewId -or $_.NewId -eq '') }).Count -gt 0
+    $Script:IID_UI.BtnGenerate.IsEnabled = $anyPending
+    $Script:IID_UI.BtnApply.IsEnabled    = $ready -gt 0
+}
+
+# ── Select All / Deselect All ─────────────────────────────────────────────────
+function Set-IidAllSelected {
+    param([bool]$Value)
+    foreach ($r in $Script:IID_Rows) { $r.Selected = $Value }
+    $Script:IID_UI.Grid.Items.Refresh()
+    Update-IidCounts
+}
+
+# ── Generate IDs for checked rows ─────────────────────────────────────────────
+function Invoke-IidGenerate {
+    $count = 0
+    foreach ($r in $Script:IID_Rows) {
+        if ($r.Selected -and (-not $r.NewId -or $r.NewId -eq '')) {
+            $r.NewId  = New-ImmutableIdValue
+            $r.Status = 'Ready'
+            $count++
+        }
+    }
+    $Script:IID_UI.Grid.Items.Refresh()
+    Update-IidCounts
+    Write-IidLog "Generated ImmutableId for $count selected user(s)." '#6366F1'
+    Write-Log    "ImmutableId: generated $count new values" 'INFO'
+}
+
+# ── Apply (async) ──────────────────────────────────────────────────────────────
+function Start-IidApply {
+    $overwrite = $Script:IID_UI.ChkOverwrite.IsChecked
+    $toAssign  = @($Script:IID_Rows | Where-Object { $_.Selected -and $_.NewId -and $_.NewId -ne '' })
+
+    if ($toAssign.Count -eq 0) {
+        [System.Windows.MessageBox]::Show(
+            'No selected rows have a generated ImmutableId ready to assign.`n`nGenerate IDs first, then click Assign.',
+            'Nothing to Assign', 'OK', 'Information') | Out-Null
+        return
+    }
+
+    $alreadyHaveId = @($toAssign | Where-Object { $_.HasExisting })
+    if ($alreadyHaveId.Count -gt 0 -and -not $overwrite) {
+        [System.Windows.MessageBox]::Show(
+            "$($alreadyHaveId.Count) selected user(s) already have an ImmutableId.`n`nEnable 'Allow overwriting' in the filter bar, or deselect those users.",
+            'Overwrite Not Enabled', 'OK', 'Warning') | Out-Null
+        return
+    }
+
+    $preview = ($toAssign | Select-Object -First 5 | ForEach-Object { "  • $($_.Name)" }) -join "`n"
+    if ($toAssign.Count -gt 5) { $preview += "`n  … and $($toAssign.Count - 5) more" }
+
+    $msg = @"
+You are about to permanently assign an ImmutableId to $($toAssign.Count) user account(s):
+
+$preview
+
+WARNING — this action:
+  • Cannot be undone without Microsoft Support assistance
+  • Binds each account to a specific AD Connect sync anchor
+  • May prevent the account being imported from on-premises AD later
+
+Type YES (all capitals) to confirm.
+"@
+    Add-Type -AssemblyName Microsoft.VisualBasic
+    $confirm = [Microsoft.VisualBasic.Interaction]::InputBox($msg, 'Confirm ImmutableId Assignment', '')
+    if ($confirm -ne 'YES') {
+        Write-IidLog 'Assignment cancelled.' '#F59E0B'
+        return
+    }
+
+    $Script:IID_UI.BtnApply.IsEnabled      = $false
+    $Script:IID_UI.BtnGenerate.IsEnabled   = $false
+    $Script:IID_UI.BtnCheckAll.IsEnabled   = $false
+    $Script:IID_UI.BtnUncheckAll.IsEnabled = $false
+
+    Write-IidLog "Assigning ImmutableIds to $($toAssign.Count) user(s)…" '#6366F1'
+    Write-Log    "ImmutableId: starting assignment for $($toAssign.Count) user(s)" 'INFO'
+
+    $ref = [hashtable]::Synchronized(@{ Done = $false; Results = @(); Error = $null })
+    $workItems = @($toAssign | ForEach-Object { @{ Id = $_.Id; Name = $_.Name; NewId = $_.NewId } })
+    $token = $Script:AccessToken
+
+    $ps = [System.Management.Automation.PowerShell]::Create()
+    [void]$ps.AddScript({
+        param($Ref, $Items, $Token)
+        try {
+            $out = @()
+            foreach ($item in $Items) {
+                try {
+                    $body = ConvertTo-Json @{ onPremisesImmutableId = $item.NewId } -Compress
+                    $null = Invoke-RestMethod "https://graph.microsoft.com/v1.0/users/$($item.Id)" `
+                        -Method PATCH -Headers @{ Authorization = "Bearer $Token" } `
+                        -Body $body -ContentType 'application/json'
+                    $out += @{ Id = $item.Id; Success = $true }
+                } catch {
+                    $out += @{ Id = $item.Id; Success = $false; Error = $_.Exception.Message }
+                }
+            }
+            $Ref.Results = $out
+        } catch {
+            $Ref.Error = $_.Exception.Message
+        } finally {
+            $Ref.Done = $true
+        }
+    })
+    [void]$ps.AddParameters(@{ Ref = $ref; Items = $workItems; Token = $token })
+    [void]$ps.BeginInvoke()
+
+    $resultRef = $ref
+    $rowsRef   = $Script:IID_Rows
+    $uiRef     = $Script:IID_UI
+    $timer = [System.Windows.Threading.DispatcherTimer]::new()
+    $timer.Interval = [TimeSpan]::FromMilliseconds(500)
+    $timer.Add_Tick({
+        try {
+            if (-not $resultRef.Done) { return }
+            $timer.Stop()
+            if ($resultRef.Error) {
+                Write-IidLog "Assignment error: $($resultRef.Error)" '#EF4444'
+                Write-Log "ImmutableId: assignment error: $($resultRef.Error)" 'ERROR'
+            } else {
+                $ok = 0; $err = 0
+                foreach ($res in $resultRef.Results) {
+                    $row = $rowsRef | Where-Object { $_.Id -eq $res.Id } | Select-Object -First 1
+                    if (-not $row) { continue }
+                    if ($res.Success) {
+                        $row.Status     = 'Assigned'
+                        $row.CurrentId  = $row.NewId
+                        $row.NewId      = ''
+                        $row.HasExisting = $true
+                        $ok++
+                    } else {
+                        $row.Status = 'Error'
+                        Write-IidLog "  Error on $($row.Name): $($res.Error)" '#EF4444'
+                        $err++
+                    }
+                }
+                $uiRef.Grid.Items.Refresh()
+                Write-IidLog "Done — $ok assigned, $err error(s)." '#22C55E'
+                Write-Log "ImmutableId: $ok assigned, $err errors" 'INFO'
+            }
+            $uiRef.BtnCheckAll.IsEnabled   = $true
+            $uiRef.BtnUncheckAll.IsEnabled = $true
+            Update-IidCounts
+        } catch {
+            Write-Log "ImmutableId apply timer error: $_" 'ERROR'
+            $timer.Stop()
+        }
+    })
+    $timer.Start()
+}
+
+# ── Load from Graph (async) ────────────────────────────────────────────────────
+function Start-IidLoad {
+    $Script:IID_Rows.Clear()
+    $Script:IID_UI.Grid.Items.Refresh()
+    $Script:IID_UI.LblCount.Text           = 'Loading users…'
+    $Script:IID_UI.BtnGenerate.IsEnabled   = $false
+    $Script:IID_UI.BtnApply.IsEnabled      = $false
+    $Script:IID_UI.BtnCheckAll.IsEnabled   = $false
+    $Script:IID_UI.BtnUncheckAll.IsEnabled = $false
+    $Script:IID_LoadState.Done  = $false
+    $Script:IID_LoadState.Users = $null
+    $Script:IID_LoadState.Error = $null
+    Write-IidLog 'Loading cloud-only users from Entra…' '#6366F1'
+
+    $ref   = $Script:IID_LoadState
+    $token = $Script:AccessToken
+
+    $ps = [System.Management.Automation.PowerShell]::Create()
+    [void]$ps.AddScript({
+        param($Ref, $Token)
+        try {
+            $all = @()
+            $url = "https://graph.microsoft.com/v1.0/users?`$select=id,displayName,userPrincipalName,onPremisesImmutableId,onPremisesSyncEnabled&`$top=999&`$filter=userType eq 'Member'"
+            do {
+                $r   = Invoke-RestMethod $url -Method GET -Headers @{ Authorization = "Bearer $Token" }
+                $all += @($r.value | Where-Object { -not $_.onPremisesSyncEnabled })
+                $url  = $r.'@odata.nextLink'
+            } while ($url)
+            $Ref.Users = $all
+        } catch {
+            $Ref.Error = $_.Exception.Message
+        } finally {
+            $Ref.Done = $true
+        }
+    })
+    [void]$ps.AddParameters(@{ Ref = $ref; Token = $token })
+    [void]$ps.BeginInvoke()
+
+    $loadRef = $ref
+    $timer = [System.Windows.Threading.DispatcherTimer]::new()
+    $timer.Interval = [TimeSpan]::FromMilliseconds(500)
+    $timer.Add_Tick({
+        try {
+            if (-not $loadRef.Done) { return }
+            $timer.Stop()
+            if ($loadRef.Error) {
+                Write-IidLog "Load failed: $($loadRef.Error)" '#EF4444'
+                Write-Log "ImmutableId: load error: $($loadRef.Error)" 'ERROR'
+                $Script:IID_UI.LblCount.Text = 'Load failed.'
+                return
+            }
+            Write-Log "ImmutableId: loaded $($loadRef.Users.Count) cloud-only members" 'INFO'
+            Rebuild-IidRows
+            $Script:IID_UI.BtnCheckAll.IsEnabled   = $true
+            $Script:IID_UI.BtnUncheckAll.IsEnabled = $true
+            Write-IidLog "Loaded $($Script:IID_Rows.Count) user(s)." '#22C55E'
+        } catch {
+            Write-Log "ImmutableId load timer error: $_" 'ERROR'
+            $timer.Stop()
+        }
+    })
+    $timer.Start()
+}
+
+# ── Demo stubs ─────────────────────────────────────────────────────────────────
+function Start-IidLoadDemo {
+    $Script:IID_LoadState.Users = @(
+        [PSCustomObject]@{ id='u1'; displayName='Alice Johnson'; userPrincipalName='alice@contoso.academy'; onPremisesImmutableId='';         onPremisesSyncEnabled=$false }
+        [PSCustomObject]@{ id='u2'; displayName='Bob Smith';     userPrincipalName='bob@contoso.academy';   onPremisesImmutableId='';         onPremisesSyncEnabled=$false }
+        [PSCustomObject]@{ id='u3'; displayName='Carol White';   userPrincipalName='carol@contoso.academy'; onPremisesImmutableId='abc123=='; onPremisesSyncEnabled=$false }
+        [PSCustomObject]@{ id='u4'; displayName='Dave Brown';    userPrincipalName='dave@contoso.academy';  onPremisesImmutableId='';         onPremisesSyncEnabled=$false }
+        [PSCustomObject]@{ id='u5'; displayName='Emma Davis';    userPrincipalName='emma@contoso.academy';  onPremisesImmutableId='xyz987=='; onPremisesSyncEnabled=$false }
+    )
+    $Script:IID_LoadState.Done = $true
+    Rebuild-IidRows
+    $Script:IID_UI.BtnCheckAll.IsEnabled   = $true
+    $Script:IID_UI.BtnUncheckAll.IsEnabled = $true
+    Write-IidLog '[DEMO] 5 Contoso Academy users loaded (2 already have an ImmutableId).' '#7C3AED'
+}
+
+function Start-IidApplyDemo {
+    $toAssign = @($Script:IID_Rows | Where-Object { $_.Selected -and $_.NewId -and $_.NewId -ne '' })
+    foreach ($r in $toAssign) {
+        $r.Status     = 'Assigned'
+        $r.CurrentId  = $r.NewId
+        $r.NewId      = ''
+        $r.HasExisting = $true
+    }
+    $Script:IID_UI.Grid.Items.Refresh()
+    Update-IidCounts
+    Write-IidLog "[DEMO] Assigned ImmutableId to $($toAssign.Count) user(s)." '#7C3AED'
+}
+
+# ── Initialize-ImmutableIdTool ─────────────────────────────────────────────────
+function Initialize-ImmutableIdTool {
+    $reader = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new((Invoke-ThemeXaml $Script:IID_Xaml)))
+    $panel  = [System.Windows.Markup.XamlReader]::Load($reader)
+
+    $Script:IID_UI = @{
+        Grid          = $panel.FindName('IidGrid')
+        LblCount      = $panel.FindName('IidLblCount')
+        BtnGenerate   = $panel.FindName('IidBtnGenerate')
+        BtnApply      = $panel.FindName('IidBtnApply')
+        BtnCheckAll   = $panel.FindName('IidBtnCheckAll')
+        BtnUncheckAll = $panel.FindName('IidBtnUncheckAll')
+        ChkEmptyOnly  = $panel.FindName('IidChkEmptyOnly')
+        ChkOverwrite  = $panel.FindName('IidChkOverwrite')
+        Log           = $panel.FindName('IidLog')
+    }
+
+    $Script:IID_Rows = [System.Collections.ObjectModel.ObservableCollection[PSObject]]::new()
+    $Script:IID_UI.Grid.ItemsSource = $Script:IID_Rows
+    $Script:IID_CheckboxCol = $Script:IID_UI.Grid.Columns[0]
+
+    # ── Checkbox toggle: PreviewMouseLeftButtonDown on the Grid ────────────────
+    $Script:IID_UI.Grid.Add_PreviewMouseLeftButtonDown({
+        param($s, $e)
+        try {
+            $cell = Find-IidAncestor -Element $e.OriginalSource `
+                                     -AncestorType ([System.Windows.Controls.DataGridCell])
+            if (-not $cell) { return }
+            if ($cell.Column -ne $Script:IID_CheckboxCol) { return }
+            $row = $cell.DataContext
+            if ($row -is [PSObject]) {
+                $row.Selected = -not $row.Selected
+                $Script:IID_UI.Grid.Items.Refresh()
+                Update-IidCounts
+                $e.Handled = $true
+            }
+        } catch { Write-Log "IID checkbox toggle error: $_" 'ERROR' }
+    })
+
+    $Script:IID_UI.BtnCheckAll.Add_Click({
+        try { Set-IidAllSelected $true }
+        catch { Write-Log "IID CheckAll error: $_" 'ERROR' }
+    })
+    $Script:IID_UI.BtnUncheckAll.Add_Click({
+        try { Set-IidAllSelected $false }
+        catch { Write-Log "IID UncheckAll error: $_" 'ERROR' }
+    })
 
     $Script:IID_UI.ChkEmptyOnly.Add_Checked({
-        try { Rebuild-IidRows }
-        catch { Write-Log "IID ChkEmptyOnly Checked error: $_" 'ERROR' }
+        try { Rebuild-IidRows } catch { Write-Log "IID EmptyOnly checked error: $_" 'ERROR' }
     })
     $Script:IID_UI.ChkEmptyOnly.Add_Unchecked({
-        try { Rebuild-IidRows }
-        catch { Write-Log "IID ChkEmptyOnly Unchecked error: $_" 'ERROR' }
+        try { Rebuild-IidRows } catch { Write-Log "IID EmptyOnly unchecked error: $_" 'ERROR' }
+    })
+    $Script:IID_UI.ChkOverwrite.Add_Checked({
+        try { Write-IidLog 'Overwrite enabled — existing ImmutableIds may be replaced.' '#F59E0B' } catch {}
+    })
+    $Script:IID_UI.ChkOverwrite.Add_Unchecked({
+        try { Write-IidLog 'Overwrite disabled.' '#7878A0' } catch {}
     })
 
     $Script:IID_UI.BtnGenerate.Add_Click({
         try { Invoke-IidGenerate }
-        catch { Write-Log "IID BtnGenerate click error: $_" 'ERROR' }
+        catch { Write-Log "IID Generate click error: $_" 'ERROR' }
     })
-
     $Script:IID_UI.BtnApply.Add_Click({
         try {
-            $ready = @($Script:IID_Rows | Where-Object { $_.Status -eq 'Pending' -and $_.NewId -ne '' })
-            if ($ready.Count -eq 0) { return }
-
-            $overwriting = @($ready | Where-Object { $_.HasExisting })
-            $overwriteWarn = if ($overwriting.Count -gt 0) {
-                "`n`nWarning: $($overwriting.Count) user(s) already have an ImmutableId — these will be overwritten."
-            } else { '' }
-
-            $msg = "You are about to assign onPremisesImmutableId to $($ready.Count) user(s).$overwriteWarn`n`n" +
-                   "Consequences:`n" +
-                   "  • Once set, ImmutableId cannot be removed without support escalation`n" +
-                   "  • Changing a value on an account already linked via AD Connect will break sync`n" +
-                   "  • Use this only to anchor cloud-only accounts before enabling AD Connect`n`n" +
-                   "Proceed?"
-            $result = [System.Windows.MessageBox]::Show(
-                $msg, 'Confirm ImmutableId Assignment',
-                [System.Windows.MessageBoxButton]::YesNo,
-                [System.Windows.MessageBoxImage]::Warning)
-            if ($result -ne [System.Windows.MessageBoxResult]::Yes) { return }
-
             if ($Script:DemoMode) { Start-IidApplyDemo; return }
             Start-IidApply
-        } catch { Write-Log "IID BtnApply click error: $_" 'ERROR' }
+        } catch { Write-Log "IID Apply click error: $_" 'ERROR' }
     })
 
-    $Script:ConnectCallbacks.Add({ Start-IidLoad })
-    $Script:ResetCallbacks.Add({
-        $Script:IID_AllUsers = @()
-        $Script:IID_Rows.Clear()
-        $Script:IID_UI.LblCount.Text         = ''
-        $Script:IID_UI.BtnGenerate.IsEnabled = $false
-        $Script:IID_UI.BtnApply.IsEnabled    = $false
-    })
+    # ── Lifecycle ──────────────────────────────────────────────────────────────
+    $Script:ConnectCallbacks += {
+        try {
+            if ($Script:DemoMode) { Start-IidLoadDemo } else { Start-IidLoad }
+        } catch { Write-Log "ImmutableId ConnectCallback error: $_" 'ERROR' }
+    }
+    $Script:ResetCallbacks += {
+        try {
+            $Script:IID_Rows.Clear()
+            $Script:IID_LoadState.Done  = $false
+            $Script:IID_LoadState.Users = $null
+            $Script:IID_UI.LblCount.Text           = ''
+            $Script:IID_UI.BtnGenerate.IsEnabled   = $false
+            $Script:IID_UI.BtnApply.IsEnabled      = $false
+            $Script:IID_UI.BtnCheckAll.IsEnabled   = $false
+            $Script:IID_UI.BtnUncheckAll.IsEnabled = $false
+        } catch { Write-Log "ImmutableId ResetCallback error: $_" 'ERROR' }
+    }
 
-    Write-IidLog 'Immutable ID ready. Connect to a tenant to begin.' 'Muted'
-    return $content
+    return $panel
 }

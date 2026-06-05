@@ -1,26 +1,133 @@
 <#
     Main shell window for Art's Entra Toolbox.
     Dot-sourced by Start.ps1. Exposes Show-MainWindow.
+
+    Navigation: vertical sidebar with categorised tool entries.
+    Each tool's panel is initialised once and swapped into the
+    ContentControl on the right as the user clicks nav items.
 #>
 
-$Script:MainUI  = $null
-$Script:DlgWin  = $null
-$Script:DlgTid  = $null
-$Script:DlgName = $null
-$Script:DlgStat = $null
-$Script:DlgOk   = $null
-$Script:DlgCancel = $null
+$Script:MainUI         = $null
+$Script:DlgWin         = $null
+$Script:DlgTid         = $null
+$Script:DlgName        = $null
+$Script:DlgStat        = $null
+$Script:DlgOk          = $null
+$Script:DlgCancel      = $null
+
+# ── Nav state ──────────────────────────────────────────────────────────────────
+$Script:NavItems       = [System.Collections.Generic.List[hashtable]]::new()
+$Script:NavContents    = @{}
+$Script:CurrentNavItem = $null
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+function New-SolidBrush([string]$HexOrSemantic) {
+    $hex = Get-ThemeHex $HexOrSemantic
+    [System.Windows.Media.BrushConverter]::new().ConvertFromString($hex)
+}
 
 function Set-MainStatus {
     param([string]$Text, [string]$Color = 'TextDim')
     $Script:MainUI.Status.Text       = $Text
-    $Script:MainUI.Status.Foreground = Get-ThemeHex $Color
+    $Script:MainUI.Status.Foreground = New-SolidBrush $Color
 }
 
+# ── Nav builders ───────────────────────────────────────────────────────────────
+function New-NavCategory {
+    param([string]$Label)
+    $tb            = [System.Windows.Controls.TextBlock]::new()
+    $tb.Text       = $Label
+    $tb.Foreground = New-SolidBrush 'Muted'
+    $tb.FontSize   = 10
+    $tb.FontWeight = [System.Windows.FontWeights]::Bold
+    $tb.Margin     = [System.Windows.Thickness]::new(17, 20, 12, 4)
+    return $tb
+}
+
+function New-NavItem {
+    param([string]$Name, [string]$Title, [string]$Subtitle)
+
+    $border                 = [System.Windows.Controls.Border]::new()
+    $border.Cursor          = [System.Windows.Input.Cursors]::Hand
+    $border.Padding         = [System.Windows.Thickness]::new(17, 9, 12, 9)
+    $border.Background      = [System.Windows.Media.Brushes]::Transparent
+    $border.BorderThickness = [System.Windows.Thickness]::new(3, 0, 0, 0)
+    $border.BorderBrush     = [System.Windows.Media.Brushes]::Transparent
+
+    $titleTb             = [System.Windows.Controls.TextBlock]::new()
+    $titleTb.Text        = $Title
+    $titleTb.Foreground  = New-SolidBrush 'TextDim'
+    $titleTb.FontSize    = 13
+    $titleTb.FontWeight  = [System.Windows.FontWeights]::SemiBold
+    $titleTb.TextWrapping = [System.Windows.TextWrapping]::Wrap
+
+    $subtitleTb              = [System.Windows.Controls.TextBlock]::new()
+    $subtitleTb.Text         = $Subtitle
+    $subtitleTb.Foreground   = New-SolidBrush 'Muted'
+    $subtitleTb.FontSize     = 11
+    $subtitleTb.Margin       = [System.Windows.Thickness]::new(0, 3, 0, 0)
+    $subtitleTb.TextWrapping = [System.Windows.TextWrapping]::Wrap
+
+    $sp = [System.Windows.Controls.StackPanel]::new()
+    [void]$sp.Children.Add($titleTb)
+    [void]$sp.Children.Add($subtitleTb)
+    $border.Child = $sp
+
+    $item = @{ Name = $Name; Border = $border; TitleTb = $titleTb }
+
+    # Capture locals for event handler closures
+    $cn          = $Name
+    $ci          = $item
+    $hoverBrush  = New-SolidBrush 'SubHeader'
+
+    $border.Add_MouseEnter({
+        try { if ($Script:CurrentNavItem -ne $cn) { $ci.Border.Background = $hoverBrush } }
+        catch {}
+    })
+    $border.Add_MouseLeave({
+        try { if ($Script:CurrentNavItem -ne $cn) { $ci.Border.Background = [System.Windows.Media.Brushes]::Transparent } }
+        catch {}
+    })
+    $border.Add_MouseLeftButtonUp({
+        try { Set-NavSelection -Name $cn }
+        catch { Write-Log "NavItem '$cn' click error: $_" 'ERROR' }
+    })
+
+    return $item
+}
+
+function Set-NavSelection {
+    param([string]$Name)
+    if ($Script:CurrentNavItem -eq $Name) { return }
+
+    $accentBrush = New-SolidBrush 'Accent'
+    $selBrush    = New-SolidBrush 'Hover'
+    $textBrush   = New-SolidBrush 'Text'
+    $dimBrush    = New-SolidBrush 'TextDim'
+
+    foreach ($item in $Script:NavItems) {
+        if ($item.Name -eq $Name) {
+            $item.Border.Background  = $selBrush
+            $item.Border.BorderBrush = $accentBrush
+            $item.TitleTb.Foreground = $textBrush
+        } else {
+            $item.Border.Background  = [System.Windows.Media.Brushes]::Transparent
+            $item.Border.BorderBrush = [System.Windows.Media.Brushes]::Transparent
+            $item.TitleTb.Foreground = $dimBrush
+        }
+    }
+
+    if ($Script:NavContents.ContainsKey($Name)) {
+        $Script:MainUI.ContentArea.Content = $Script:NavContents[$Name]
+    }
+    $Script:CurrentNavItem = $Name
+}
+
+# ── Main window XAML ───────────────────────────────────────────────────────────
 $Script:MainXaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Art's Entra Toolbox" Width="1200" Height="780"
+        Title="Art's Entra Toolbox" Width="1280" Height="800"
         MinWidth="900" MinHeight="600"
         Background="#12121C" FontFamily="Segoe UI" FontSize="13"
         WindowStartupLocation="CenterScreen">
@@ -48,41 +155,6 @@ $Script:MainXaml = @'
               <Trigger Property="IsEnabled" Value="False">
                 <Setter TargetName="bd" Property="Background" Value="#242436"/>
                 <Setter Property="Foreground" Value="#3C3C5A"/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-
-    <Style TargetType="TabControl">
-      <Setter Property="Background"      Value="#12121C"/>
-      <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="Padding"         Value="0"/>
-    </Style>
-
-    <Style TargetType="TabItem">
-      <Setter Property="Foreground"      Value="#7878A0"/>
-      <Setter Property="Background"      Value="Transparent"/>
-      <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="Padding"         Value="20,12"/>
-      <Setter Property="FontWeight"      Value="SemiBold"/>
-      <Setter Property="FontSize"        Value="13"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="TabItem">
-            <Border Padding="{TemplateBinding Padding}" Cursor="Hand">
-              <Border x:Name="ind" BorderThickness="0,0,0,2" BorderBrush="Transparent" Padding="0,0,0,2">
-                <ContentPresenter ContentSource="Header"/>
-              </Border>
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsSelected" Value="True">
-                <Setter Property="Foreground" Value="#E2E2F0"/>
-                <Setter TargetName="ind" Property="BorderBrush" Value="#6366F1"/>
-              </Trigger>
-              <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Foreground" Value="#C0C0E0"/>
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
@@ -181,7 +253,7 @@ $Script:MainXaml = @'
       <RowDefinition Height="32"/>
     </Grid.RowDefinitions>
 
-    <!-- Header -->
+    <!-- ── Header ──────────────────────────────────────────────────────────── -->
     <Border Grid.Row="0" x:Name="MainHeaderBorder" Background="#1C1C2A">
       <Border.Effect>
         <DropShadowEffect BlurRadius="10" ShadowDepth="2" Opacity="0.35" Color="Black"/>
@@ -198,8 +270,7 @@ $Script:MainXaml = @'
           </Border>
           <StackPanel VerticalAlignment="Center">
             <TextBlock Text="Art's Entra Toolbox" Foreground="White" FontSize="15" FontWeight="Bold"/>
-            <TextBlock Text="Tenant management toolkit"
-                       Foreground="#50507A" FontSize="11"/>
+            <TextBlock Text="Tenant management toolkit" Foreground="#50507A" FontSize="11"/>
           </StackPanel>
         </StackPanel>
         <Border Grid.Column="1" x:Name="TenantBadge" CornerRadius="4"
@@ -213,8 +284,9 @@ $Script:MainXaml = @'
       </Grid>
     </Border>
 
-    <!-- Tenant bar -->
-    <Border Grid.Row="1" x:Name="MainTenantBar" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
+    <!-- ── Tenant bar ──────────────────────────────────────────────────────── -->
+    <Border Grid.Row="1" x:Name="MainTenantBar" Background="#1C1C2A"
+            BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
       <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0">
         <TextBlock Text="Tenant:" Foreground="#7878A0" VerticalAlignment="Center" Margin="0,0,10,0"/>
         <ComboBox x:Name="TenantCombo" Width="280" IsEnabled="False"/>
@@ -233,39 +305,41 @@ $Script:MainXaml = @'
       </StackPanel>
     </Border>
 
-    <!-- Main TabControl -->
-    <TabControl x:Name="MainTabs" Grid.Row="2">
-      <TabControl.Template>
-        <ControlTemplate TargetType="TabControl">
-          <Grid Background="#12121C">
-            <Grid.RowDefinitions>
-              <RowDefinition Height="Auto"/>
-              <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
-            <Border Grid.Row="0" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
-              <TabPanel IsItemsHost="True" Margin="4,0"/>
-            </Border>
-            <ContentPresenter Grid.Row="1" ContentSource="SelectedContent"/>
-          </Grid>
-        </ControlTemplate>
-      </TabControl.Template>
-      <TabItem x:Name="TabPwReset"     Header="Year Group Passwords"/>
-      <TabItem x:Name="TabPwUser"      Header="User Password Reset"/>
-      <TabItem x:Name="TabLastDevice"  Header="Last Device"/>
-      <TabItem x:Name="TabSignIn"      Header="Sign-In Logs"/>
-      <TabItem x:Name="TabGroupCopy"   Header="Group Copy"/>
-      <TabItem x:Name="TabTeams"       Header="Teams Provisioning"/>
-      <TabItem x:Name="TabBulkUpn"     Header="Bulk UPN Change"/>
-      <TabItem x:Name="TabImmutableId" Header="Immutable ID"/>
-    </TabControl>
+    <!-- ── Navigation sidebar + content area ──────────────────────────────── -->
+    <Grid Grid.Row="2">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="230" MinWidth="160"/>
+        <ColumnDefinition Width="4"/>
+        <ColumnDefinition Width="*"/>
+      </Grid.ColumnDefinitions>
 
-    <!-- Status bar -->
-    <Border Grid.Row="3" x:Name="MainStatusBar" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,1,0,0">
+      <!-- Sidebar -->
+      <Border Grid.Column="0" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,0,1,0">
+        <DockPanel>
+          <!-- version label pinned to bottom -->
+          <TextBlock x:Name="MainVersion" DockPanel.Dock="Bottom"
+                     Foreground="#3C3C5A" FontSize="11"
+                     Margin="17,8,12,10" VerticalAlignment="Center"/>
+          <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel x:Name="NavPanel" Margin="0,8,0,16"/>
+          </ScrollViewer>
+        </DockPanel>
+      </Border>
+
+      <!-- Splitter -->
+      <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
+                    Background="#3C3C5A" Cursor="SizeWE" ResizeBehavior="PreviousAndNext"/>
+
+      <!-- Tool content -->
+      <ContentControl x:Name="MainContentArea" Grid.Column="2" Focusable="False"/>
+    </Grid>
+
+    <!-- ── Status bar ──────────────────────────────────────────────────────── -->
+    <Border Grid.Row="3" x:Name="MainStatusBar" Background="#1C1C2A"
+            BorderBrush="#3C3C5A" BorderThickness="0,1,0,0">
       <Grid Margin="14,0">
-        <TextBlock x:Name="MainStatus" Text="Ready - select a tenant to begin"
+        <TextBlock x:Name="MainStatus" Text="Ready — select a tenant to begin"
                    Foreground="#50507A" FontSize="11" VerticalAlignment="Center"/>
-        <TextBlock x:Name="MainVersion" Foreground="#3C3C5A" FontSize="11"
-                   VerticalAlignment="Center" HorizontalAlignment="Right"/>
       </Grid>
     </Border>
 
@@ -273,6 +347,7 @@ $Script:MainXaml = @'
 </Window>
 '@
 
+# ── Add-tenant dialog XAML (unchanged) ─────────────────────────────────────────
 $Script:AddTenantXaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -384,13 +459,13 @@ function Update-TenantCombo {
     foreach ($t in $tenants) {
         $label = if ($t.DisplayName) { $t.DisplayName } else { $t.TenantId }
         $t | Add-Member -NotePropertyName 'Label' -NotePropertyValue $label -Force
-        $item = New-Object System.Windows.Controls.ComboBoxItem
+        $item         = New-Object System.Windows.Controls.ComboBoxItem
         $item.Content = $label
         $item.Tag     = $t
         $Script:MainUI.TenantCombo.Items.Add($item) | Out-Null
     }
-    $Script:MainUI.TenantCombo.IsEnabled  = $tenants.Count -gt 0
-    $Script:MainUI.BtnRemove.IsEnabled    = $tenants.Count -gt 0
+    $Script:MainUI.TenantCombo.IsEnabled = $tenants.Count -gt 0
+    $Script:MainUI.BtnRemove.IsEnabled   = $tenants.Count -gt 0
 }
 
 function Show-AddTenantDialog {
@@ -464,21 +539,18 @@ function Show-AddTenantDialog {
 }
 
 function Invoke-PostConnect {
-    # Get real tenant display name from Graph and update header
     try {
         $name = Get-TenantDisplayName
         if ($name) {
-            $Script:MainUI.TenantName.Text         = $name
-            $Script:MainUI.TenantBadge.Visibility  = 'Visible'
+            $Script:MainUI.TenantName.Text        = $name
+            $Script:MainUI.TenantBadge.Visibility = 'Visible'
         }
     } catch {}
 
     $Script:MainUI.BtnDisconnect.IsEnabled = $true
-    # Remember the tenant we just connected to so the next launch reconnects to it.
     if (-not $Script:DemoMode -and $Script:CurrentTenantId) {
         try { Set-AppSetting -Name 'LastTenantId' -Value $Script:CurrentTenantId } catch {}
     }
-    # Fire all connect callbacks (each tool loads its data)
     foreach ($cb in $Script:ConnectCallbacks) { & $cb }
     Set-MainStatus 'Connected.' 'Success'
 }
@@ -505,51 +577,67 @@ function Show-MainWindow {
     $window = [System.Windows.Markup.XamlReader]::Load($reader)
 
     $Script:MainUI = @{
-        Window           = $window
-        TenantCombo      = $window.FindName('TenantCombo')
-        BtnAddTenant     = $window.FindName('BtnAddTenant')
-        BtnRemove        = $window.FindName('BtnRemoveTenant')
-        BtnDisconnect    = $window.FindName('BtnDisconnect')
-        TenantBadge      = $window.FindName('TenantBadge')
-        TenantName       = $window.FindName('LblTenantName')
-        Tabs             = $window.FindName('MainTabs')
-        TabPwReset       = $window.FindName('TabPwReset')
-        TabPwUser        = $window.FindName('TabPwUser')
-        TabLastDevice    = $window.FindName('TabLastDevice')
-        TabSignIn        = $window.FindName('TabSignIn')
-        TabGroupCopy     = $window.FindName('TabGroupCopy')
-        TabTeams         = $window.FindName('TabTeams')
-        TabBulkUpn       = $window.FindName('TabBulkUpn')
-        TabImmutableId   = $window.FindName('TabImmutableId')
-        Status           = $window.FindName('MainStatus')
-        Version          = $window.FindName('MainVersion')
-        BtnDemo          = $window.FindName('BtnDemo')
-        HeaderBorder     = $window.FindName('MainHeaderBorder')
-        TenantBarBorder  = $window.FindName('MainTenantBar')
-        StatusBarBorder  = $window.FindName('MainStatusBar')
+        Window          = $window
+        TenantCombo     = $window.FindName('TenantCombo')
+        BtnAddTenant    = $window.FindName('BtnAddTenant')
+        BtnRemove       = $window.FindName('BtnRemoveTenant')
+        BtnDisconnect   = $window.FindName('BtnDisconnect')
+        TenantBadge     = $window.FindName('TenantBadge')
+        TenantName      = $window.FindName('LblTenantName')
+        NavPanel        = $window.FindName('NavPanel')
+        ContentArea     = $window.FindName('MainContentArea')
+        Status          = $window.FindName('MainStatus')
+        Version         = $window.FindName('MainVersion')
+        BtnDemo         = $window.FindName('BtnDemo')
+        HeaderBorder    = $window.FindName('MainHeaderBorder')
+        TenantBarBorder = $window.FindName('MainTenantBar')
+        StatusBarBorder = $window.FindName('MainStatusBar')
     }
 
     if ($AppVersion) { $Script:MainUI.Version.Text = "v$AppVersion" }
 
-    Write-Log 'MainWindow: initializing Year Group Passwords tool' 'DEBUG'
-    $Script:MainUI.TabPwReset.Content    = Initialize-PasswordResetTool
-    Write-Log 'MainWindow: initializing User Password Reset tool' 'DEBUG'
-    $Script:MainUI.TabPwUser.Content     = Initialize-UserPasswordResetTool
-    Write-Log 'MainWindow: initializing Last Device tool' 'DEBUG'
-    $Script:MainUI.TabLastDevice.Content = Initialize-LastDeviceTool
-    Write-Log 'MainWindow: initializing Sign-In Logs tool' 'DEBUG'
-    $Script:MainUI.TabSignIn.Content     = Initialize-SignInLogsTool
-    Write-Log 'MainWindow: initializing Group Copy tool' 'DEBUG'
-    $Script:MainUI.TabGroupCopy.Content  = Initialize-GroupCopyTool
-    Write-Log 'MainWindow: initializing Teams Provisioning tool' 'DEBUG'
-    $Script:MainUI.TabTeams.Content      = Initialize-TeamsProvisioningTool
-    Write-Log 'MainWindow: initializing Bulk UPN Change tool' 'DEBUG'
-    $Script:MainUI.TabBulkUpn.Content    = Initialize-BulkUpnChangeTool
-    Write-Log 'MainWindow: initializing Immutable ID tool' 'DEBUG'
-    $Script:MainUI.TabImmutableId.Content = Initialize-ImmutableIdTool
-    Write-Log 'MainWindow: tools initialized' 'INFO'
+    # ── Initialise all tools and store their panels ───────────────────────────
+    Write-Log 'MainWindow: initialising tools' 'DEBUG'
+    $Script:NavContents['YearGroup']   = Initialize-PasswordResetTool
+    $Script:NavContents['UserReset']   = Initialize-UserPasswordResetTool
+    $Script:NavContents['BulkUpn']     = Initialize-BulkUpnChangeTool
+    $Script:NavContents['ImmutableId'] = Initialize-ImmutableIdTool
+    $Script:NavContents['LastDevice']  = Initialize-LastDeviceTool
+    $Script:NavContents['SignIn']      = Initialize-SignInLogsTool
+    $Script:NavContents['GroupCopy']   = Initialize-GroupCopyTool
+    $Script:NavContents['Teams']       = Initialize-TeamsProvisioningTool
+    Write-Log 'MainWindow: tools initialised' 'INFO'
 
-    # Demo mode button
+    # ── Build nav sidebar ─────────────────────────────────────────────────────
+    $navDef = @(
+        @{ Type = 'cat';  Label = 'USERS' }
+        @{ Type = 'tool'; Name = 'YearGroup';   Title = 'Year Group Passwords'; Desc = 'Reset passwords for an entire year group' }
+        @{ Type = 'tool'; Name = 'UserReset';   Title = 'User Password Reset';  Desc = 'Reset a single account password' }
+        @{ Type = 'tool'; Name = 'BulkUpn';     Title = 'Bulk UPN Change';      Desc = 'Move users to a different verified domain' }
+        @{ Type = 'tool'; Name = 'ImmutableId'; Title = 'Immutable ID';         Desc = 'Assign AD Connect anchor IDs' }
+        @{ Type = 'cat';  Label = 'DEVICES' }
+        @{ Type = 'tool'; Name = 'LastDevice';  Title = 'Last Device';          Desc = 'Login history and stale device detection' }
+        @{ Type = 'cat';  Label = 'AUDIT' }
+        @{ Type = 'tool'; Name = 'SignIn';       Title = 'Sign-In Logs';        Desc = 'Browse Entra ID sign-in events' }
+        @{ Type = 'cat';  Label = 'GROUPS & TEAMS' }
+        @{ Type = 'tool'; Name = 'GroupCopy';   Title = 'Group Copy';           Desc = 'Copy memberships from one user to another' }
+        @{ Type = 'tool'; Name = 'Teams';        Title = 'Teams Provisioning';  Desc = 'Create and populate Microsoft Teams' }
+    )
+
+    foreach ($def in $navDef) {
+        if ($def.Type -eq 'cat') {
+            [void]$Script:MainUI.NavPanel.Children.Add((New-NavCategory -Label $def.Label))
+        } else {
+            $item = New-NavItem -Name $def.Name -Title $def.Title -Subtitle $def.Desc
+            [void]$Script:MainUI.NavPanel.Children.Add($item.Border)
+            $Script:NavItems.Add($item)
+        }
+    }
+
+    # Select first tool by default
+    Set-NavSelection -Name 'YearGroup'
+
+    # ── Demo button ───────────────────────────────────────────────────────────
     $Script:MainUI.BtnDemo.Add_Click({
         try {
             $Script:MainUI.TenantCombo.SelectedIndex = -1
@@ -563,13 +651,13 @@ function Show-MainWindow {
         }
     })
 
-    # Add Tenant button
+    # ── Add tenant ────────────────────────────────────────────────────────────
     $Script:MainUI.BtnAddTenant.Add_Click({
         try { Show-AddTenantDialog }
         catch { Write-Log "BtnAddTenant click error: $_" 'ERROR' }
     })
 
-    # Remove tenant
+    # ── Remove tenant ─────────────────────────────────────────────────────────
     $Script:MainUI.BtnRemove.Add_Click({
         try {
             $sel = $Script:MainUI.TenantCombo.SelectedItem
@@ -590,7 +678,7 @@ function Show-MainWindow {
         }
     })
 
-    # Disconnect (sign out + clear cached credentials)
+    # ── Disconnect ────────────────────────────────────────────────────────────
     $Script:MainUI.BtnDisconnect.Add_Click({
         try {
             $sel = $Script:MainUI.TenantCombo.SelectedItem
@@ -605,7 +693,7 @@ function Show-MainWindow {
         }
     })
 
-    # Tenant combo selection -> authenticate
+    # ── Tenant combo → authenticate ───────────────────────────────────────────
     $Script:MainUI.TenantCombo.Add_SelectionChanged({
         try {
             $sel = $Script:MainUI.TenantCombo.SelectedItem
@@ -614,9 +702,9 @@ function Show-MainWindow {
             Write-Log "TenantCombo: selected '$($sel.Content)'" 'INFO'
             $Script:DemoMode = $false
             Invoke-ResetTools
-            $Script:MainUI.TenantCombo.IsEnabled    = $false
-            $Script:MainUI.BtnAddTenant.IsEnabled   = $false
-            $Script:MainUI.BtnRemove.IsEnabled      = $false
+            $Script:MainUI.TenantCombo.IsEnabled  = $false
+            $Script:MainUI.BtnAddTenant.IsEnabled = $false
+            $Script:MainUI.BtnRemove.IsEnabled    = $false
             Set-MainStatus "Connecting to $($sel.Content)..." 'TextDim'
 
             Start-TenantConnectAsync -TenantId $sel.Tag.TenantId `
@@ -640,7 +728,7 @@ function Show-MainWindow {
         }
     })
 
-    # On load: populate tenant combo and auto-connect if credentials are cached
+    # ── Window loaded → populate combo and auto-connect ───────────────────────
     $window.Add_Loaded({
         try {
             Write-Log 'Window loaded - populating tenant combo' 'INFO'
@@ -651,9 +739,6 @@ function Show-MainWindow {
                 Set-MainStatus 'No tenants saved. Click + to add one.' 'TextDim'
                 Show-AddTenantDialog
             } else {
-                # Auto-select the last-used tenant (falling back to the first) — SelectionChanged
-                # fires and attempts silent auth. If credentials are cached the user sees no
-                # browser popup and lands straight back where they left off.
                 $lastTid = Get-AppSetting -Name 'LastTenantId'
                 $idx = 0
                 if ($lastTid) {
