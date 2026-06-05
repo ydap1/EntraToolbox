@@ -88,12 +88,23 @@ function New-NavItem {
         try { if ($Script:CurrentNavItem -ne $cn) { $ci.Border.Background = [System.Windows.Media.Brushes]::Transparent } }
         catch {}
     })
-    # PreviewMouseLeftButtonDown tunnels from root → target before ScrollViewer
-    # can capture the mouse for scrolling, so it fires reliably on every click.
-    $border.Add_PreviewMouseLeftButtonDown({
+    # ScrollViewer captures the mouse on MouseLeftButtonDown to enable drag-
+    # scrolling, which redirects all subsequent mouse events away from child
+    # elements.  Use AddHandler with handledEventsToo=$true so our handler
+    # fires even after the ScrollViewer has taken mouse capture.
+    $clickHandler = [System.Windows.Input.MouseButtonEventHandler]{
+        param($s, $e)
         try { Set-NavSelection -Name $cn }
-        catch { Write-Log "NavItem '$cn' click error: $_" 'ERROR' }
-    })
+        catch {
+            Write-Host "[ERROR] NavItem '$cn' click: $_" -ForegroundColor Red
+            try { Write-Log "NavItem '$cn' click error: $_" 'ERROR' } catch {}
+        }
+    }
+    $border.AddHandler(
+        [System.Windows.UIElement]::MouseLeftButtonDownEvent,
+        $clickHandler,
+        $true   # handledEventsToo
+    )
 
     return $item
 }
