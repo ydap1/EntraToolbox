@@ -12,12 +12,84 @@ $Script:BUC_UI         = $null
 $Script:BUC_AllUsers   = @()
 $Script:BUC_Rows       = New-Object System.Collections.ObjectModel.ObservableCollection[PSObject]
 $Script:BUC_Domains    = @()
+$Script:BUC_Depts      = @()
+$Script:BUC_Offices    = @()
+$Script:BUC_GroupData  = @()   # {Label, Field, AllUsers}
 $Script:BUC_LoadTimer  = $null
 $Script:BUC_ApplyTimer = $null
 
 function Write-BucLog {
     param([string]$Msg, [string]$Color = 'TextDim')
     Write-AppLog $Msg $Color
+}
+
+function Update-BucGroupCombos {
+    $Script:BUC_Depts = @($Script:BUC_AllUsers | Where-Object { $_.department } |
+                          ForEach-Object { $_.department } | Sort-Object -Unique)
+    $Script:BUC_UI.DeptCombo.Items.Clear()
+    foreach ($dept in $Script:BUC_Depts) {
+        $cnt  = ($Script:BUC_AllUsers | Where-Object { $_.department -eq $dept }).Count
+        $item = [System.Windows.Controls.ComboBoxItem]::new()
+        $item.Content = "$dept  ($cnt)"
+        $item.Tag     = $dept
+        [void]$Script:BUC_UI.DeptCombo.Items.Add($item)
+    }
+    $Script:BUC_UI.DeptCombo.IsEnabled  = ($Script:BUC_Depts.Count -gt 0)
+    if ($Script:BUC_UI.DeptCombo.Items.Count -gt 0) {
+        $Script:BUC_UI.DeptCombo.SelectedIndex = 0
+        $Script:BUC_UI.BtnAddDept.IsEnabled    = $true
+    }
+
+    $Script:BUC_Offices = @($Script:BUC_AllUsers | Where-Object { $_.officeLocation } |
+                             ForEach-Object { $_.officeLocation } | Sort-Object -Unique)
+    $Script:BUC_UI.OfficeCombo.Items.Clear()
+    foreach ($office in $Script:BUC_Offices) {
+        $cnt  = ($Script:BUC_AllUsers | Where-Object { $_.officeLocation -eq $office }).Count
+        $item = [System.Windows.Controls.ComboBoxItem]::new()
+        $item.Content = "$office  ($cnt)"
+        $item.Tag     = $office
+        [void]$Script:BUC_UI.OfficeCombo.Items.Add($item)
+    }
+    $Script:BUC_UI.OfficeCombo.IsEnabled  = ($Script:BUC_Offices.Count -gt 0)
+    if ($Script:BUC_UI.OfficeCombo.Items.Count -gt 0) {
+        $Script:BUC_UI.OfficeCombo.SelectedIndex = 0
+        $Script:BUC_UI.BtnAddOffice.IsEnabled    = $true
+    }
+}
+
+function Add-BucByField {
+    param([string]$Field, $ComboBox)
+    $selItem = $ComboBox.SelectedItem
+    if (-not $selItem) { return }
+    $value = if ($selItem -is [System.Windows.Controls.ComboBoxItem]) { $selItem.Tag } else { $selItem.ToString() }
+    if (-not $value) { return }
+
+    $domain = if ($Script:BUC_UI.DomainCombo.SelectedItem) {
+        $Script:BUC_UI.DomainCombo.SelectedItem.ToString()
+    } else { '' }
+
+    $added = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($r in $Script:BUC_Rows) { [void]$added.Add($r.Id) }
+
+    $users = @($Script:BUC_AllUsers | Where-Object { $_.$Field -eq $value -and -not $added.Contains($_.id) })
+    foreach ($u in $users) {
+        $local = ($u.userPrincipalName -split '@')[0]
+        [void]$Script:BUC_Rows.Add([PSCustomObject]@{
+            Id     = $u.id
+            Name   = $u.displayName
+            OldUpn = $u.userPrincipalName
+            NewUpn = if ($domain) { "$local@$domain" } else { '' }
+            Status = 'Pending'
+        })
+    }
+    Update-BucUserFilter
+    Update-BucButtons
+    $label = if ($Field -eq 'department') { 'department' } else { 'office location' }
+    if ($users.Count -gt 0) {
+        Write-BucLog "Added $($users.Count) user(s) from $label: $value" 'Text'
+    } else {
+        Write-BucLog "No new users to add for $label: $value (all already in list)." 'TextDim'
+    }
 }
 
 function Update-BucUserFilter {
@@ -95,7 +167,7 @@ function Start-BucLoad {
     if ($Script:BUC_LoadTimer) { $Script:BUC_LoadTimer.Stop() }
     $Script:BUC_LoadTimer = Start-AsyncWork -RefSeed @{ Users = $null; Domains = $null } -Script {
         $users = [System.Collections.Generic.List[object]]::new()
-        $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,onPremisesSyncEnabled&$top=999&$filter=accountEnabled eq true'
+        $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,onPremisesSyncEnabled,department,officeLocation&$top=999&$filter=accountEnabled eq true'
         do {
             $resp = Invoke-RestMethod -Uri $url `
                 -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
@@ -133,6 +205,7 @@ function Start-BucLoad {
                 $Script:BUC_UI.DomainCombo.SelectedIndex = 0
             }
 
+            Update-BucGroupCombos
             Update-BucUserFilter
             $Script:BUC_UI.Search.IsEnabled   = $true
             $Script:BUC_UI.UserList.IsEnabled = $true
@@ -213,17 +286,18 @@ function Start-BucApply {
 # ── Demo stubs ─────────────────────────────────────────────────────────────────
 function Start-BucLoadDemo {
     $Script:BUC_AllUsers = @(
-        [PSCustomObject]@{ id='d1'; displayName='Alice Smith';  userPrincipalName='alice@contoso.edu' }
-        [PSCustomObject]@{ id='d2'; displayName='Bob Jones';    userPrincipalName='bob@contoso.edu' }
-        [PSCustomObject]@{ id='d3'; displayName='Carol White';  userPrincipalName='carol@contoso.edu' }
-        [PSCustomObject]@{ id='d4'; displayName='Dave Black';   userPrincipalName='dave@contoso.edu' }
-        [PSCustomObject]@{ id='d5'; displayName='Eve Green';    userPrincipalName='eve@contoso.edu' }
-        [PSCustomObject]@{ id='d6'; displayName='Frank Hall';   userPrincipalName='frank@contoso.edu' }
+        [PSCustomObject]@{ id='d1'; displayName='Alice Smith';  userPrincipalName='alice@contoso.edu';  department='Year 10'; officeLocation='Main Building' }
+        [PSCustomObject]@{ id='d2'; displayName='Bob Jones';    userPrincipalName='bob@contoso.edu';    department='Year 10'; officeLocation='Main Building' }
+        [PSCustomObject]@{ id='d3'; displayName='Carol White';  userPrincipalName='carol@contoso.edu';  department='Year 11'; officeLocation='Sixth Form Centre' }
+        [PSCustomObject]@{ id='d4'; displayName='Dave Black';   userPrincipalName='dave@contoso.edu';   department='Year 11'; officeLocation='Sixth Form Centre' }
+        [PSCustomObject]@{ id='d5'; displayName='Eve Green';    userPrincipalName='eve@contoso.edu';    department='Staff';   officeLocation='Admin Block' }
+        [PSCustomObject]@{ id='d6'; displayName='Frank Hall';   userPrincipalName='frank@contoso.edu';  department='Staff';   officeLocation='Admin Block' }
     )
     $Script:BUC_Domains = @('contoso.edu', 'contoso.ac.uk', 'students.contoso.edu')
     $Script:BUC_UI.DomainCombo.Items.Clear()
     foreach ($d in $Script:BUC_Domains) { [void]$Script:BUC_UI.DomainCombo.Items.Add($d) }
     $Script:BUC_UI.DomainCombo.SelectedIndex = 0
+    Update-BucGroupCombos
     Update-BucUserFilter
     $Script:BUC_UI.Search.IsEnabled   = $true
     $Script:BUC_UI.UserList.IsEnabled = $true
@@ -498,27 +572,48 @@ $Script:BucXaml = @'
     <Grid>
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
         <RowDefinition Height="*"/>
         <RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
 
-      <Border Grid.Row="0" Padding="12,10" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
+      <!-- Group import: by department and by office location -->
+      <Border Grid.Row="0" Padding="12,12,12,10" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
         <StackPanel>
-          <TextBlock Text="CLOUD-ONLY USERS" Foreground="#50507A" FontSize="10"
+          <TextBlock Text="BY DEPARTMENT" Foreground="#50507A" FontSize="10"
+                     FontWeight="Bold" Margin="0,0,0,6"/>
+          <ComboBox x:Name="BucDeptCombo" IsEnabled="False"/>
+          <Button x:Name="BucBtnAddDept" Content="Add All  →" IsEnabled="False"
+                  Style="{StaticResource PrimaryBtn}" Background="#6366F1"
+                  Padding="12,8" Margin="0,6,0,0" HorizontalAlignment="Stretch"/>
+
+          <TextBlock Text="BY OFFICE LOCATION" Foreground="#50507A" FontSize="10"
+                     FontWeight="Bold" Margin="0,14,0,6"/>
+          <ComboBox x:Name="BucOfficeCombo" IsEnabled="False"/>
+          <Button x:Name="BucBtnAddOffice" Content="Add All  →" IsEnabled="False"
+                  Style="{StaticResource PrimaryBtn}" Background="#6366F1"
+                  Padding="12,8" Margin="0,6,0,0" HorizontalAlignment="Stretch"/>
+        </StackPanel>
+      </Border>
+
+      <!-- Individual search -->
+      <Border Grid.Row="1" Padding="12,10" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
+        <StackPanel>
+          <TextBlock Text="INDIVIDUAL SEARCH" Foreground="#50507A" FontSize="10"
                      FontWeight="Bold" Margin="0,0,0,8"/>
           <TextBox x:Name="BucSearch" IsEnabled="False" Height="34"
                    ToolTip="Filter by name or UPN"/>
         </StackPanel>
       </Border>
 
-      <ListBox x:Name="BucUserList" Grid.Row="1" IsEnabled="False"
+      <ListBox x:Name="BucUserList" Grid.Row="2" IsEnabled="False"
                SelectionMode="Extended"
                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                VirtualizingPanel.IsVirtualizing="True"
                VirtualizingPanel.VirtualizationMode="Recycling"
                Margin="0,2,0,2"/>
 
-      <Border Grid.Row="2" Padding="10,8" BorderBrush="#3C3C5A" BorderThickness="0,1,0,0">
+      <Border Grid.Row="3" Padding="10,8" BorderBrush="#3C3C5A" BorderThickness="0,1,0,0">
         <Button x:Name="BucBtnAdd" Content="Add Selected  →" IsEnabled="False"
                 Style="{StaticResource PrimaryBtn}" Background="#6366F1"
                 Padding="12,8" HorizontalAlignment="Stretch"/>
@@ -589,6 +684,10 @@ function Initialize-BulkUpnChangeTool {
     $content = [System.Windows.Markup.XamlReader]::Load($reader)
 
     $Script:BUC_UI = @{
+        DeptCombo   = $content.FindName('BucDeptCombo')
+        BtnAddDept  = $content.FindName('BucBtnAddDept')
+        OfficeCombo = $content.FindName('BucOfficeCombo')
+        BtnAddOffice= $content.FindName('BucBtnAddOffice')
         Search      = $content.FindName('BucSearch')
         UserList    = $content.FindName('BucUserList')
         BtnAdd      = $content.FindName('BucBtnAdd')
@@ -616,6 +715,16 @@ function Initialize-BulkUpnChangeTool {
     $Script:BUC_UI.BtnAdd.Add_Click({
         try { Add-BucSelected }
         catch { Write-Log "BUC BtnAdd click error: $_" 'ERROR' }
+    })
+
+    $Script:BUC_UI.BtnAddDept.Add_Click({
+        try { Add-BucByField -Field 'department' -ComboBox $Script:BUC_UI.DeptCombo }
+        catch { Write-Log "BUC BtnAddDept click error: $_" 'ERROR' }
+    })
+
+    $Script:BUC_UI.BtnAddOffice.Add_Click({
+        try { Add-BucByField -Field 'officeLocation' -ComboBox $Script:BUC_UI.OfficeCombo }
+        catch { Write-Log "BUC BtnAddOffice click error: $_" 'ERROR' }
     })
 
     $Script:BUC_UI.DomainCombo.Add_SelectionChanged({
@@ -681,16 +790,24 @@ function Initialize-BulkUpnChangeTool {
         if ($Script:BUC_ApplyTimer) { $Script:BUC_ApplyTimer.Stop(); $Script:BUC_ApplyTimer = $null }
         $Script:BUC_AllUsers = @()
         $Script:BUC_Domains  = @()
+        $Script:BUC_Depts    = @()
+        $Script:BUC_Offices  = @()
         $Script:BUC_Rows.Clear()
-        $Script:BUC_UI.Search.Text         = ''
-        $Script:BUC_UI.Search.IsEnabled    = $false
+        $Script:BUC_UI.DeptCombo.Items.Clear()
+        $Script:BUC_UI.DeptCombo.IsEnabled    = $false
+        $Script:BUC_UI.BtnAddDept.IsEnabled   = $false
+        $Script:BUC_UI.OfficeCombo.Items.Clear()
+        $Script:BUC_UI.OfficeCombo.IsEnabled   = $false
+        $Script:BUC_UI.BtnAddOffice.IsEnabled  = $false
+        $Script:BUC_UI.Search.Text             = ''
+        $Script:BUC_UI.Search.IsEnabled        = $false
         $Script:BUC_UI.UserList.Items.Clear()
-        $Script:BUC_UI.UserList.IsEnabled  = $false
+        $Script:BUC_UI.UserList.IsEnabled      = $false
         $Script:BUC_UI.DomainCombo.Items.Clear()
-        $Script:BUC_UI.BtnAdd.IsEnabled    = $false
-        $Script:BUC_UI.BtnRemove.IsEnabled = $false
-        $Script:BUC_UI.BtnClear.IsEnabled  = $false
-        $Script:BUC_UI.BtnApply.IsEnabled  = $false
+        $Script:BUC_UI.BtnAdd.IsEnabled        = $false
+        $Script:BUC_UI.BtnRemove.IsEnabled     = $false
+        $Script:BUC_UI.BtnClear.IsEnabled      = $false
+        $Script:BUC_UI.BtnApply.IsEnabled      = $false
     })
 
     Write-BucLog 'Bulk UPN Change ready. Connect to a tenant to begin.' 'Muted'
