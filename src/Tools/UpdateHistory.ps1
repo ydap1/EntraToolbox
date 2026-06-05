@@ -13,82 +13,66 @@ $Script:IH_History = @(
         Version = '0.9.0'
         Date    = '2026-06-05'
         Changes = @(
-            'Added in-app Update History tab (this panel)'
-            'Updated CLAUDE.md with comprehensive architecture and workflow documentation'
-            'README updated to include all current tools'
-            'Version number now tracked in version.txt and displayed in the nav sidebar'
-            'Added rule: version must be bumped and README updated with every change'
+            'Added this Update History screen so you can see what changed in each version'
+            'Version number now shown at the bottom of the sidebar'
         )
     }
     @{
         Version = '0.8.0'
         Date    = '2026-06-05'
         Changes = @(
-            'ImmutableId: added Remove ImmutableId from selected button'
-            'ImmutableId: removal requires typing YES to confirm, skipped in dry-run mode'
-            'ImmutableId: Removed status shown in slate colour in the grid'
-            'ImmutableId: updated nav description to "Assign immutable ID to user"'
+            'Immutable ID: you can now remove an existing Immutable ID from a user — useful when correcting a bad sync anchor'
+            'Immutable ID: removal requires typing YES in a confirmation box to prevent accidents'
         )
     }
     @{
         Version = '0.7.0'
         Date    = '2026-06-05'
         Changes = @(
-            'Bulk UPN Change: import by department — Add All button adds every user in that department'
-            'Bulk UPN Change: import by office location — same pattern'
-            'Fetches department and officeLocation from Graph alongside existing user fields'
-            'Sidebar mirrors Year Group Passwords group-import design'
+            'Bulk UPN Change: pick a department from the dropdown and add everyone in it to the change list in one click'
+            'Bulk UPN Change: same quick-add by office location'
         )
     }
     @{
         Version = '0.6.0'
         Date    = '2026-06-05'
         Changes = @(
-            'Global activity log pane — collapsible slide-up panel shared across all tools'
-            'Dry-run toggle in tenant bar — logs planned actions without executing them'
-            'All per-tool log boxes removed; Write-AppLog routes to the single global pane'
-            'BtnLog and BtnClearLog added to tenant bar'
+            'Activity log pane at the bottom of the window — shows exactly what the app is doing in real time'
+            'Dry Run toggle in the toolbar — see what would change before committing to any action'
         )
     }
     @{
         Version = '0.5.0'
         Date    = '2026-06-05'
         Changes = @(
-            'Vertical navigation sidebar replaces the flat tab bar'
-            'Nav items grouped into categories: USERS, DEVICES, AUDIT, GROUPS & TEAMS'
-            'Bulk UPN Change tool: move cloud-only users to a different verified domain'
-            'Immutable ID tool: assign onPremisesImmutableId with per-row checkboxes'
+            'Navigation redesigned as a sidebar with tools grouped into categories'
+            'Bulk UPN Change — rename users to a different email domain in bulk'
+            'Immutable ID — assign an AD Connect sync anchor to cloud-only accounts, with per-row selection'
         )
     }
     @{
         Version = '0.4.0'
         Date    = '2026-06-02'
         Changes = @(
-            'Shared async helper Start-AsyncWork used across all tools'
-            'Write-RichLog / Write-AppLog consistent log output'
-            'Teams Provisioning: create Class or Standard teams and assign members by year group or search'
-            'Token cache compiled C# helper fixes interactive auth on PS7'
+            'Teams Provisioning — create a Class or Staff team, add members by year group or by searching for users, and promote specific people to Owner'
         )
     }
     @{
         Version = '0.3.0'
         Date    = '2026-06-01'
         Changes = @(
-            'Group Copy: copy all group memberships from one user to another in one click'
-            'Persistent MSAL token cache — no re-authentication across application restarts'
-            'Silent re-auth on startup; MFA claims challenge forwarded to interactive flow'
-            'Multi-tenant: account hint saved per tenant for seamless switching'
+            'Group Copy — copy every group membership from one user to another with a single click'
+            'The app now stays signed in between restarts — no need to sign in again unless your session has expired'
         )
     }
     @{
         Version = '0.2.0'
         Date    = '2026-05-13'
         Changes = @(
-            'Sign-In Logs: last 50 sign-ins per user — app, result, IP, location, device'
-            'User Password Reset: single-account reset with live group membership view'
-            'Year Group Passwords: Select All / None, sortable columns, multi-select'
-            'Demo mode with fake Contoso Academy tenant — no live credentials needed'
-            'MSAL.PS auto-installed on first run'
+            'Sign-In Logs — view the last 50 sign-ins for any user, including app name, result, IP address and location'
+            'User Password Reset — reset a single user''s password and view their current group memberships'
+            'Year Group Passwords — rows are now sortable and you can select multiple at once with Select All / None'
+            'Demo mode — try the app with sample Contoso Academy data without connecting to a real tenant'
         )
     }
     @{
@@ -96,10 +80,9 @@ $Script:IH_History = @(
         Date    = '2026-05-12'
         Changes = @(
             'Initial release'
-            'Year Group Passwords: bulk password reset by department with CSV export'
-            'Last Device: Intune lookup by user or device, stale device filter, Time Logs sub-tab'
-            'MSAL auth using the Microsoft Intune public client ID — no app registration needed'
-            'Multi-tenant support with profiles saved to config\tenants.json'
+            'Year Group Passwords — bulk-reset passwords for an entire year group, with dry-run preview and CSV export'
+            'Last Device — find the last Intune-enrolled device for any user or search by device name; filter for stale devices'
+            'Connect multiple school tenants and switch between them — sign-in credentials are saved between sessions'
         )
     }
 )
