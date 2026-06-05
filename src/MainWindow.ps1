@@ -94,6 +94,7 @@ function New-NavItem {
     # fires even after the ScrollViewer has taken mouse capture.
     $clickHandler = [System.Windows.Input.MouseButtonEventHandler]{
         param($s, $e)
+        Write-Host "[NAV] click on '$cn'" -ForegroundColor DarkGray
         try { Set-NavSelection -Name $cn }
         catch {
             Write-Host "[ERROR] NavItem '$cn' click: $_" -ForegroundColor Red
@@ -111,7 +112,8 @@ function New-NavItem {
 
 function Set-NavSelection {
     param([string]$Name)
-    if ($Script:CurrentNavItem -eq $Name) { return }
+    Write-Host "[NAV] Set-NavSelection called: $Name" -ForegroundColor DarkGray
+    if ($Script:CurrentNavItem -eq $Name) { Write-Host "[NAV] already selected, skipping" -ForegroundColor DarkGray; return }
 
     $accentBrush = New-SolidBrush 'Accent'
     $selBrush    = New-SolidBrush 'Hover'
