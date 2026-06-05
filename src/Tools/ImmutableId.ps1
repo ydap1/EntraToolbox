@@ -647,12 +647,12 @@ function Initialize-ImmutableIdTool {
     })
 
     # ── Lifecycle ──────────────────────────────────────────────────────────────
-    $Script:ConnectCallbacks += {
+    $Script:ConnectCallbacks.Add({
         try {
             if ($Script:DemoMode) { Start-IidLoadDemo } else { Start-IidLoad }
         } catch { Write-Log "ImmutableId ConnectCallback error: $_" 'ERROR' }
-    }
-    $Script:ResetCallbacks += {
+    })
+    $Script:ResetCallbacks.Add({
         try {
             $Script:IID_Rows.Clear()
             $Script:IID_LoadState.Done  = $false
@@ -663,7 +663,7 @@ function Initialize-ImmutableIdTool {
             $Script:IID_UI.BtnCheckAll.IsEnabled   = $false
             $Script:IID_UI.BtnUncheckAll.IsEnabled = $false
         } catch { Write-Log "ImmutableId ResetCallback error: $_" 'ERROR' }
-    }
+    })
 
     return $panel
 }
