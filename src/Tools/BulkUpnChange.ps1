@@ -86,9 +86,9 @@ function Add-BucByField {
     Update-BucButtons
     $label = if ($Field -eq 'department') { 'department' } else { 'office location' }
     if ($users.Count -gt 0) {
-        Write-BucLog "Added $($users.Count) user(s) from $label: $value" 'Text'
+        Write-BucLog "Added $($users.Count) user(s) from ${label}: $value" 'Text'
     } else {
-        Write-BucLog "No new users to add for $label: $value (all already in list)." 'TextDim'
+        Write-BucLog "No new users to add for ${label}: $value (all already in list)." 'TextDim'
     }
 }
 
