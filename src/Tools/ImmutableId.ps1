@@ -146,7 +146,7 @@ $Script:IID_Xaml = @'
                  FontSize="16" FontWeight="Bold"/>
       <TextBlock Margin="0,4,0,0" TextWrapping="Wrap" FontSize="12"
                  Foreground="#7878A0"
-                 Text="Assigns a permanent onPremisesImmutableId to cloud-only users, enabling AD Connect sync. Use the checkboxes to select exactly which accounts receive an ID, then generate and assign."/>
+                 Text="Assign or remove the onPremisesImmutableId on cloud-only users. Use the checkboxes to select accounts, then generate and assign IDs — or remove an existing ID from selected users."/>
     </StackPanel>
   </Border>
 
@@ -191,6 +191,11 @@ $Script:IID_Xaml = @'
                 Content="Assign ImmutableIds to selected rows"
                 Style="{StaticResource Btn}" Background="#D97706" Padding="12,7"
                 ToolTip="Permanently writes the generated ID to Entra for each checked row that has a generated ID ready"
+                IsEnabled="False" Margin="0,0,8,0"/>
+        <Button x:Name="IidBtnRemove"
+                Content="Remove ImmutableId from selected"
+                Style="{StaticResource Btn}" Background="#7F1D1D" Padding="12,7"
+                ToolTip="Clears onPremisesImmutableId (sets to null) on each checked row that currently has one"
                 IsEnabled="False"/>
       </StackPanel>
 
@@ -237,6 +242,9 @@ $Script:IID_Xaml = @'
                     </DataTrigger>
                     <DataTrigger Binding="{Binding Status}" Value="Error">
                       <Setter Property="Foreground" Value="#EF4444"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding Status}" Value="Removed">
+                      <Setter Property="Foreground" Value="#94A3B8"/>
                     </DataTrigger>
                   </Style.Triggers>
                 </Style>
@@ -304,15 +312,17 @@ function Rebuild-IidRows {
 
 # ── Count / button state ───────────────────────────────────────────────────────
 function Update-IidCounts {
-    $total   = $Script:IID_Rows.Count
-    $checked = ($Script:IID_Rows | Where-Object Selected).Count
-    $ready   = ($Script:IID_Rows | Where-Object { $_.Selected -and $_.NewId -and $_.NewId -ne '' }).Count
+    $total      = $Script:IID_Rows.Count
+    $checked    = ($Script:IID_Rows | Where-Object Selected).Count
+    $ready      = ($Script:IID_Rows | Where-Object { $_.Selected -and $_.NewId -and $_.NewId -ne '' }).Count
+    $removable  = ($Script:IID_Rows | Where-Object { $_.Selected -and $_.HasExisting }).Count
 
     $Script:IID_UI.LblCount.Text = "$total shown  ·  $checked selected  ·  $ready ready to assign"
 
     $anyPending = ($Script:IID_Rows | Where-Object { $_.Selected -and (-not $_.NewId -or $_.NewId -eq '') }).Count -gt 0
     $Script:IID_UI.BtnGenerate.IsEnabled = $anyPending
     $Script:IID_UI.BtnApply.IsEnabled    = $ready -gt 0
+    $Script:IID_UI.BtnRemove.IsEnabled   = $removable -gt 0
 }
 
 # ── Select All / Deselect All ─────────────────────────────────────────────────
@@ -449,6 +459,106 @@ Type YES (all capitals) to confirm.
     }
 }
 
+# ── Remove ImmutableId (async) ────────────────────────────────────────────────
+function Start-IidRemove {
+    $toRemove = @($Script:IID_Rows | Where-Object { $_.Selected -and $_.HasExisting })
+
+    if ($toRemove.Count -eq 0) {
+        [System.Windows.MessageBox]::Show(
+            'No selected rows have an existing ImmutableId to remove.',
+            'Nothing to Remove', 'OK', 'Information') | Out-Null
+        return
+    }
+
+    if ($Script:DryMode) {
+        Write-IidLog "[DRY] Would remove ImmutableId from $($toRemove.Count) user(s):" 'Warning'
+        foreach ($r in $toRemove) { Write-IidLog "  $($r.Name)  ($($r.CurrentId))" 'Warning' }
+        Write-Log "ImmutableId: dry run - would remove $($toRemove.Count) IDs" 'INFO'
+        return
+    }
+
+    $preview = ($toRemove | Select-Object -First 5 | ForEach-Object { "  • $($_.Name)" }) -join "`n"
+    if ($toRemove.Count -gt 5) { $preview += "`n  … and $($toRemove.Count - 5) more" }
+
+    $msg = @"
+You are about to remove the ImmutableId from $($toRemove.Count) user account(s):
+
+$preview
+
+WARNING — removing the ImmutableId:
+  • Breaks any existing AD Connect soft-match or sync anchor for this account
+  • Cannot be undone without reassigning a new ID
+
+Type YES (all capitals) to confirm.
+"@
+    Add-Type -AssemblyName Microsoft.VisualBasic
+    $confirm = [Microsoft.VisualBasic.Interaction]::InputBox($msg, 'Confirm ImmutableId Removal', '')
+    if ($confirm -ne 'YES') {
+        Write-IidLog 'Removal cancelled.' 'Warning'
+        return
+    }
+
+    $Script:IID_UI.BtnRemove.IsEnabled   = $false
+    $Script:IID_UI.BtnApply.IsEnabled    = $false
+    $Script:IID_UI.BtnGenerate.IsEnabled = $false
+    $Script:IID_UI.BtnCheckAll.IsEnabled   = $false
+    $Script:IID_UI.BtnUncheckAll.IsEnabled = $false
+
+    Write-IidLog "Removing ImmutableId from $($toRemove.Count) user(s)…" 'Accent'
+    Write-Log    "ImmutableId: starting removal for $($toRemove.Count) user(s)" 'INFO'
+
+    $workItems = @($toRemove | ForEach-Object { @{ Id = $_.Id; Name = $_.Name } })
+
+    if ($Script:IID_ApplyTimer) { $Script:IID_ApplyTimer.Stop() }
+    $Script:IID_ApplyTimer = Start-AsyncWork -RefSeed @{ Results = @() } -Vars @{ Pending = $workItems } -Script {
+        $out = [System.Collections.Generic.List[object]]::new()
+        foreach ($item in $Pending) {
+            try {
+                $null = Invoke-RestMethod "https://graph.microsoft.com/v1.0/users/$($item.Id)" `
+                    -Method PATCH -Headers @{ Authorization = "Bearer $Token" } `
+                    -Body '{"onPremisesImmutableId":null}' -ContentType 'application/json' -ErrorAction Stop
+                $out.Add(@{ Id = $item.Id; Success = $true })
+            } catch {
+                $out.Add(@{ Id = $item.Id; Success = $false; Error = $_.Exception.Message })
+            }
+        }
+        $Ref['Results'] = $out.ToArray()
+    } -OnComplete {
+        param($ref)
+        try {
+            if ($ref['Error']) {
+                Write-IidLog "Removal error: $($ref['Error'])" 'Danger'
+                Write-Log "ImmutableId: removal error: $($ref['Error'])" 'ERROR'
+            } else {
+                $ok = 0; $err = 0
+                foreach ($res in $ref['Results']) {
+                    $row = $Script:IID_Rows | Where-Object { $_.Id -eq $res.Id } | Select-Object -First 1
+                    if (-not $row) { continue }
+                    if ($res.Success) {
+                        $row.Status      = 'Removed'
+                        $row.CurrentId   = '—'
+                        $row.NewId       = ''
+                        $row.HasExisting = $false
+                        $ok++
+                    } else {
+                        $row.Status = 'Error'
+                        Write-IidLog "  Error on $($row.Name): $($res.Error)" 'Danger'
+                        $err++
+                    }
+                }
+                $Script:IID_UI.Grid.Items.Refresh()
+                Write-IidLog "Done — $ok removed, $err error(s)." 'Success'
+                Write-Log "ImmutableId: $ok removed, $err errors" 'INFO'
+            }
+            $Script:IID_UI.BtnCheckAll.IsEnabled   = $true
+            $Script:IID_UI.BtnUncheckAll.IsEnabled = $true
+            Update-IidCounts
+        } catch {
+            Write-Log "ImmutableId remove timer error: $_" 'ERROR'
+        }
+    }
+}
+
 # ── Load from Graph (async) ────────────────────────────────────────────────────
 function Start-IidLoad {
     $Script:IID_Rows.Clear()
@@ -513,14 +623,27 @@ function Start-IidLoadDemo {
 function Start-IidApplyDemo {
     $toAssign = @($Script:IID_Rows | Where-Object { $_.Selected -and $_.NewId -and $_.NewId -ne '' })
     foreach ($r in $toAssign) {
-        $r.Status     = 'Assigned'
-        $r.CurrentId  = $r.NewId
-        $r.NewId      = ''
+        $r.Status      = 'Assigned'
+        $r.CurrentId   = $r.NewId
+        $r.NewId       = ''
         $r.HasExisting = $true
     }
     $Script:IID_UI.Grid.Items.Refresh()
     Update-IidCounts
     Write-IidLog "[DEMO] Assigned ImmutableId to $($toAssign.Count) user(s)." 'TextDim'
+}
+
+function Start-IidRemoveDemo {
+    $toRemove = @($Script:IID_Rows | Where-Object { $_.Selected -and $_.HasExisting })
+    foreach ($r in $toRemove) {
+        $r.Status      = 'Removed'
+        $r.CurrentId   = '—'
+        $r.NewId       = ''
+        $r.HasExisting = $false
+    }
+    $Script:IID_UI.Grid.Items.Refresh()
+    Update-IidCounts
+    Write-IidLog "[DEMO] Removed ImmutableId from $($toRemove.Count) user(s)." 'TextDim'
 }
 
 function Invoke-IidOnConnect {
@@ -537,6 +660,7 @@ function Initialize-ImmutableIdTool {
         LblCount      = $panel.FindName('IidLblCount')
         BtnGenerate   = $panel.FindName('IidBtnGenerate')
         BtnApply      = $panel.FindName('IidBtnApply')
+        BtnRemove     = $panel.FindName('IidBtnRemove')
         BtnCheckAll   = $panel.FindName('IidBtnCheckAll')
         BtnUncheckAll = $panel.FindName('IidBtnUncheckAll')
         ChkEmptyOnly  = $panel.FindName('IidChkEmptyOnly')
@@ -599,6 +723,13 @@ function Initialize-ImmutableIdTool {
         } catch { Write-Log "IID Apply click error: $_" 'ERROR' }
     })
 
+    $Script:IID_UI.BtnRemove.Add_Click({
+        try {
+            if ($Script:DemoMode) { Start-IidRemoveDemo; return }
+            Start-IidRemove
+        } catch { Write-Log "IID Remove click error: $_" 'ERROR' }
+    })
+
     # ── Lifecycle ──────────────────────────────────────────────────────────────
     Register-ConnectCallback 'Invoke-IidOnConnect'
     $Script:ResetCallbacks.Add({
@@ -608,11 +739,12 @@ function Initialize-ImmutableIdTool {
             $Script:IID_Rows.Clear()
             $Script:IID_LoadState.Done  = $false
             $Script:IID_LoadState.Users = $null
-            $Script:IID_UI.LblCount.Text           = ''
-            $Script:IID_UI.BtnGenerate.IsEnabled   = $false
-            $Script:IID_UI.BtnApply.IsEnabled      = $false
-            $Script:IID_UI.BtnCheckAll.IsEnabled   = $false
-            $Script:IID_UI.BtnUncheckAll.IsEnabled = $false
+            $Script:IID_UI.LblCount.Text             = ''
+            $Script:IID_UI.BtnGenerate.IsEnabled     = $false
+            $Script:IID_UI.BtnApply.IsEnabled        = $false
+            $Script:IID_UI.BtnRemove.IsEnabled       = $false
+            $Script:IID_UI.BtnCheckAll.IsEnabled     = $false
+            $Script:IID_UI.BtnUncheckAll.IsEnabled   = $false
         } catch { Write-Log "ImmutableId ResetCallback error: $_" 'ERROR' }
     })
 
