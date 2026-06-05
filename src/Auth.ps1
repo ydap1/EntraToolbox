@@ -46,6 +46,9 @@ function Write-AppLog {
             $para.Inlines.Add($run)
             $para.Margin = '0'
             $Script:AppLogBox.Document.Blocks.Add($para)
+            if ($Script:AppLogBox.Document.Blocks.Count -gt 500) {
+                $Script:AppLogBox.Document.Blocks.Remove($Script:AppLogBox.Document.Blocks.FirstBlock)
+            }
             $Script:AppLogBox.ScrollToEnd()
         } catch {}
     }, 'Normal')

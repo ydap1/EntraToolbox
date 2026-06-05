@@ -65,7 +65,8 @@ function Write-PwLog {
 }
 
 # ── Async user load ────────────────────────────────────────────────────────────
-$Script:PwUserTimer = $null
+$Script:PwUserTimer  = $null
+$Script:PwResetTimer = $null
 
 function Start-PwUserLoad {
     if ($Script:DemoMode) { Start-PwUserLoadDemo; return }
@@ -104,15 +105,18 @@ function Start-PwUserLoad {
             Write-Log "PwReset: loaded $($Script:PwReset_GraphUsers.Count) users" 'INFO'
             Write-PwLog "Loaded $($Script:PwReset_GraphUsers.Count) enabled users with departments." 'Success'
 
-            $allGroups = $Script:PwReset_GraphUsers |
-                         ForEach-Object { Get-DeptGroup $_.department } |
-                         Where-Object { $_ -ne $null } | Sort-Object -Unique
-            $numericGroups = @($allGroups | Where-Object { $_ -is [int] }    | Sort-Object)
-            $namedGroups   = @($allGroups | Where-Object { $_ -is [string] } | Sort-Object)
+            # Single-pass group count (replaces O(n²) Where-Object per group)
+            $groupCounts = @{}
+            foreach ($u in $Script:PwReset_GraphUsers) {
+                $g = Get-DeptGroup $u.department
+                if ($null -ne $g) { $groupCounts[$g] = ($groupCounts[$g] ?? 0) + 1 }
+            }
+            $numericGroups = @($groupCounts.Keys | Where-Object { $_ -is [int] }    | Sort-Object)
+            $namedGroups   = @($groupCounts.Keys | Where-Object { $_ -is [string] } | Sort-Object)
 
             $Script:PwReset_UI.CboYear.Items.Clear()
             foreach ($g in ($numericGroups + $namedGroups)) {
-                $cnt   = ($Script:PwReset_GraphUsers | Where-Object { (Get-DeptGroup $_.department) -eq $g }).Count
+                $cnt   = $groupCounts[$g]
                 $label = if ($g -is [int]) { "Year $g  -  $cnt students" } else { "$g  -  $cnt students" }
                 $item  = New-Object System.Windows.Controls.ComboBoxItem
                 $item.Content = $label
@@ -629,7 +633,6 @@ function Initialize-PasswordResetTool {
     # Generate / Reset
     $Script:PwReset_UI.BtnRun.Add_Click({
         try {
-            # Snapshot selection at click time
             $selected = @($Script:PwReset_UI.Grid.SelectedItems)
             if ($selected.Count -eq 0) { return }
 
@@ -644,6 +647,32 @@ function Initialize-PasswordResetTool {
                 if ($confirm -ne 'Yes') { Write-Log 'PwReset: live run cancelled' 'INFO'; return }
             }
 
+            # Pre-generate all passwords on the UI thread (New-Password unavailable in bg runspace)
+            $work = @($selected | ForEach-Object {
+                $pw = New-Password
+                $_.Password = $pw
+                @{ Id = $_.Id; DisplayName = $_.DisplayName; Upn = $_.UPN; Password = $pw }
+            })
+            $Script:PwReset_UI.Grid.Items.Refresh()
+
+            if (-not $isLive) {
+                # Dry run — instant, no network calls
+                foreach ($row in $selected) { $row.Status = 'OK' }
+                $Script:PwReset_UI.Grid.Items.Refresh()
+                foreach ($item in $work) { Write-PwLog "[DRY RUN] $($item.DisplayName)  ->  $($item.Password)" 'TextDim' }
+                $Script:PwReset_UI.BtnExport.IsEnabled     = $true
+                $Script:PwReset_UI.PnlStats.Visibility     = 'Visible'
+                $Script:PwReset_UI.LblTotal.Text           = "Total  $($selected.Count)"
+                $Script:PwReset_UI.LblOK.Text              = "OK     $($selected.Count)"
+                $Script:PwReset_UI.LblFailed.Text          = "Failed 0"
+                $Script:PwReset_UI.LblFailed.Foreground    = Get-ThemeHex 'TextDim'
+                Update-PwSelectionLabel
+                Write-PwLog "Dry run complete — $($selected.Count) passwords generated." 'Success'
+                Set-MainStatus "Dry run complete — $($selected.Count) passwords generated." 'Success'
+                return
+            }
+
+            # Live run — lock UI
             $Script:PwReset_Running                    = $true
             $Script:PwReset_UI.BtnRun.IsEnabled        = $false
             $Script:PwReset_UI.BtnLoad.IsEnabled       = $false
@@ -651,65 +680,106 @@ function Initialize-PasswordResetTool {
             $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $false
             $Script:PwReset_UI.BtnSelectNone.IsEnabled = $false
             $Script:PwReset_UI.Progress.Visibility     = 'Visible'
-            $Script:PwReset_UI.Progress.Maximum        = $selected.Count
+            $Script:PwReset_UI.Progress.Maximum        = $work.Count
             $Script:PwReset_UI.Progress.Value          = 0
 
-            $ok = 0; $fail = 0
-
-            for ($i = 0; $i -lt $selected.Count; $i++) {
-                $row = $selected[$i]
-                $pw  = New-Password
-                $row.Password = $pw
-
-                if ($isLive) {
-                    if ($Script:DemoMode) {
-                        $row.Status = 'OK'; $ok++
-                        Write-PwLog "OK: $($row.DisplayName)  ($($row.UPN))  [DEMO]" 'Success'
-                    } else {
-                        try {
-                            Invoke-GraphPatch -Path "/v1.0/users/$($row.Id)" -Body @{
-                                passwordProfile = @{
-                                    password                      = $pw
-                                    forceChangePasswordNextSignIn = $false
-                                }
-                            }
-                            $row.Status = 'OK'; $ok++
-                            Write-PwLog "OK: $($row.DisplayName)  ($($row.UPN))" 'Success'
-                        } catch {
-                            $row.Status = 'Failed'; $fail++
-                            Write-Log "PwReset: PATCH failed for $($row.UPN) - $_" 'ERROR'
-                            Write-PwLog "FAILED: $($row.DisplayName) - $_" 'Danger'
-                        }
-                    }
-                } else {
-                    $row.Status = 'OK'; $ok++
-                    Write-PwLog "[DRY RUN] $($row.DisplayName)  ->  $pw" 'TextDim'
+            if ($Script:DemoMode) {
+                # Demo live run — instant simulation, no async needed
+                foreach ($item in $work) {
+                    $row = $Script:PwReset_Rows | Where-Object { $_.Id -eq $item.Id } | Select-Object -First 1
+                    if ($row) { $row.Status = 'OK' }
+                    Write-PwLog "OK: $($item.DisplayName)  ($($item.Upn))  [DEMO]" 'Success'
                 }
-
                 $Script:PwReset_UI.Grid.Items.Refresh()
-                $Script:PwReset_UI.Progress.Value = $i + 1
-                $Script:MainUI.Window.Dispatcher.Invoke(
-                    [System.Windows.Threading.DispatcherPriority]::Background, [Action]{})
+                $ok = $work.Count
+                $Script:PwReset_Running                    = $false
+                $Script:PwReset_UI.Progress.Visibility     = 'Collapsed'
+                $Script:PwReset_UI.BtnLoad.IsEnabled       = $true
+                $Script:PwReset_UI.BtnExport.IsEnabled     = $true
+                $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $true
+                $Script:PwReset_UI.BtnSelectNone.IsEnabled = $true
+                $Script:PwReset_UI.PnlStats.Visibility     = 'Visible'
+                $Script:PwReset_UI.LblTotal.Text           = "Total  $ok"
+                $Script:PwReset_UI.LblOK.Text              = "OK     $ok"
+                $Script:PwReset_UI.LblFailed.Text          = "Failed 0"
+                $Script:PwReset_UI.LblFailed.Foreground    = Get-ThemeHex 'TextDim'
+                Update-PwSelectionLabel
+                Write-PwLog "Demo live run complete — $ok OK." 'Success'
+                Set-MainStatus "Demo live run complete — $ok OK." 'Success'
+                return
             }
 
-            $Script:PwReset_Running                    = $false
-            $Script:PwReset_UI.Progress.Visibility     = 'Collapsed'
-            $Script:PwReset_UI.BtnLoad.IsEnabled       = $true
-            $Script:PwReset_UI.BtnExport.IsEnabled     = $true
-            $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $true
-            $Script:PwReset_UI.BtnSelectNone.IsEnabled = $true
-            $Script:PwReset_UI.PnlStats.Visibility     = 'Visible'
-            $Script:PwReset_UI.LblTotal.Text           = "Total  $($selected.Count)"
-            $Script:PwReset_UI.LblOK.Text              = "OK     $ok"
-            $Script:PwReset_UI.LblFailed.Text          = "Failed $fail"
-            $Script:PwReset_UI.LblFailed.Foreground    = if ($fail -gt 0) { (Get-ThemeHex 'Danger') } else { (Get-ThemeHex 'TextDim') }
-            Update-PwSelectionLabel
-
-            $modeLabel = if ($isLive) { 'Live run' } else { 'Dry run' }
-            $col       = if ($fail -gt 0) { (Get-ThemeHex 'Warning') } else { (Get-ThemeHex 'Success') }
-            Write-Log "PwReset: $modeLabel complete - $ok OK, $fail failed" 'INFO'
-            Write-PwLog "$modeLabel complete - $ok OK, $fail failed." $col
-            Set-MainStatus "$modeLabel complete - $ok OK, $fail failed." $col
+            # Real live run — async so the UI stays responsive
+            if ($Script:PwResetTimer) { $Script:PwResetTimer.Stop() }
+            $Script:PwResetTimer = Start-AsyncWork `
+                -RefSeed @{ Ok = 0; Fail = 0; Queue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new() } `
+                -Vars @{ Work = $work } `
+                -IntervalMs 300 `
+                -Script {
+                    foreach ($item in $Work) {
+                        $r = @{ Id = $item.Id; Name = $item.DisplayName; Upn = $item.Upn; Ok = $false; Err = '' }
+                        try {
+                            $escaped = $item.Password -replace '\\', '\\' -replace '"', '\"'
+                            Invoke-RestMethod `
+                                -Uri "https://graph.microsoft.com/v1.0/users/$($item.Id)" `
+                                -Headers @{ Authorization = "Bearer $Token"; 'Content-Type' = 'application/json' } `
+                                -Method PATCH `
+                                -Body "{`"passwordProfile`":{`"password`":`"$escaped`",`"forceChangePasswordNextSignIn`":false}}" `
+                                -ErrorAction Stop
+                            $r.Ok = $true
+                            $Ref['Ok']++
+                        } catch {
+                            $r.Err = $_.Exception.Message
+                            $Ref['Fail']++
+                        }
+                        $Ref['Queue'].Enqueue($r)
+                    }
+                } `
+                -OnProgress {
+                    param($ref)
+                    $item = $null
+                    while ($ref['Queue'].TryDequeue([ref]$item)) {
+                        $row = $Script:PwReset_Rows | Where-Object { $_.Id -eq $item.Id } | Select-Object -First 1
+                        if ($row) { $row.Status = if ($item.Ok) { 'OK' } else { 'Failed' } }
+                        $logMsg = if ($item.Ok) { "OK: $($item.Name)  ($($item.Upn))" } else { "FAILED: $($item.Name) — $($item.Err)" }
+                        Write-AppLog $logMsg (if ($item.Ok) { 'Success' } else { 'Danger' })
+                    }
+                    $Script:PwReset_UI.Grid.Items.Refresh()
+                    $Script:PwReset_UI.Progress.Value = $ref['Ok'] + $ref['Fail']
+                } `
+                -OnComplete {
+                    param($ref)
+                    try {
+                        # Drain any items that arrived after the last OnProgress tick
+                        $item = $null
+                        while ($ref['Queue'].TryDequeue([ref]$item)) {
+                            $row = $Script:PwReset_Rows | Where-Object { $_.Id -eq $item.Id } | Select-Object -First 1
+                            if ($row) { $row.Status = if ($item.Ok) { 'OK' } else { 'Failed' } }
+                            $logMsg = if ($item.Ok) { "OK: $($item.Name)  ($($item.Upn))" } else { "FAILED: $($item.Name) — $($item.Err)" }
+                            Write-AppLog $logMsg (if ($item.Ok) { 'Success' } else { 'Danger' })
+                        }
+                        $Script:PwReset_UI.Grid.Items.Refresh()
+                        $ok   = $ref['Ok']
+                        $fail = $ref['Fail']
+                        $Script:PwReset_Running                    = $false
+                        $Script:PwReset_UI.Progress.Visibility     = 'Collapsed'
+                        $Script:PwReset_UI.BtnLoad.IsEnabled       = $true
+                        $Script:PwReset_UI.BtnExport.IsEnabled     = $true
+                        $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $true
+                        $Script:PwReset_UI.BtnSelectNone.IsEnabled = $true
+                        $Script:PwReset_UI.PnlStats.Visibility     = 'Visible'
+                        $Script:PwReset_UI.LblTotal.Text           = "Total  $($ok + $fail)"
+                        $Script:PwReset_UI.LblOK.Text              = "OK     $ok"
+                        $Script:PwReset_UI.LblFailed.Text          = "Failed $fail"
+                        $Script:PwReset_UI.LblFailed.Foreground    = if ($fail -gt 0) { Get-ThemeHex 'Danger' } else { Get-ThemeHex 'TextDim' }
+                        Update-PwSelectionLabel
+                        $col = if ($fail -gt 0) { 'Warning' } else { 'Success' }
+                        Write-PwLog "Live run complete — $ok OK, $fail failed." $col
+                        Set-MainStatus "Live run complete — $ok OK, $fail failed." $col
+                    } catch {
+                        Write-Log "PwReset OnComplete error: $_" 'ERROR'
+                    }
+                }
         } catch {
             $Script:PwReset_Running = $false
             Write-Log "BtnRun click error: $_" 'ERROR'
@@ -737,6 +807,8 @@ function Initialize-PasswordResetTool {
     # Register with the global connect/reset hooks
     Register-ConnectCallback 'Start-PwUserLoad'
     $Script:ResetCallbacks.Add({
+        if ($Script:PwUserTimer)  { $Script:PwUserTimer.Stop();  $Script:PwUserTimer  = $null }
+        if ($Script:PwResetTimer) { $Script:PwResetTimer.Stop(); $Script:PwResetTimer = $null }
         $Script:PwReset_Rows.Clear()
         $Script:PwReset_GraphUsers = @()
         $Script:PwReset_UI.CboYear.Items.Clear()

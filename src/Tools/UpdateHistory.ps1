@@ -10,6 +10,16 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.9.1'
+        Date    = '2026-06-05'
+        Changes = @(
+            'App starts faster — tools are now loaded only when you first open them rather than all at once on startup'
+            'Password reset runs in the background during live runs, so the window stays responsive while changes are applied'
+            'Searching for users in Bulk UPN Change no longer lags on large tenants'
+            'Activity log no longer grows without limit during long sessions'
+        )
+    }
+    @{
         Version = '0.9.0'
         Date    = '2026-06-05'
         Changes = @(

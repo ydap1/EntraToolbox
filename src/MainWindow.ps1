@@ -17,13 +17,22 @@ $Script:DlgCancel      = $null
 
 # ── Nav state ──────────────────────────────────────────────────────────────────
 $Script:NavItems       = [System.Collections.Generic.List[hashtable]]::new()
-$Script:NavContents    = @{}
+$Script:NavContents    = @{}   # name → built WPF panel (populated lazily)
 $Script:CurrentNavItem = $null
 
+# Lazy-init maps: populated in Show-MainWindow, consumed in Set-NavSelection.
+$Script:NavInitializers = @{}   # name → 'Initialize-*Tool' function name
+$Script:NavConnectFns   = @{}   # name → array of connect-load function names
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
+$Script:BrushCache = @{}
 function New-SolidBrush([string]$HexOrSemantic) {
-    $hex = Get-ThemeHex $HexOrSemantic
-    [System.Windows.Media.BrushConverter]::new().ConvertFromString($hex)
+    if ($Script:BrushCache.ContainsKey($HexOrSemantic)) { return $Script:BrushCache[$HexOrSemantic] }
+    $hex   = Get-ThemeHex $HexOrSemantic
+    $brush = [System.Windows.Media.BrushConverter]::new().ConvertFromString($hex)
+    $brush.Freeze()
+    $Script:BrushCache[$HexOrSemantic] = $brush
+    $brush
 }
 
 function Set-MainStatus {
@@ -116,6 +125,30 @@ function Set-NavSelection {
     if ([string]::IsNullOrEmpty($Name)) { return }
     if ($Script:CurrentNavItem -eq $Name) { return }
 
+    # Lazy-initialize the tool panel on first visit
+    if (-not $Script:NavContents.ContainsKey($Name)) {
+        $fn = $Script:NavInitializers[$Name]
+        if (-not $fn) { return }
+        Write-Log "Lazy init: $Name ($fn)" 'DEBUG'
+        $raw   = Invoke-EtbCommand $fn
+        # InvokeScript wraps output in PSObject — unwrap to get the WPF UIElement
+        $panel = $null
+        foreach ($o in @($raw)) {
+            $base = if ($o -is [System.Management.Automation.PSObject]) { $o.BaseObject } else { $o }
+            if ($base -is [System.Windows.UIElement]) { $panel = $base; break }
+        }
+        if (-not $panel) { Write-Log "Lazy init '$Name': no UIElement returned" 'ERROR'; return }
+        $Script:NavContents[$Name] = $panel
+
+        # If a tenant is already connected, trigger the tool's data-load functions
+        if ($Script:AccessToken) {
+            foreach ($loadFn in $Script:NavConnectFns[$Name]) {
+                try { Invoke-EtbCommand $loadFn }
+                catch { Write-Log "Lazy-init connect trigger '$loadFn' failed: $_" 'ERROR' }
+            }
+        }
+    }
+
     $accentBrush = New-SolidBrush 'Accent'
     $selBrush    = New-SolidBrush 'Hover'
     $textBrush   = New-SolidBrush 'Text'
@@ -133,9 +166,7 @@ function Set-NavSelection {
         }
     }
 
-    if ($Script:NavContents.ContainsKey($Name)) {
-        $Script:MainUI.ContentArea.Content = $Script:NavContents[$Name]
-    }
+    $Script:MainUI.ContentArea.Content = $Script:NavContents[$Name]
     $Script:CurrentNavItem = $Name
 }
 
@@ -656,18 +687,30 @@ function Show-MainWindow {
 
     if ($AppVersion) { $Script:MainUI.Version.Text = "v$AppVersion" }
 
-    # ── Initialise all tools and store their panels ───────────────────────────
-    Write-Log 'MainWindow: initialising tools' 'DEBUG'
-    $Script:NavContents['YearGroup']   = Initialize-PasswordResetTool
-    $Script:NavContents['UserReset']   = Initialize-UserPasswordResetTool
-    $Script:NavContents['BulkUpn']     = Initialize-BulkUpnChangeTool
-    $Script:NavContents['ImmutableId'] = Initialize-ImmutableIdTool
-    $Script:NavContents['LastDevice']  = Initialize-LastDeviceTool
-    $Script:NavContents['SignIn']      = Initialize-SignInLogsTool
-    $Script:NavContents['GroupCopy']   = Initialize-GroupCopyTool
-    $Script:NavContents['Teams']       = Initialize-TeamsProvisioningTool
-    $Script:NavContents['Changelog']   = Initialize-UpdateHistoryTool
-    Write-Log 'MainWindow: tools initialised' 'INFO'
+    # ── Register lazy-init maps (panels built on first nav click) ────────────
+    $Script:NavInitializers = @{
+        'YearGroup'   = 'Initialize-PasswordResetTool'
+        'UserReset'   = 'Initialize-UserPasswordResetTool'
+        'BulkUpn'     = 'Initialize-BulkUpnChangeTool'
+        'ImmutableId' = 'Initialize-ImmutableIdTool'
+        'LastDevice'  = 'Initialize-LastDeviceTool'
+        'SignIn'      = 'Initialize-SignInLogsTool'
+        'GroupCopy'   = 'Initialize-GroupCopyTool'
+        'Teams'       = 'Initialize-TeamsProvisioningTool'
+        'Changelog'   = 'Initialize-UpdateHistoryTool'
+    }
+    $Script:NavConnectFns = @{
+        'YearGroup'   = @('Start-PwUserLoad')
+        'UserReset'   = @('Start-UprUserLoad')
+        'BulkUpn'     = @('Start-BucLoad')
+        'ImmutableId' = @('Invoke-IidOnConnect')
+        'LastDevice'  = @('Start-LdUserLoad', 'Start-LdAllDevicesLoad')
+        'SignIn'      = @('Start-SlUserLoad')
+        'GroupCopy'   = @('Start-GcUserLoad')
+        'Teams'       = @('Start-TpUserLoad')
+        'Changelog'   = @()
+    }
+    Write-Log 'MainWindow: lazy-init maps registered' 'DEBUG'
 
     # ── Build nav sidebar ─────────────────────────────────────────────────────
     $navDef = @(

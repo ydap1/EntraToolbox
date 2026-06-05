@@ -15,8 +15,9 @@ $Script:BUC_Domains    = @()
 $Script:BUC_Depts      = @()
 $Script:BUC_Offices    = @()
 $Script:BUC_GroupData  = @()   # {Label, Field, AllUsers}
-$Script:BUC_LoadTimer  = $null
-$Script:BUC_ApplyTimer = $null
+$Script:BUC_LoadTimer   = $null
+$Script:BUC_ApplyTimer  = $null
+$Script:BUC_SearchTimer = $null
 
 function Write-BucLog {
     param([string]$Msg, [string]$Color = 'TextDim')
@@ -24,33 +25,37 @@ function Write-BucLog {
 }
 
 function Update-BucGroupCombos {
-    $Script:BUC_Depts = @($Script:BUC_AllUsers | Where-Object { $_.department } |
-                          ForEach-Object { $_.department } | Sort-Object -Unique)
+    # Single pass to count departments and offices (replaces O(n²) Where-Object per group)
+    $deptCounts   = @{}
+    $officeCounts = @{}
+    foreach ($u in $Script:BUC_AllUsers) {
+        if ($u.department)     { $deptCounts[$u.department]       = ($deptCounts[$u.department]       ?? 0) + 1 }
+        if ($u.officeLocation) { $officeCounts[$u.officeLocation] = ($officeCounts[$u.officeLocation] ?? 0) + 1 }
+    }
+    $Script:BUC_Depts   = @($deptCounts.Keys   | Sort-Object)
+    $Script:BUC_Offices = @($officeCounts.Keys | Sort-Object)
+
     $Script:BUC_UI.DeptCombo.Items.Clear()
     foreach ($dept in $Script:BUC_Depts) {
-        $cnt  = ($Script:BUC_AllUsers | Where-Object { $_.department -eq $dept }).Count
         $item = [System.Windows.Controls.ComboBoxItem]::new()
-        $item.Content = "$dept  ($cnt)"
+        $item.Content = "$dept  ($($deptCounts[$dept]))"
         $item.Tag     = $dept
         [void]$Script:BUC_UI.DeptCombo.Items.Add($item)
     }
-    $Script:BUC_UI.DeptCombo.IsEnabled  = ($Script:BUC_Depts.Count -gt 0)
+    $Script:BUC_UI.DeptCombo.IsEnabled = ($Script:BUC_Depts.Count -gt 0)
     if ($Script:BUC_UI.DeptCombo.Items.Count -gt 0) {
         $Script:BUC_UI.DeptCombo.SelectedIndex = 0
         $Script:BUC_UI.BtnAddDept.IsEnabled    = $true
     }
 
-    $Script:BUC_Offices = @($Script:BUC_AllUsers | Where-Object { $_.officeLocation } |
-                             ForEach-Object { $_.officeLocation } | Sort-Object -Unique)
     $Script:BUC_UI.OfficeCombo.Items.Clear()
     foreach ($office in $Script:BUC_Offices) {
-        $cnt  = ($Script:BUC_AllUsers | Where-Object { $_.officeLocation -eq $office }).Count
         $item = [System.Windows.Controls.ComboBoxItem]::new()
-        $item.Content = "$office  ($cnt)"
+        $item.Content = "$office  ($($officeCounts[$office]))"
         $item.Tag     = $office
         [void]$Script:BUC_UI.OfficeCombo.Items.Add($item)
     }
-    $Script:BUC_UI.OfficeCombo.IsEnabled  = ($Script:BUC_Offices.Count -gt 0)
+    $Script:BUC_UI.OfficeCombo.IsEnabled = ($Script:BUC_Offices.Count -gt 0)
     if ($Script:BUC_UI.OfficeCombo.Items.Count -gt 0) {
         $Script:BUC_UI.OfficeCombo.SelectedIndex = 0
         $Script:BUC_UI.BtnAddOffice.IsEnabled    = $true
@@ -701,9 +706,18 @@ function Initialize-BulkUpnChangeTool {
 
     $Script:BUC_UI.PreviewGrid.ItemsSource = $Script:BUC_Rows
 
+    # Debounce search: wait 250 ms after the last keystroke before filtering
+    $Script:BUC_SearchTimer = New-EtbDispatcherTimer -IntervalMs 250
+    $Script:BUC_SearchTimer.Add_Tick({
+        $this.Stop()
+        try { Invoke-EtbCommand 'Update-BucUserFilter' }
+        catch { try { Write-Log "BUC Search debounce error: $_" 'ERROR' } catch {} }
+    })
     $Script:BUC_UI.Search.Add_TextChanged({
-        try { Update-BucUserFilter }
-        catch { Write-Log "BUC Search TextChanged error: $_" 'ERROR' }
+        try {
+            $Script:BUC_SearchTimer.Stop()
+            $Script:BUC_SearchTimer.Start()
+        } catch { Write-Log "BUC Search TextChanged error: $_" 'ERROR' }
     })
 
     $Script:BUC_UI.UserList.Add_SelectionChanged({
@@ -786,8 +800,9 @@ function Initialize-BulkUpnChangeTool {
 
     Register-ConnectCallback 'Start-BucLoad'
     $Script:ResetCallbacks.Add({
-        if ($Script:BUC_LoadTimer)  { $Script:BUC_LoadTimer.Stop();  $Script:BUC_LoadTimer  = $null }
-        if ($Script:BUC_ApplyTimer) { $Script:BUC_ApplyTimer.Stop(); $Script:BUC_ApplyTimer = $null }
+        if ($Script:BUC_LoadTimer)   { $Script:BUC_LoadTimer.Stop();   $Script:BUC_LoadTimer   = $null }
+        if ($Script:BUC_ApplyTimer)  { $Script:BUC_ApplyTimer.Stop();  $Script:BUC_ApplyTimer  = $null }
+        if ($Script:BUC_SearchTimer) { $Script:BUC_SearchTimer.Stop(); $Script:BUC_SearchTimer = $null }
         $Script:BUC_AllUsers = @()
         $Script:BUC_Domains  = @()
         $Script:BUC_Depts    = @()
