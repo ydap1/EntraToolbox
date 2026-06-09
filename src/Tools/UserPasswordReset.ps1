@@ -288,6 +288,37 @@ $Script:UprXaml = @'
       </Setter>
     </Style>
 
+    <Style TargetType="PasswordBox">
+      <Setter Property="Background"               Value="#242436"/>
+      <Setter Property="Foreground"               Value="#E2E2F0"/>
+      <Setter Property="BorderBrush"              Value="#3C3C5A"/>
+      <Setter Property="BorderThickness"          Value="1"/>
+      <Setter Property="Padding"                  Value="8,4"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="CaretBrush"               Value="#E2E2F0"/>
+      <Setter Property="SelectionBrush"           Value="#6366F1"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="PasswordBox">
+            <Border x:Name="bd" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="4">
+              <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                            Background="{TemplateBinding Background}"
+                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="bd" Property="Background" Value="#1C1C2A"/>
+                <Setter Property="Foreground" Value="#3C3C5A"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
     <Style TargetType="CheckBox">
       <Setter Property="Foreground" Value="#E2E2F0"/>
       <Setter Property="Cursor"     Value="Hand"/>
@@ -444,12 +475,22 @@ $Script:UprXaml = @'
             <Grid Margin="0,0,0,6">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="6"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="6"/>
                 <ColumnDefinition Width="Auto"/>
               </Grid.ColumnDefinitions>
-              <TextBox x:Name="UprPasswordBox" Grid.Column="0" Height="36"
-                       FontFamily="Consolas" FontSize="13"/>
-              <Button x:Name="UprBtnRegen" Grid.Column="2" Content="Regenerate"
+              <Grid Grid.Column="0" Height="36">
+                <PasswordBox x:Name="UprPasswordMasked"
+                             FontFamily="Consolas" FontSize="13"/>
+                <TextBox x:Name="UprPasswordBox" Height="36"
+                         FontFamily="Consolas" FontSize="13"
+                         Visibility="Collapsed"/>
+              </Grid>
+              <Button x:Name="UprBtnEye" Grid.Column="2" Content="Show"
+                      Style="{StaticResource PrimaryBtn}" Background="#3C3C5A"
+                      Padding="10,0" Height="36" MinWidth="48"/>
+              <Button x:Name="UprBtnRegen" Grid.Column="4" Content="Regenerate"
                       Style="{StaticResource PrimaryBtn}" Background="#3C3C5A"
                       Padding="12,0" Height="36"/>
             </Grid>
@@ -524,8 +565,10 @@ function Initialize-UserPasswordResetTool {
         LblName       = $content.FindName('UprLblName')
         LblUpn        = $content.FindName('UprLblUpn')
         PromptStatus  = $content.FindName('UprPromptStatus')
-        PasswordBox   = $content.FindName('UprPasswordBox')
-        BtnRegen      = $content.FindName('UprBtnRegen')
+        PasswordBox    = $content.FindName('UprPasswordBox')
+        PasswordMasked = $content.FindName('UprPasswordMasked')
+        BtnEye         = $content.FindName('UprBtnEye')
+        BtnRegen       = $content.FindName('UprBtnRegen')
         ChkForce      = $content.FindName('UprChkForce')
         BtnReset      = $content.FindName('UprBtnReset')
         InlineStatus  = $content.FindName('UprInlineStatus')
@@ -557,7 +600,12 @@ function Initialize-UserPasswordResetTool {
 
             $Script:UPR_UI.LblName.Text  = $user.displayName
             $Script:UPR_UI.LblUpn.Text   = $user.userPrincipalName
-            $Script:UPR_UI.PasswordBox.Text = New-Password
+            $pw = New-Password
+            $Script:UPR_UI.PasswordMasked.Password   = $pw
+            $Script:UPR_UI.PasswordBox.Text           = $pw
+            $Script:UPR_UI.PasswordMasked.Visibility  = 'Visible'
+            $Script:UPR_UI.PasswordBox.Visibility     = 'Collapsed'
+            $Script:UPR_UI.BtnEye.Content             = 'Show'
             $Script:UPR_UI.ChkForce.IsChecked = $false
             $Script:UPR_UI.InlineStatus.Visibility = 'Collapsed'
             $Script:UPR_UI.Placeholder.Visibility  = 'Collapsed'
@@ -573,10 +621,34 @@ function Initialize-UserPasswordResetTool {
     # Regenerate password
     $Script:UPR_UI.BtnRegen.Add_Click({
         try {
-            $Script:UPR_UI.PasswordBox.Text = New-Password
+            $pw = New-Password
+            $Script:UPR_UI.PasswordMasked.Password   = $pw
+            $Script:UPR_UI.PasswordBox.Text           = $pw
+            $Script:UPR_UI.PasswordMasked.Visibility  = 'Visible'
+            $Script:UPR_UI.PasswordBox.Visibility     = 'Collapsed'
+            $Script:UPR_UI.BtnEye.Content             = 'Show'
             Write-Log 'UPR: password regenerated' 'DEBUG'
         } catch {
             Write-Log "UPR BtnRegen click error: $_" 'ERROR'
+        }
+    })
+
+    # Eye toggle
+    $Script:UPR_UI.BtnEye.Add_Click({
+        try {
+            if ($Script:UPR_UI.PasswordMasked.Visibility -eq 'Visible') {
+                $Script:UPR_UI.PasswordBox.Text          = $Script:UPR_UI.PasswordMasked.Password
+                $Script:UPR_UI.PasswordMasked.Visibility = 'Collapsed'
+                $Script:UPR_UI.PasswordBox.Visibility    = 'Visible'
+                $Script:UPR_UI.BtnEye.Content            = 'Hide'
+            } else {
+                $Script:UPR_UI.PasswordMasked.Password   = $Script:UPR_UI.PasswordBox.Text
+                $Script:UPR_UI.PasswordBox.Visibility    = 'Collapsed'
+                $Script:UPR_UI.PasswordMasked.Visibility = 'Visible'
+                $Script:UPR_UI.BtnEye.Content            = 'Show'
+            }
+        } catch {
+            Write-Log "UPR BtnEye click error: $_" 'ERROR'
         }
     })
 
@@ -586,7 +658,11 @@ function Initialize-UserPasswordResetTool {
             $sel = $Script:UPR_UI.UserList.SelectedItem
             if (-not $sel) { return }
             $user  = $sel.Tag
-            $pw    = $Script:UPR_UI.PasswordBox.Text.Trim()
+            $pw    = if ($Script:UPR_UI.PasswordMasked.Visibility -eq 'Visible') {
+                $Script:UPR_UI.PasswordMasked.Password.Trim()
+            } else {
+                $Script:UPR_UI.PasswordBox.Text.Trim()
+            }
             $force = [bool]$Script:UPR_UI.ChkForce.IsChecked
 
             if ([string]::IsNullOrWhiteSpace($pw)) {

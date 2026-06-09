@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.9.3'
+        Date    = '2026-06-09'
+        Changes = @(
+            'Password is now hidden behind asterisks by default in User Password Reset — use the Show/Hide toggle to reveal it'
+            'Clicking Regenerate always re-masks the password'
+        )
+    }
+    @{
         Version = '0.9.2'
         Date    = '2026-06-09'
         Changes = @(
