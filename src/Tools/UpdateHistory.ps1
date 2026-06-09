@@ -10,6 +10,13 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.9.2'
+        Date    = '2026-06-09'
+        Changes = @(
+            'Password stays visible after resetting so you can copy it — click Regenerate to get a new one'
+        )
+    }
+    @{
         Version = '0.9.1'
         Date    = '2026-06-05'
         Changes = @(

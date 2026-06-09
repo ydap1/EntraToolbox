@@ -634,8 +634,6 @@ function Initialize-UserPasswordResetTool {
                     $Script:UPR_UI.PromptStatus.Foreground = (Get-ThemeHex 'Success')
                 }
 
-                # Pre-fill a fresh password ready for another reset
-                $Script:UPR_UI.PasswordBox.Text = New-Password
             } catch {
                 Write-Log "UPR: password reset FAILED for $($user.userPrincipalName) - $_" 'ERROR'
                 Write-UprLog "FAILED: $($user.displayName) - $_" 'Danger'
