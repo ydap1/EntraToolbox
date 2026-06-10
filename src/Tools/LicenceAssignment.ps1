@@ -1,274 +1,276 @@
 <#
-    Licence Assignment tab for Art's Entra Toolbox.
-    Dot-sourced by Start.ps1.
-    Exposes Initialize-LicenceAssignmentTool.
+    Licence Assignment for Art's Entra Toolbox.
+    Dot-sourced by Start.ps1. Exposes Initialize-LicenceAssignmentTool.
 
-    View, assign, and remove M365 licences for any user.
-    Uses /subscribedSkus for tenant pool, /users/{id}/licenseDetails for per-user view,
-    and /users/{id}/assignLicense for both assign and remove.
+    Left: user search list. Right: two panels — assigned licences and
+    available tenant SKUs. Remove/Assign act on the selected list row.
 #>
 
-$Script:LA_UI          = $null
-$Script:LA_AllUsers    = @()
-$Script:LA_AllSkus     = @()
-$Script:LA_SelectedUser= $null
+$Script:LA_UI       = $null
+$Script:LA_AllUsers = @()
+$Script:LA_AllSkus  = @()
+$Script:LA_User     = $null
 
-$Script:LA_UserTimer   = $null
-$Script:LA_SkuTimer    = $null
-$Script:LA_LicTimer    = $null
-$Script:LA_ActionTimer = $null
+$Script:LA_UserTimer = $null
+$Script:LA_SkuTimer  = $null
+$Script:LA_LicTimer  = $null
+$Script:LA_ActTimer  = $null
 
-# ── Friendly SKU name map ──────────────────────────────────────────────────────
 $Script:LA_SkuNames = @{
-    'STANDARDWOFFPACK_IW_STUDENT' = 'Microsoft 365 A1 for Students'
-    'STANDARDWOFFPACK_FACULTY'    = 'Microsoft 365 A1 for Faculty'
-    'M365EDU_A3_STUUSEBNFT'       = 'Microsoft 365 A3 for Students'
-    'M365EDU_A3_FACULTY'          = 'Microsoft 365 A3 for Faculty'
-    'M365EDU_A5_STUUSEBNFT'       = 'Microsoft 365 A5 for Students'
-    'M365EDU_A5_FACULTY'          = 'Microsoft 365 A5 for Faculty'
-    'ENTERPRISEPACK'              = 'Office 365 E3'
-    'ENTERPRISEPREMIUM'           = 'Office 365 E5'
-    'SPE_E3'                      = 'Microsoft 365 E3'
-    'SPE_E5'                      = 'Microsoft 365 E5'
-    'INTUNE_A'                    = 'Microsoft Intune'
+    STANDARDWOFFPACK_IW_STUDENT = 'Microsoft 365 A1 for Students'
+    STANDARDWOFFPACK_FACULTY    = 'Microsoft 365 A1 for Faculty'
+    M365EDU_A3_STUUSEBNFT       = 'Microsoft 365 A3 for Students'
+    M365EDU_A3_FACULTY          = 'Microsoft 365 A3 for Faculty'
+    M365EDU_A5_STUUSEBNFT       = 'Microsoft 365 A5 for Students'
+    M365EDU_A5_FACULTY          = 'Microsoft 365 A5 for Faculty'
+    ENTERPRISEPACK              = 'Office 365 E3'
+    ENTERPRISEPREMIUM           = 'Office 365 E5'
+    SPE_E3                      = 'Microsoft 365 E3'
+    SPE_E5                      = 'Microsoft 365 E5'
+    INTUNE_A                    = 'Microsoft Intune'
 }
 
-function Get-LaFriendlyName {
-    param([string]$SkuPartNumber)
-    if ($Script:LA_SkuNames.ContainsKey($SkuPartNumber)) { return $Script:LA_SkuNames[$SkuPartNumber] }
-    return $SkuPartNumber
+function Get-LaName([string]$Part) {
+    if ($Script:LA_SkuNames.ContainsKey($Part)) { return $Script:LA_SkuNames[$Part] }
+    return $Part
 }
 
-# ── Log helper ─────────────────────────────────────────────────────────────────
-function Write-LaLog {
-    param([string]$Msg, [string]$Color = 'TextDim')
-    Write-AppLog $Msg $Color
-}
+function Write-LaLog([string]$Msg, [string]$Color = 'TextDim') { Write-AppLog $Msg $Color }
 
-# ── Async user load ────────────────────────────────────────────────────────────
+# ── User load ──────────────────────────────────────────────────────────────────
 function Start-LaUserLoad {
     if ($Script:DemoMode) { Start-LaUserLoadDemo; return }
     if (-not $Script:LA_UI) { return }
-
     $Script:LA_UI.UserSearch.IsEnabled = $false
     $Script:LA_UI.UserList.IsEnabled   = $false
     Write-LaLog 'Loading users...' 'TextDim'
-
     if ($Script:LA_UserTimer) { $Script:LA_UserTimer.Stop() }
     $Script:LA_UserTimer = Start-AsyncWork -RefSeed @{ Users = $null } -Script {
-        $users = [System.Collections.Generic.List[object]]::new()
-        $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName&$top=999&$filter=accountEnabled eq true'
+        $list = [System.Collections.Generic.List[object]]::new()
+        $url  = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName&$top=999&$filter=accountEnabled eq true'
         do {
-            $resp = Invoke-RestMethod -Uri $url `
-                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-            foreach ($u in $resp.value) { $users.Add($u) }
-            $url = $resp.'@odata.nextLink'
+            $r = Invoke-RestMethod -Uri $url -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
+            foreach ($u in $r.value) { $list.Add($u) }
+            $url = $r.'@odata.nextLink'
         } while ($url)
-        $Ref['Users'] = $users.ToArray()
+        $Ref['Users'] = $list.ToArray()
     } -OnComplete {
         param($ref)
         try {
-            if ($ref['Error'] -eq '401') { Write-LaLog 'Session expired — reconnect.' 'Danger'; return }
-            if ($ref['Error']) { Write-LaLog "Error loading users: $($ref['Error'])" 'Danger'; return }
-            $Script:LA_AllUsers = @($ref['Users'] | Sort-Object { $_.displayName })
-            Update-LaUserFilter
+            if ($ref['Error'] -eq '401') { Write-LaLog 'Session expired.' 'Danger'; return }
+            if ($ref['Error'])           { Write-LaLog "Users: $($ref['Error'])" 'Danger'; return }
+            $Script:LA_AllUsers = @($ref['Users'] | Sort-Object displayName)
+            Update-LaFilter
             $Script:LA_UI.UserSearch.IsEnabled = $true
             $Script:LA_UI.UserList.IsEnabled   = $true
             Write-LaLog "Loaded $($Script:LA_AllUsers.Count) users." 'Success'
-        } catch { Write-Log "LA user-load error: $_" 'ERROR' }
+        } catch { Write-Log "LA user-load: $_" 'ERROR' }
     }
 }
 
-# ── Async SKU load ─────────────────────────────────────────────────────────────
+# ── SKU load ───────────────────────────────────────────────────────────────────
 function Start-LaSkuLoad {
     if ($Script:DemoMode) { Start-LaSkuLoadDemo; return }
     if (-not $Script:LA_UI) { return }
-
     if ($Script:LA_SkuTimer) { $Script:LA_SkuTimer.Stop() }
     $Script:LA_SkuTimer = Start-AsyncWork -RefSeed @{ Skus = $null } -Script {
-        $resp = Invoke-RestMethod -Uri 'https://graph.microsoft.com/v1.0/subscribedSkus' `
+        $r = Invoke-RestMethod -Uri 'https://graph.microsoft.com/v1.0/subscribedSkus' `
             -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-        $Ref['Skus'] = $resp.value
+        $Ref['Skus'] = $r.value
     } -OnComplete {
         param($ref)
         try {
-            if ($ref['Error']) { Write-LaLog "Error loading SKUs: $($ref['Error'])" 'Danger'; return }
+            if ($ref['Error']) { Write-LaLog "SKUs: $($ref['Error'])" 'Danger'; return }
             $Script:LA_AllSkus = @($ref['Skus'])
-            Write-Log "LA: loaded $($Script:LA_AllSkus.Count) tenant SKUs" 'DEBUG'
-        } catch { Write-Log "LA sku-load error: $_" 'ERROR' }
+        } catch { Write-Log "LA sku-load: $_" 'ERROR' }
     }
 }
 
-function Update-LaUserFilter {
-    $filter = $Script:LA_UI.UserSearch.Text.Trim()
+function Update-LaFilter {
+    $q = $Script:LA_UI.UserSearch.Text.Trim()
     $Script:LA_UI.UserList.Items.Clear()
-    $list = if ([string]::IsNullOrWhiteSpace($filter)) { $Script:LA_AllUsers } else {
-        $Script:LA_AllUsers | Where-Object {
-            $_.displayName -like "*$filter*" -or $_.userPrincipalName -like "*$filter*"
-        }
+    $src = if ([string]::IsNullOrWhiteSpace($q)) { $Script:LA_AllUsers } else {
+        $Script:LA_AllUsers | Where-Object { $_.displayName -like "*$q*" -or $_.userPrincipalName -like "*$q*" }
     }
-    foreach ($u in $list) {
-        $lbi         = [System.Windows.Controls.ListBoxItem]::new()
-        $lbi.Content = $u.displayName
-        $lbi.Tag     = $u
-        $lbi.ToolTip = $u.userPrincipalName
-        [void]$Script:LA_UI.UserList.Items.Add($lbi)
+    foreach ($u in $src) {
+        $i         = [System.Windows.Controls.ListBoxItem]::new()
+        $i.Content = $u.displayName
+        $i.ToolTip = $u.userPrincipalName
+        $i.Tag     = $u
+        [void]$Script:LA_UI.UserList.Items.Add($i)
     }
 }
 
-# ── Load licences for selected user ───────────────────────────────────────────
-function Start-LaLicenceLoad {
+# ── Licence load for selected user ─────────────────────────────────────────────
+function Start-LaLicLoad {
     param([string]$UserId)
-    if ($Script:DemoMode) { Start-LaLicenceLoadDemo -UserId $UserId; return }
-
-    $Script:LA_UI.AssignedGrid.ItemsSource   = $null
-    $Script:LA_UI.AvailableGrid.ItemsSource  = $null
-    $Script:LA_UI.AssignedHeader.Text        = 'Loading...'
-    $Script:LA_UI.AvailableHeader.Text       = 'Available Licences'
-
+    if ($Script:DemoMode) { Start-LaLicLoadDemo; return }
+    Clear-LaLists
+    $Script:LA_UI.AssignedHeader.Text  = 'Loading...'
+    $Script:LA_UI.AvailableHeader.Text = 'Available'
     if ($Script:LA_LicTimer) { $Script:LA_LicTimer.Stop() }
-    $Script:LA_LicTimer = Start-AsyncWork `
-        -Vars    @{ UserId = $UserId } `
-        -RefSeed @{ Assigned = $null } `
-        -Script {
-            $resp = Invoke-RestMethod `
-                -Uri "https://graph.microsoft.com/v1.0/users/$UserId/licenseDetails" `
-                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-            $Ref['Assigned'] = $resp.value
-        } -OnComplete {
-            param($ref)
-            try {
-                if ($ref['Error']) { Write-LaLog "Error loading licences: $($ref['Error'])" 'Danger'; return }
+    $Script:LA_LicTimer = Start-AsyncWork -Vars @{ UserId = $UserId } -RefSeed @{ Assigned = $null } -Script {
+        $r = Invoke-RestMethod -Uri "https://graph.microsoft.com/v1.0/users/$UserId/licenseDetails" `
+            -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
+        $Ref['Assigned'] = $r.value
+    } -OnComplete {
+        param($ref)
+        try {
+            if ($ref['Error']) { Write-LaLog "Licence load: $($ref['Error'])" 'Danger'; $Script:LA_UI.AssignedHeader.Text = 'Error'; return }
+            $assigned = @($ref['Assigned'])
 
-                $assigned = @($ref['Assigned'])
-                $assignedIds = [System.Collections.Generic.HashSet[string]]::new(
-                    ($assigned | ForEach-Object { $_.skuId }))
+            # Build a plain hashtable keyed by skuId — avoids HashSet constructor ambiguity
+            $assignedMap = @{}
+            foreach ($l in $assigned) { $assignedMap[$l.skuId] = $l.skuPartNumber }
 
-                # Build assigned rows
-                $assignedItems = [System.Collections.Generic.List[PSCustomObject]]::new()
-                foreach ($lic in $assigned | Sort-Object { $_.skuPartNumber }) {
-                    $assignedItems.Add([PSCustomObject]@{
-                        FriendlyName   = Get-LaFriendlyName $lic.skuPartNumber
-                        SkuPartNumber  = $lic.skuPartNumber
-                        SkuId          = $lic.skuId
-                    })
-                }
+            # Populate assigned list
+            $Script:LA_UI.AssignedList.Items.Clear()
+            foreach ($l in $assigned | Sort-Object skuPartNumber) {
+                $lbi         = [System.Windows.Controls.ListBoxItem]::new()
+                $lbi.Content = Get-LaName $l.skuPartNumber
+                $lbi.ToolTip = $l.skuPartNumber
+                $lbi.Tag     = $l.skuId
+                [void]$Script:LA_UI.AssignedList.Items.Add($lbi)
+            }
+            $Script:LA_UI.AssignedHeader.Text = "Assigned ($($assigned.Count))"
 
-                # Build available rows (tenant SKUs not already assigned)
-                $availItems = [System.Collections.Generic.List[PSCustomObject]]::new()
-                foreach ($sku in $Script:LA_AllSkus | Sort-Object { $_.skuPartNumber }) {
-                    if ($assignedIds.Contains($sku.skuId)) { continue }
-                    $avail = $sku.prepaidUnits.enabled - $sku.consumedUnits
-                    $availItems.Add([PSCustomObject]@{
-                        FriendlyName      = Get-LaFriendlyName $sku.skuPartNumber
-                        SkuPartNumber     = $sku.skuPartNumber
-                        SkuId             = $sku.skuId
-                        AvailableSeats    = $avail
-                        HasAvailableSeats = ($avail -gt 0)
-                    })
-                }
+            # Populate available list (tenant pool minus already-assigned)
+            $Script:LA_UI.AvailableList.Items.Clear()
+            $dangerBrush = New-SolidBrush 'Danger'
+            $dimBrush    = New-SolidBrush 'TextDim'
+            $availCount  = 0
+            foreach ($sku in $Script:LA_AllSkus | Sort-Object skuPartNumber) {
+                if ($assignedMap.ContainsKey($sku.skuId)) { continue }
+                $seats       = $sku.prepaidUnits.enabled - $sku.consumedUnits
+                $lbi         = [System.Windows.Controls.ListBoxItem]::new()
+                $lbi.Content = "$(Get-LaName $sku.skuPartNumber)   ($seats seats)"
+                $lbi.ToolTip = $sku.skuPartNumber
+                $lbi.Tag     = @{ SkuId = $sku.skuId; Seats = $seats }
+                if ($seats -le 0) { $lbi.Foreground = $dangerBrush } else { $lbi.Foreground = $dimBrush }
+                [void]$Script:LA_UI.AvailableList.Items.Add($lbi)
+                $availCount++
+            }
+            $Script:LA_UI.AvailableHeader.Text = "Available ($availCount)"
 
-                $Script:LA_UI.AssignedGrid.ItemsSource  = $assignedItems
-                $Script:LA_UI.AvailableGrid.ItemsSource = $availItems
-                $Script:LA_UI.AssignedHeader.Text       = "Assigned ($($assignedItems.Count))"
-                $Script:LA_UI.AvailableHeader.Text      = "Available from tenant pool ($($availItems.Count))"
-            } catch { Write-Log "LA licence-load error: $_" 'ERROR' }
-        }
+            Update-LaButtons
+        } catch { Write-Log "LA lic-load complete: $_" 'ERROR' }
+    }
 }
 
-# ── Assign / Remove ────────────────────────────────────────────────────────────
+function Clear-LaLists {
+    $Script:LA_UI.AssignedList.Items.Clear()
+    $Script:LA_UI.AvailableList.Items.Clear()
+    $Script:LA_UI.AssignedHeader.Text  = 'Assigned'
+    $Script:LA_UI.AvailableHeader.Text = 'Available'
+    Update-LaButtons
+}
+
+function Update-LaButtons {
+    $hasSel  = $null -ne $Script:LA_UI.AssignedList.SelectedItem
+    $Script:LA_UI.BtnRemove.IsEnabled = $hasSel
+
+    $avSel   = $Script:LA_UI.AvailableList.SelectedItem
+    $hasSeats = $avSel -and $avSel.Tag.Seats -gt 0
+    $Script:LA_UI.BtnAssign.IsEnabled = $hasSeats
+}
+
+# ── Assign ─────────────────────────────────────────────────────────────────────
 function Start-LaAssign {
-    param([string]$SkuId)
-    if (-not $Script:LA_SelectedUser) { return }
-    $user = $Script:LA_SelectedUser
-    if ($Script:DryMode) {
-        Write-LaLog "[DRY] Would assign SKU $SkuId to $($user.displayName)" 'Warning'
-        return
+    $sel = $Script:LA_UI.AvailableList.SelectedItem
+    if (-not $sel -or -not $Script:LA_User) { return }
+    $skuId = $sel.Tag.SkuId
+    $userId = $Script:LA_User.id
+    if ($Script:DryMode) { Write-LaLog "[DRY] Would assign $($sel.Content) to $($Script:LA_User.displayName)" 'Warning'; return }
+    Write-LaLog "Assigning $($sel.Content)..." 'TextDim'
+    $Script:LA_UI.BtnAssign.IsEnabled = $false
+    if ($Script:LA_ActTimer) { $Script:LA_ActTimer.Stop() }
+    $Script:LA_ActTimer = Start-AsyncWork -Vars @{ UserId = $userId; SkuId = $skuId } -RefSeed @{ Ok = $false } -Script {
+        $body = '{"addLicenses":[{"skuId":"' + $SkuId + '"}],"removeLicenses":[]}'
+        Invoke-RestMethod -Uri "https://graph.microsoft.com/v1.0/users/$UserId/assignLicense" `
+            -Headers @{ Authorization = "Bearer $Token"; 'Content-Type' = 'application/json' } `
+            -Method POST -Body $body -ErrorAction Stop | Out-Null
+        $Ref['Ok'] = $true
+    } -OnComplete {
+        param($ref)
+        try {
+            if ($ref['Error']) { Write-LaLog "Assign failed: $($ref['Error'])" 'Danger'; Update-LaButtons; return }
+            Write-LaLog 'Licence assigned.' 'Success'
+            Start-LaLicLoad -UserId $Script:LA_User.id
+        } catch { Write-Log "LA assign: $_" 'ERROR' }
     }
-    Write-LaLog "Assigning licence to $($user.displayName)..." 'TextDim'
-    if ($Script:LA_ActionTimer) { $Script:LA_ActionTimer.Stop() }
-    $Script:LA_ActionTimer = Start-AsyncWork `
-        -Vars    @{ UserId = $user.id; SkuId = $SkuId } `
-        -RefSeed @{ Ok = $false } `
-        -Script {
-            $body = '{"addLicenses":[{"skuId":"' + $SkuId + '"}],"removeLicenses":[]}'
-            Invoke-RestMethod `
-                -Uri "https://graph.microsoft.com/v1.0/users/$UserId/assignLicense" `
-                -Headers @{ Authorization = "Bearer $Token"; 'Content-Type' = 'application/json' } `
-                -Method POST -Body $body -ErrorAction Stop
-            $Ref['Ok'] = $true
-        } -OnComplete {
-            param($ref)
-            try {
-                if ($ref['Error']) { Write-LaLog "Assign failed: $($ref['Error'])" 'Danger'; return }
-                Write-LaLog "Licence assigned successfully." 'Success'
-                Start-LaLicenceLoad -UserId $Script:LA_SelectedUser.id
-            } catch { Write-Log "LA assign error: $_" 'ERROR' }
-        }
 }
 
+# ── Remove ─────────────────────────────────────────────────────────────────────
 function Start-LaRemove {
-    param([string]$SkuId)
-    if (-not $Script:LA_SelectedUser) { return }
-    $user = $Script:LA_SelectedUser
-    if ($Script:DryMode) {
-        Write-LaLog "[DRY] Would remove SKU $SkuId from $($user.displayName)" 'Warning'
-        return
+    $sel = $Script:LA_UI.AssignedList.SelectedItem
+    if (-not $sel -or -not $Script:LA_User) { return }
+    $skuId  = $sel.Tag
+    $userId = $Script:LA_User.id
+    if ($Script:DryMode) { Write-LaLog "[DRY] Would remove $($sel.Content) from $($Script:LA_User.displayName)" 'Warning'; return }
+    Write-LaLog "Removing $($sel.Content)..." 'TextDim'
+    $Script:LA_UI.BtnRemove.IsEnabled = $false
+    if ($Script:LA_ActTimer) { $Script:LA_ActTimer.Stop() }
+    $Script:LA_ActTimer = Start-AsyncWork -Vars @{ UserId = $userId; SkuId = $skuId } -RefSeed @{ Ok = $false } -Script {
+        $body = '{"addLicenses":[],"removeLicenses":["' + $SkuId + '"]}'
+        Invoke-RestMethod -Uri "https://graph.microsoft.com/v1.0/users/$UserId/assignLicense" `
+            -Headers @{ Authorization = "Bearer $Token"; 'Content-Type' = 'application/json' } `
+            -Method POST -Body $body -ErrorAction Stop | Out-Null
+        $Ref['Ok'] = $true
+    } -OnComplete {
+        param($ref)
+        try {
+            if ($ref['Error']) { Write-LaLog "Remove failed: $($ref['Error'])" 'Danger'; Update-LaButtons; return }
+            Write-LaLog 'Licence removed.' 'Success'
+            Start-LaLicLoad -UserId $Script:LA_User.id
+        } catch { Write-Log "LA remove: $_" 'ERROR' }
     }
-    Write-LaLog "Removing licence from $($user.displayName)..." 'TextDim'
-    if ($Script:LA_ActionTimer) { $Script:LA_ActionTimer.Stop() }
-    $Script:LA_ActionTimer = Start-AsyncWork `
-        -Vars    @{ UserId = $user.id; SkuId = $SkuId } `
-        -RefSeed @{ Ok = $false } `
-        -Script {
-            $body = '{"addLicenses":[],"removeLicenses":["' + $SkuId + '"]}'
-            Invoke-RestMethod `
-                -Uri "https://graph.microsoft.com/v1.0/users/$UserId/assignLicense" `
-                -Headers @{ Authorization = "Bearer $Token"; 'Content-Type' = 'application/json' } `
-                -Method POST -Body $body -ErrorAction Stop
-            $Ref['Ok'] = $true
-        } -OnComplete {
-            param($ref)
-            try {
-                if ($ref['Error']) { Write-LaLog "Remove failed: $($ref['Error'])" 'Danger'; return }
-                Write-LaLog "Licence removed successfully." 'Success'
-                Start-LaLicenceLoad -UserId $Script:LA_SelectedUser.id
-            } catch { Write-Log "LA remove error: $_" 'ERROR' }
-        }
 }
 
-# ── Demo stubs ────────────────────────────────────────────────────────────────
+# ── Demo ───────────────────────────────────────────────────────────────────────
 function Start-LaUserLoadDemo {
-    $Script:LA_AllUsers = @(
-        $Script:Demo_Users | Select-Object -First 15
-    )
-    Update-LaUserFilter
+    $Script:LA_AllUsers = @($Script:Demo_Users | Select-Object -First 12)
+    Update-LaFilter
     $Script:LA_UI.UserSearch.IsEnabled = $true
     $Script:LA_UI.UserList.IsEnabled   = $true
-    Write-LaLog 'Demo: loaded users.' 'Muted'
+    Write-LaLog 'Demo: users loaded.' 'Muted'
 }
 
 function Start-LaSkuLoadDemo {
     $Script:LA_AllSkus = @(
-        [PSCustomObject]@{ skuId = 'sku-a1s'; skuPartNumber = 'STANDARDWOFFPACK_IW_STUDENT'; consumedUnits = 340; prepaidUnits = @{ enabled = 500 } }
-        [PSCustomObject]@{ skuId = 'sku-a1f'; skuPartNumber = 'STANDARDWOFFPACK_FACULTY';    consumedUnits = 45;  prepaidUnits = @{ enabled = 50 } }
-        [PSCustomObject]@{ skuId = 'sku-int'; skuPartNumber = 'INTUNE_A';                    consumedUnits = 50;  prepaidUnits = @{ enabled = 50 } }
+        [PSCustomObject]@{ skuId='s1'; skuPartNumber='STANDARDWOFFPACK_IW_STUDENT'; consumedUnits=340; prepaidUnits=@{enabled=500} }
+        [PSCustomObject]@{ skuId='s2'; skuPartNumber='STANDARDWOFFPACK_FACULTY';    consumedUnits=45;  prepaidUnits=@{enabled=50} }
+        [PSCustomObject]@{ skuId='s3'; skuPartNumber='INTUNE_A';                    consumedUnits=50;  prepaidUnits=@{enabled=50} }
     )
 }
 
-function Start-LaLicenceLoadDemo {
-    param([string]$UserId)
-    $assignedItems = @(
-        [PSCustomObject]@{ FriendlyName = 'Microsoft 365 A1 for Students'; SkuPartNumber = 'STANDARDWOFFPACK_IW_STUDENT'; SkuId = 'sku-a1s' }
-    )
-    $availItems = @(
-        [PSCustomObject]@{ FriendlyName = 'Microsoft 365 A1 for Faculty'; SkuPartNumber = 'STANDARDWOFFPACK_FACULTY'; SkuId = 'sku-a1f'; AvailableSeats = 5;  HasAvailableSeats = $true }
-        [PSCustomObject]@{ FriendlyName = 'Microsoft Intune';             SkuPartNumber = 'INTUNE_A';                 SkuId = 'sku-int'; AvailableSeats = 0;  HasAvailableSeats = $false }
-    )
-    $Script:LA_UI.AssignedGrid.ItemsSource  = $assignedItems
-    $Script:LA_UI.AvailableGrid.ItemsSource = $availItems
-    $Script:LA_UI.AssignedHeader.Text       = "Assigned ($($assignedItems.Count))"
-    $Script:LA_UI.AvailableHeader.Text      = "Available from tenant pool ($($availItems.Count))"
+function Start-LaLicLoadDemo {
+    # Fake: first user has A1 Students assigned, others available
+    $assigned = @([PSCustomObject]@{ skuId='s1'; skuPartNumber='STANDARDWOFFPACK_IW_STUDENT' })
+    $assignedMap = @{ 's1' = $true }
+    $Script:LA_UI.AssignedList.Items.Clear()
+    foreach ($l in $assigned) {
+        $lbi = [System.Windows.Controls.ListBoxItem]::new()
+        $lbi.Content = Get-LaName $l.skuPartNumber
+        $lbi.ToolTip = $l.skuPartNumber
+        $lbi.Tag     = $l.skuId
+        [void]$Script:LA_UI.AssignedList.Items.Add($lbi)
+    }
+    $Script:LA_UI.AssignedHeader.Text = "Assigned ($($assigned.Count))"
+    $Script:LA_UI.AvailableList.Items.Clear()
+    $dangerBrush = New-SolidBrush 'Danger'
+    $dimBrush    = New-SolidBrush 'TextDim'
+    foreach ($sku in $Script:LA_AllSkus) {
+        if ($assignedMap[$sku.skuId]) { continue }
+        $seats = $sku.prepaidUnits.enabled - $sku.consumedUnits
+        $lbi   = [System.Windows.Controls.ListBoxItem]::new()
+        $lbi.Content = "$(Get-LaName $sku.skuPartNumber)   ($seats seats)"
+        $lbi.ToolTip = $sku.skuPartNumber
+        $lbi.Tag     = @{ SkuId = $sku.skuId; Seats = $seats }
+        $lbi.Foreground = if ($seats -le 0) { $dangerBrush } else { $dimBrush }
+        [void]$Script:LA_UI.AvailableList.Items.Add($lbi)
+    }
+    $Script:LA_UI.AvailableHeader.Text = "Available (2)"
+    Update-LaButtons
 }
 
 # ── XAML ───────────────────────────────────────────────────────────────────────
@@ -277,10 +279,10 @@ $Script:LaXaml = @'
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       Background="#12121C">
   <Grid.Resources>
-
-    <Style x:Key="PrimaryBtn" TargetType="Button">
+    <Style x:Key="Btn" TargetType="Button">
       <Setter Property="Foreground"      Value="White"/>
       <Setter Property="FontWeight"      Value="SemiBold"/>
+      <Setter Property="FontSize"        Value="12"/>
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="Cursor"          Value="Hand"/>
       <Setter Property="Template">
@@ -303,7 +305,6 @@ $Script:LaXaml = @'
         </Setter.Value>
       </Setter>
     </Style>
-
     <Style TargetType="TextBox">
       <Setter Property="Background"               Value="#242436"/>
       <Setter Property="Foreground"               Value="#E2E2F0"/>
@@ -316,10 +317,9 @@ $Script:LaXaml = @'
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="TextBox">
-            <Border x:Name="bd" Background="{TemplateBinding Background}"
+            <Border Background="{TemplateBinding Background}"
                     BorderBrush="{TemplateBinding BorderBrush}"
-                    BorderThickness="{TemplateBinding BorderThickness}"
-                    CornerRadius="4">
+                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4">
               <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
                             Background="{TemplateBinding Background}"/>
             </Border>
@@ -327,25 +327,24 @@ $Script:LaXaml = @'
         </Setter.Value>
       </Setter>
     </Style>
-
     <Style TargetType="ListBox">
-      <Setter Property="Background"      Value="#12121C"/>
+      <Setter Property="Background"      Value="Transparent"/>
       <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="Padding"         Value="0"/>
     </Style>
-
     <Style TargetType="ListBoxItem">
-      <Setter Property="Foreground"                 Value="#E2E2F0"/>
-      <Setter Property="Background"                 Value="Transparent"/>
-      <Setter Property="Padding"                    Value="12,7"/>
-      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-      <Setter Property="Cursor"                     Value="Hand"/>
+      <Setter Property="Foreground" Value="#E2E2F0"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Padding"    Value="12,7"/>
+      <Setter Property="Cursor"     Value="Hand"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="ListBoxItem">
             <Border x:Name="bd" Background="{TemplateBinding Background}"
                     Padding="{TemplateBinding Padding}">
-              <ContentPresenter VerticalAlignment="Center"/>
+              <TextBlock Text="{TemplateBinding Content}"
+                         Foreground="{TemplateBinding Foreground}"
+                         TextTrimming="CharacterEllipsis"/>
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
@@ -359,48 +358,10 @@ $Script:LaXaml = @'
         </Setter.Value>
       </Setter>
     </Style>
-
-    <Style x:Key="DgHdr" TargetType="DataGridColumnHeader">
-      <Setter Property="Background"     Value="#1C1C2A"/>
-      <Setter Property="Foreground"     Value="#7878A0"/>
-      <Setter Property="BorderBrush"    Value="#3C3C5A"/>
-      <Setter Property="BorderThickness" Value="0,0,0,1"/>
-      <Setter Property="Padding"        Value="10,0"/>
-      <Setter Property="Height"         Value="32"/>
-      <Setter Property="FontSize"       Value="11"/>
-      <Setter Property="FontWeight"     Value="SemiBold"/>
-    </Style>
-
-    <Style x:Key="DgCell" TargetType="DataGridCell">
-      <Setter Property="Foreground"       Value="#E2E2F0"/>
-      <Setter Property="Background"       Value="Transparent"/>
-      <Setter Property="BorderThickness"  Value="0"/>
-      <Setter Property="Padding"          Value="10,0"/>
-      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-      <Style.Triggers>
-        <Trigger Property="IsSelected" Value="True">
-          <Setter Property="Background" Value="Transparent"/>
-          <Setter Property="Foreground" Value="#E2E2F0"/>
-        </Trigger>
-      </Style.Triggers>
-    </Style>
-
-    <Style x:Key="DgRow" TargetType="DataGridRow">
-      <Setter Property="Background" Value="Transparent"/>
-      <Style.Triggers>
-        <Trigger Property="IsMouseOver" Value="True">
-          <Setter Property="Background" Value="#1E1E38"/>
-        </Trigger>
-        <Trigger Property="IsSelected" Value="True">
-          <Setter Property="Background" Value="#2A2A50"/>
-        </Trigger>
-      </Style.Triggers>
-    </Style>
-
   </Grid.Resources>
 
   <Grid.ColumnDefinitions>
-    <ColumnDefinition Width="260" MinWidth="200"/>
+    <ColumnDefinition Width="260" MinWidth="180"/>
     <ColumnDefinition Width="5"/>
     <ColumnDefinition Width="*"/>
   </Grid.ColumnDefinitions>
@@ -424,8 +385,7 @@ $Script:LaXaml = @'
       <ListBox x:Name="LaUserList" Grid.Row="1" IsEnabled="False"
                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                VirtualizingPanel.IsVirtualizing="True"
-               VirtualizingPanel.VirtualizationMode="Recycling"
-               Margin="0,2,0,2"/>
+               VirtualizingPanel.VirtualizationMode="Recycling"/>
     </Grid>
   </Border>
 
@@ -440,102 +400,47 @@ $Script:LaXaml = @'
     <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
                   Background="#3C3C5A" Cursor="SizeNS" ResizeBehavior="PreviousAndNext"/>
 
-    <!-- Assigned licences -->
+    <!-- Assigned -->
     <Grid Grid.Row="0">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto"/>
         <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
-      <Border Grid.Row="0" Background="#1C1C2A" BorderBrush="#3C3C5A"
-              BorderThickness="0,0,0,1" Padding="16,10">
-        <TextBlock x:Name="LaAssignedHeader" Text="Assigned Licences"
-                   Foreground="#7878A0" FontSize="11" FontWeight="SemiBold"/>
+      <Border Grid.Row="0" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1" Padding="16,10">
+        <TextBlock x:Name="LaAssignedHeader" Text="Assigned" Foreground="#7878A0" FontSize="11" FontWeight="SemiBold"/>
       </Border>
-      <DataGrid x:Name="LaAssignedGrid" Grid.Row="1"
-                AutoGenerateColumns="False" IsReadOnly="False"
-                CanUserAddRows="False" CanUserDeleteRows="False"
-                CanUserReorderColumns="False" CanUserResizeRows="False"
-                SelectionMode="Single" HeadersVisibility="Column"
-                RowBackground="#12121C" AlternatingRowBackground="#14171C"
-                GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#1E1E32"
-                Background="#12121C" BorderThickness="0" Foreground="#E2E2F0"
-                ColumnHeaderStyle="{StaticResource DgHdr}"
-                CellStyle="{StaticResource DgCell}"
-                RowStyle="{StaticResource DgRow}"
-                RowHeight="34">
-        <DataGrid.Columns>
-          <DataGridTextColumn Header="Licence Name" Binding="{Binding FriendlyName}"
-                              Width="*" IsReadOnly="True"/>
-          <DataGridTextColumn Header="SKU Part Number" Binding="{Binding SkuPartNumber}"
-                              Width="200" IsReadOnly="True"/>
-          <DataGridTemplateColumn Header="" Width="90" IsReadOnly="True">
-            <DataGridTemplateColumn.CellTemplate>
-              <DataTemplate>
-                <Button Content="Remove" Tag="{Binding SkuId}"
-                        Background="#EF4444" Foreground="White"
-                        FontSize="11" FontWeight="SemiBold" Padding="8,4"
-                        BorderThickness="0" Cursor="Hand" Margin="4,4"/>
-              </DataTemplate>
-            </DataGridTemplateColumn.CellTemplate>
-          </DataGridTemplateColumn>
-        </DataGrid.Columns>
-      </DataGrid>
+      <ListBox x:Name="LaAssignedList" Grid.Row="1"
+               ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+               VirtualizingPanel.IsVirtualizing="True"
+               VirtualizingPanel.VirtualizationMode="Recycling"/>
+      <Border Grid.Row="2" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,1,0,0" Padding="14,10">
+        <Button x:Name="LaBtnRemove" Content="Remove Selected Licence"
+                Style="{StaticResource Btn}" Background="#EF4444"
+                Padding="14,8" IsEnabled="False" HorizontalAlignment="Left"/>
+      </Border>
     </Grid>
 
-    <!-- Available licences -->
+    <!-- Available -->
     <Grid Grid.Row="2">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto"/>
         <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
-      <Border Grid.Row="0" Background="#1C1C2A" BorderBrush="#3C3C5A"
-              BorderThickness="0,0,0,1" Padding="16,10">
-        <TextBlock x:Name="LaAvailableHeader" Text="Available Licences"
-                   Foreground="#7878A0" FontSize="11" FontWeight="SemiBold"/>
+      <Border Grid.Row="0" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1" Padding="16,10">
+        <TextBlock x:Name="LaAvailableHeader" Text="Available" Foreground="#7878A0" FontSize="11" FontWeight="SemiBold"/>
       </Border>
-      <DataGrid x:Name="LaAvailableGrid" Grid.Row="1"
-                AutoGenerateColumns="False" IsReadOnly="False"
-                CanUserAddRows="False" CanUserDeleteRows="False"
-                CanUserReorderColumns="False" CanUserResizeRows="False"
-                SelectionMode="Single" HeadersVisibility="Column"
-                RowBackground="#12121C" AlternatingRowBackground="#14171C"
-                GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#1E1E32"
-                Background="#12121C" BorderThickness="0" Foreground="#E2E2F0"
-                ColumnHeaderStyle="{StaticResource DgHdr}"
-                CellStyle="{StaticResource DgCell}"
-                RowStyle="{StaticResource DgRow}"
-                RowHeight="34">
-        <DataGrid.Columns>
-          <DataGridTextColumn Header="Licence Name" Binding="{Binding FriendlyName}"
-                              Width="*" IsReadOnly="True"/>
-          <DataGridTemplateColumn Header="Available Seats" Width="130" IsReadOnly="True">
-            <DataGridTemplateColumn.CellTemplate>
-              <DataTemplate>
-                <TextBlock x:Name="tbSeats" Text="{Binding AvailableSeats}"
-                           VerticalAlignment="Center" Padding="10,0" Foreground="#E2E2F0"/>
-                <DataTemplate.Triggers>
-                  <DataTrigger Binding="{Binding HasAvailableSeats}" Value="False">
-                    <Setter TargetName="tbSeats" Property="Foreground" Value="#EF4444"/>
-                  </DataTrigger>
-                </DataTemplate.Triggers>
-              </DataTemplate>
-            </DataGridTemplateColumn.CellTemplate>
-          </DataGridTemplateColumn>
-          <DataGridTemplateColumn Header="" Width="90" IsReadOnly="True">
-            <DataGridTemplateColumn.CellTemplate>
-              <DataTemplate>
-                <Button Content="Assign" Tag="{Binding SkuId}"
-                        IsEnabled="{Binding HasAvailableSeats}"
-                        Background="#6366F1" Foreground="White"
-                        FontSize="11" FontWeight="SemiBold" Padding="8,4"
-                        BorderThickness="0" Cursor="Hand" Margin="4,4"/>
-              </DataTemplate>
-            </DataGridTemplateColumn.CellTemplate>
-          </DataGridTemplateColumn>
-        </DataGrid.Columns>
-      </DataGrid>
+      <ListBox x:Name="LaAvailableList" Grid.Row="1"
+               ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+               VirtualizingPanel.IsVirtualizing="True"
+               VirtualizingPanel.VirtualizationMode="Recycling"/>
+      <Border Grid.Row="2" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,1,0,0" Padding="14,10">
+        <Button x:Name="LaBtnAssign" Content="Assign Selected Licence"
+                Style="{StaticResource Btn}" Background="#6366F1"
+                Padding="14,8" IsEnabled="False" HorizontalAlignment="Left"/>
+      </Border>
     </Grid>
-
   </Grid>
 </Grid>
 '@
@@ -548,67 +453,58 @@ function Initialize-LicenceAssignmentTool {
     $Script:LA_UI = @{
         UserSearch      = $content.FindName('LaUserSearch')
         UserList        = $content.FindName('LaUserList')
-        AssignedGrid    = $content.FindName('LaAssignedGrid')
-        AvailableGrid   = $content.FindName('LaAvailableGrid')
+        AssignedList    = $content.FindName('LaAssignedList')
+        AvailableList   = $content.FindName('LaAvailableList')
         AssignedHeader  = $content.FindName('LaAssignedHeader')
         AvailableHeader = $content.FindName('LaAvailableHeader')
+        BtnRemove       = $content.FindName('LaBtnRemove')
+        BtnAssign       = $content.FindName('LaBtnAssign')
     }
 
     $Script:LA_UI.UserSearch.Add_TextChanged({
-        try { Update-LaUserFilter }
-        catch { Write-Log "LA UserSearch error: $_" 'ERROR' }
+        try { Update-LaFilter } catch { Write-Log "LA search: $_" 'ERROR' }
     })
 
     $Script:LA_UI.UserList.Add_SelectionChanged({
         try {
             $sel = $Script:LA_UI.UserList.SelectedItem
             if (-not $sel) { return }
-            $Script:LA_SelectedUser = $sel.Tag
-            Write-Log "LA: selected user $($Script:LA_SelectedUser.displayName)" 'DEBUG'
-            Start-LaLicenceLoad -UserId $Script:LA_SelectedUser.id
-        } catch { Write-Log "LA UserList SelectionChanged error: $_" 'ERROR' }
+            $Script:LA_User = $sel.Tag
+            Write-Log "LA: selected $($Script:LA_User.displayName)" 'DEBUG'
+            Start-LaLicLoad -UserId $Script:LA_User.id
+        } catch { Write-Log "LA user select: $_" 'ERROR' }
     })
 
-    # Routed button click for Assigned grid (Remove)
-    $Script:LA_UI.AssignedGrid.AddHandler(
-        [System.Windows.Controls.Primitives.ButtonBase]::ClickEvent,
-        [System.Windows.RoutedEventHandler]{
-            param($s, $e)
-            if ($e.OriginalSource -is [System.Windows.Controls.Button]) {
-                $skuId = $e.OriginalSource.Tag
-                if ($skuId) { Start-LaRemove -SkuId $skuId }
-            }
-        }
-    )
+    $Script:LA_UI.AssignedList.Add_SelectionChanged({
+        try { Update-LaButtons } catch {}
+    })
 
-    # Routed button click for Available grid (Assign)
-    $Script:LA_UI.AvailableGrid.AddHandler(
-        [System.Windows.Controls.Primitives.ButtonBase]::ClickEvent,
-        [System.Windows.RoutedEventHandler]{
-            param($s, $e)
-            if ($e.OriginalSource -is [System.Windows.Controls.Button]) {
-                $skuId = $e.OriginalSource.Tag
-                if ($skuId) { Start-LaAssign -SkuId $skuId }
-            }
-        }
-    )
+    $Script:LA_UI.AvailableList.Add_SelectionChanged({
+        try { Update-LaButtons } catch {}
+    })
+
+    $Script:LA_UI.BtnRemove.Add_Click({
+        try { Start-LaRemove } catch { Write-Log "LA remove: $_" 'ERROR' }
+    })
+
+    $Script:LA_UI.BtnAssign.Add_Click({
+        try { Start-LaAssign } catch { Write-Log "LA assign: $_" 'ERROR' }
+    })
 
     Register-ConnectCallback 'Start-LaUserLoad'
     Register-ConnectCallback 'Start-LaSkuLoad'
+
     $Script:ResetCallbacks.Add({
-        $Script:LA_AllUsers     = @()
-        $Script:LA_AllSkus      = @()
-        $Script:LA_SelectedUser = $null
+        $Script:LA_AllUsers = @()
+        $Script:LA_AllSkus  = @()
+        $Script:LA_User     = $null
         $Script:LA_UI.UserSearch.Text      = ''
         $Script:LA_UI.UserSearch.IsEnabled = $false
         $Script:LA_UI.UserList.Items.Clear()
         $Script:LA_UI.UserList.IsEnabled   = $false
-        $Script:LA_UI.AssignedGrid.ItemsSource  = $null
-        $Script:LA_UI.AvailableGrid.ItemsSource = $null
-        $Script:LA_UI.AssignedHeader.Text       = 'Assigned Licences'
-        $Script:LA_UI.AvailableHeader.Text      = 'Available Licences'
+        Clear-LaLists
     })
 
-    Write-LaLog 'Licence Assignment ready. Select a tenant to begin.' 'Muted'
+    Write-LaLog 'Licence Assignment ready. Connect a tenant to begin.' 'Muted'
     return $content
 }
