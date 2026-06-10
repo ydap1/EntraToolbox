@@ -380,8 +380,17 @@ $Script:MainXaml = @'
           <TextBlock x:Name="MainVersion" DockPanel.Dock="Bottom"
                      Foreground="#3C3C5A" FontSize="11"
                      Margin="17,8,12,10" VerticalAlignment="Center"/>
+          <!-- search box pinned to top -->
+          <Border DockPanel.Dock="Top" Margin="8,8,8,4"
+                  Background="#242436" BorderBrush="#3C3C5A" BorderThickness="1"
+                  CornerRadius="4">
+            <TextBox x:Name="NavSearch" Background="Transparent" Foreground="#50507A"
+                     BorderThickness="0" Height="28" FontSize="11" Padding="8,0"
+                     VerticalContentAlignment="Center" CaretBrush="#E2E2F0"
+                     FocusVisualStyle="{x:Null}" Text="Search tools…"/>
+          </Border>
           <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <StackPanel x:Name="NavPanel" Margin="0,8,0,16"/>
+            <StackPanel x:Name="NavPanel" Margin="0,4,0,16"/>
           </ScrollViewer>
         </DockPanel>
       </Border>
@@ -671,6 +680,7 @@ function Show-MainWindow {
         TenantBadge     = $window.FindName('TenantBadge')
         TenantName      = $window.FindName('LblTenantName')
         NavPanel        = $window.FindName('NavPanel')
+        NavSearch       = $window.FindName('NavSearch')
         ContentArea     = $window.FindName('MainContentArea')
         Status          = $window.FindName('MainStatus')
         Version         = $window.FindName('MainVersion')
@@ -692,47 +702,120 @@ function Show-MainWindow {
 
     if ($AppVersion) { $Script:MainUI.Version.Text = "v$AppVersion" }
 
+    # ── Nav search filtering ──────────────────────────────────────────────────
+    function Invoke-NavSearch {
+        param([string]$Query)
+        $q = $Query.Trim().ToLower()
+        $children  = $Script:MainUI.NavPanel.Children
+        $catLabel  = $null
+        $catHasVis = $false
+        for ($i = 0; $i -lt $children.Count; $i++) {
+            $child = $children[$i]
+            if ($child -is [System.Windows.Controls.TextBlock]) {
+                if ($null -ne $catLabel) {
+                    $catLabel.Visibility = if ($catHasVis) { 'Visible' } else { 'Collapsed' }
+                }
+                $catLabel  = $child
+                $catHasVis = $false
+            } elseif ($child -is [System.Windows.Controls.Border]) {
+                if ([string]::IsNullOrWhiteSpace($q)) {
+                    $child.Visibility = 'Visible'
+                    $catHasVis = $true
+                } else {
+                    $sp    = $child.Child
+                    $title = $sp.Children[0].Text.ToLower()
+                    $desc  = $sp.Children[1].Text.ToLower()
+                    $show  = $title.Contains($q) -or $desc.Contains($q)
+                    $child.Visibility = if ($show) { 'Visible' } else { 'Collapsed' }
+                    if ($show) { $catHasVis = $true }
+                }
+            }
+        }
+        if ($null -ne $catLabel) {
+            $catLabel.Visibility = if ($catHasVis) { 'Visible' } else { 'Collapsed' }
+        }
+    }
+
+    $navSearchHintBrush = New-SolidBrush 'Muted'
+    $navSearchTextBrush = New-SolidBrush 'Text'
+    $Script:MainUI.NavSearch.Add_GotFocus({
+        try {
+            if ($Script:MainUI.NavSearch.Text -eq 'Search tools…') {
+                $Script:MainUI.NavSearch.Text       = ''
+                $Script:MainUI.NavSearch.Foreground = $navSearchTextBrush
+            }
+        } catch {}
+    })
+    $Script:MainUI.NavSearch.Add_LostFocus({
+        try {
+            if ([string]::IsNullOrWhiteSpace($Script:MainUI.NavSearch.Text)) {
+                $Script:MainUI.NavSearch.Text       = 'Search tools…'
+                $Script:MainUI.NavSearch.Foreground = $navSearchHintBrush
+            }
+        } catch {}
+    })
+    $Script:MainUI.NavSearch.Add_TextChanged({
+        try {
+            $q = $Script:MainUI.NavSearch.Text
+            if ($q -eq 'Search tools…') { return }
+            Invoke-NavSearch -Query $q
+        } catch {
+            Write-Log "NavSearch TextChanged error: $_" 'ERROR'
+        }
+    })
+
     # ── Register lazy-init maps (panels built on first nav click) ────────────
     $Script:NavInitializers = @{
-        'YearGroup'   = 'Initialize-PasswordResetTool'
-        'UserReset'   = 'Initialize-UserPasswordResetTool'
-        'BulkUpn'     = 'Initialize-BulkUpnChangeTool'
-        'ImmutableId' = 'Initialize-ImmutableIdTool'
-        'LastDevice'  = 'Initialize-LastDeviceTool'
-        'SignIn'      = 'Initialize-SignInLogsTool'
-        'GroupCopy'   = 'Initialize-GroupCopyTool'
-        'Teams'       = 'Initialize-TeamsProvisioningTool'
-        'Changelog'   = 'Initialize-UpdateHistoryTool'
+        'YearGroup'        = 'Initialize-PasswordResetTool'
+        'UserReset'        = 'Initialize-UserPasswordResetTool'
+        'BulkUpn'          = 'Initialize-BulkUpnChangeTool'
+        'ImmutableId'      = 'Initialize-ImmutableIdTool'
+        'Licences'         = 'Initialize-LicenceAssignmentTool'
+        'LastDevice'       = 'Initialize-LastDeviceTool'
+        'SignIn'           = 'Initialize-SignInLogsTool'
+        'MailboxDelegation'= 'Initialize-MailboxDelegationTool'
+        'GroupCopy'        = 'Initialize-GroupCopyTool'
+        'Teams'            = 'Initialize-TeamsProvisioningTool'
+        'SecureScore'      = 'Initialize-SecureScoreTool'
+        'Changelog'        = 'Initialize-UpdateHistoryTool'
     }
     $Script:NavConnectFns = @{
-        'YearGroup'   = @('Start-PwUserLoad')
-        'UserReset'   = @('Start-UprUserLoad')
-        'BulkUpn'     = @('Start-BucLoad')
-        'ImmutableId' = @('Invoke-IidOnConnect')
-        'LastDevice'  = @('Start-LdUserLoad', 'Start-LdAllDevicesLoad')
-        'SignIn'      = @('Start-SlUserLoad')
-        'GroupCopy'   = @('Start-GcUserLoad')
-        'Teams'       = @('Start-TpUserLoad')
-        'Changelog'   = @()
+        'YearGroup'        = @('Start-PwUserLoad')
+        'UserReset'        = @('Start-UprUserLoad')
+        'BulkUpn'          = @('Start-BucLoad')
+        'ImmutableId'      = @('Invoke-IidOnConnect')
+        'Licences'         = @('Start-LaUserLoad', 'Start-LaSkuLoad')
+        'LastDevice'       = @('Start-LdUserLoad', 'Start-LdAllDevicesLoad')
+        'SignIn'           = @('Start-SlUserLoad')
+        'MailboxDelegation'= @('Start-MdUserLoad')
+        'GroupCopy'        = @('Start-GcUserLoad')
+        'Teams'            = @('Start-TpUserLoad')
+        'SecureScore'      = @('Start-SsLoad')
+        'Changelog'        = @()
     }
     Write-Log 'MainWindow: lazy-init maps registered' 'DEBUG'
 
     # ── Build nav sidebar ─────────────────────────────────────────────────────
     $navDef = @(
         @{ Type = 'cat';  Label = 'USERS' }
-        @{ Type = 'tool'; Name = 'YearGroup';   Title = 'Year Group Passwords'; Desc = 'Reset passwords for an entire year group' }
-        @{ Type = 'tool'; Name = 'UserReset';   Title = 'User Password Reset';  Desc = 'Reset a single account password' }
-        @{ Type = 'tool'; Name = 'BulkUpn';     Title = 'Bulk UPN Change';      Desc = 'Move users to a different verified domain' }
-        @{ Type = 'tool'; Name = 'ImmutableId'; Title = 'Immutable ID';         Desc = 'Assign immutable ID to user' }
+        @{ Type = 'tool'; Name = 'YearGroup';        Title = 'Year Group Passwords'; Desc = 'Reset passwords for an entire year group' }
+        @{ Type = 'tool'; Name = 'UserReset';        Title = 'User Password Reset';  Desc = 'Reset a single account password' }
+        @{ Type = 'tool'; Name = 'BulkUpn';          Title = 'Bulk UPN Change';      Desc = 'Move users to a different verified domain' }
+        @{ Type = 'tool'; Name = 'ImmutableId';      Title = 'Immutable ID';         Desc = 'Assign immutable ID to user' }
+        @{ Type = 'tool'; Name = 'Licences';         Title = 'Licence Assignment';   Desc = 'View, assign, and remove M365 licences' }
         @{ Type = 'cat';  Label = 'DEVICES' }
-        @{ Type = 'tool'; Name = 'LastDevice';  Title = 'Last Device';          Desc = 'Login history and stale device detection' }
+        @{ Type = 'tool'; Name = 'LastDevice';       Title = 'Last Device';          Desc = 'Login history and stale device detection' }
         @{ Type = 'cat';  Label = 'AUDIT' }
-        @{ Type = 'tool'; Name = 'SignIn';       Title = 'Sign-In Logs';        Desc = 'Browse Entra ID sign-in events' }
+        @{ Type = 'tool'; Name = 'SignIn';            Title = 'Sign-In Logs';        Desc = 'Browse Entra ID sign-in events' }
+        @{ Type = 'cat';  Label = 'MAILBOX & EXCHANGE' }
+        @{ Type = 'tool'; Name = 'MailboxDelegation'; Title = 'Mailbox Delegation';  Desc = 'Send As, Send on Behalf, and full delegate access' }
         @{ Type = 'cat';  Label = 'GROUPS & TEAMS' }
-        @{ Type = 'tool'; Name = 'GroupCopy';   Title = 'Group Copy';           Desc = 'Copy memberships from one user to another' }
-        @{ Type = 'tool'; Name = 'Teams';        Title = 'Teams Provisioning';  Desc = 'Create and populate Microsoft Teams' }
+        @{ Type = 'tool'; Name = 'GroupCopy';        Title = 'Group Copy';           Desc = 'Copy memberships from one user to another' }
+        @{ Type = 'tool'; Name = 'Teams';             Title = 'Teams Provisioning';  Desc = 'Create and populate Microsoft Teams' }
+        @{ Type = 'cat';  Label = 'SECURITY' }
+        @{ Type = 'tool'; Name = 'SecureScore';      Title = 'Secure Score';         Desc = 'Microsoft Secure Score with control breakdown' }
         @{ Type = 'cat';  Label = 'APP' }
-        @{ Type = 'tool'; Name = 'Changelog';   Title = 'Update History';       Desc = 'Version changelog and release notes' }
+        @{ Type = 'tool'; Name = 'Changelog';        Title = 'Update History';       Desc = 'Version changelog and release notes' }
     )
 
     foreach ($def in $navDef) {
