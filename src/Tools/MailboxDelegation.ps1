@@ -239,13 +239,13 @@ function Update-MdSobAddFilter {
         $_.displayName -like "*$q*" -or $_.userPrincipalName -like "*$q*"
     } | Select-Object -First 8)
 
-    $Script:MD_UI.SobAddResults.Items.Clear()
+    $Script:MD_UI.SobAddList.Items.Clear()
     if ($matches.Count -eq 0) { $Script:MD_UI.SobAddResults.Visibility = 'Collapsed'; return }
     foreach ($u in $matches) {
         $lbi         = [System.Windows.Controls.ListBoxItem]::new()
         $lbi.Content = "$($u.displayName)  ($($u.userPrincipalName))"
         $lbi.Tag     = $u
-        [void]$Script:MD_UI.SobAddResults.Items.Add($lbi)
+        [void]$Script:MD_UI.SobAddList.Items.Add($lbi)
     }
     $Script:MD_UI.SobAddResults.Visibility = 'Visible'
 }
@@ -258,20 +258,39 @@ function Start-MdEwsLoad {
     $Script:MD_UI.EwsGrid.ItemsSource = $null
     $Script:MD_UI.EwsStatus.Text      = 'Loading… (may open browser for Exchange consent on first use)'
 
+    $msalApp = $Script:MsalApps[$Script:CurrentTenantId]
     if ($Script:MD_EwsTimer) { $Script:MD_EwsTimer.Stop() }
     $Script:MD_EwsTimer = Start-AsyncWork `
-        -Vars    @{ OwnerUpn = $OwnerUpn } `
-        -RefSeed @{ Token = $null; Xml = $null } `
+        -Vars    @{ OwnerUpn = $OwnerUpn; MsalApp = $msalApp } `
+        -RefSeed @{ Xml = $null } `
         -NoToken `
         -Script {
-            $ewsToken = Get-ExchangeToken
-            $Ref['Token'] = $ewsToken
-            $body = @"
-    <m:GetDelegate IncludePermissions="true">
-      <m:Mailbox><t:EmailAddress>$OwnerUpn</t:EmailAddress></m:Mailbox>
-    </m:GetDelegate>
-"@
-            $Ref['Xml'] = Invoke-EwsRequest -Token $ewsToken -Action 'GetDelegate' -BodyXml $body
+            # Inline EWS token acquisition (background runspace has no access to main-session functions)
+            $ewsScope = @('https://outlook.office365.com/EWS.AccessAsUser.All')
+            $ewsTok   = $null
+            $accts    = $MsalApp.GetAccountsAsync().GetAwaiter().GetResult()
+            $acct     = $accts | Select-Object -First 1
+            if ($acct) {
+                try {
+                    $r = $MsalApp.AcquireTokenSilent($ewsScope, $acct).ExecuteAsync().GetAwaiter().GetResult()
+                    if ($r.AccessToken) { $ewsTok = $r.AccessToken }
+                } catch {}
+            }
+            if (-not $ewsTok) {
+                $r = $MsalApp.AcquireTokenInteractive($ewsScope).ExecuteAsync().GetAwaiter().GetResult()
+                if (-not $r.AccessToken) { throw 'Could not acquire Exchange Online token.' }
+                $ewsTok = $r.AccessToken
+            }
+            function Send-EwsCall([string]$Tok, [string]$Action, [string]$BodyXml) {
+                $env = '<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages" xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Header><t:RequestServerVersion Version="Exchange2016"/></soap:Header><soap:Body>' + $BodyXml + '</soap:Body></soap:Envelope>'
+                $resp = Invoke-WebRequest -Uri 'https://outlook.office365.com/EWS/Exchange.asmx' -Method POST `
+                    -Headers @{ Authorization = "Bearer $Tok"; SOAPAction = ('"http://schemas.microsoft.com/exchange/services/2006/messages/' + $Action + '"') } `
+                    -ContentType 'text/xml; charset=utf-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($env))
+                if ($resp.Content -match '<faultstring>([^<]*)') { throw "EWS: $($Matches[1])" }
+                $resp.Content
+            }
+            $body = "<m:GetDelegate IncludePermissions=`"true`"><m:Mailbox><t:EmailAddress>$OwnerUpn</t:EmailAddress></m:Mailbox></m:GetDelegate>"
+            $Ref['Xml'] = Send-EwsCall -Tok $ewsTok -Action 'GetDelegate' -BodyXml $body
         } -OnComplete {
             param($ref)
             try {
@@ -301,8 +320,6 @@ function Start-MdEwsLoad {
                 }
                 $Script:MD_UI.EwsGrid.ItemsSource = $delegates
                 $Script:MD_UI.EwsStatus.Text = if ($delegates.Count -eq 0) { 'No full-access delegates.' } else { '' }
-                # Store EWS token for later add/remove actions
-                $Script:MD_UI._EwsToken = $ref['Token']
             } catch { Write-Log "MD EWS load error: $_" 'ERROR' }
         }
 }
@@ -316,34 +333,38 @@ function Start-MdEwsAdd {
         return
     }
     Write-MdLog "Adding full-access delegate $DelegateEmail..." 'TextDim'
+    $msalApp = $Script:MsalApps[$Script:CurrentTenantId]
     if ($Script:MD_ActionTimer) { $Script:MD_ActionTimer.Stop() }
     $Script:MD_ActionTimer = Start-AsyncWork `
-        -Vars    @{ OwnerUpn = $ownerUpn; DelegateEmail = $DelegateEmail } `
+        -Vars    @{ OwnerUpn = $ownerUpn; DelegateEmail = $DelegateEmail; MsalApp = $msalApp } `
         -RefSeed @{ Ok = $false } `
         -NoToken `
         -Script {
-            $ewsToken = Get-ExchangeToken
-            $body = @"
-    <m:AddDelegate>
-      <m:Mailbox><t:EmailAddress>$OwnerUpn</t:EmailAddress></m:Mailbox>
-      <m:DelegateUsers>
-        <t:DelegateUser>
-          <t:UserId><t:PrimarySmtpAddress>$DelegateEmail</t:PrimarySmtpAddress></t:UserId>
-          <t:DelegatePermissions>
-            <t:CalendarFolderPermissionLevel>Editor</t:CalendarFolderPermissionLevel>
-            <t:InboxFolderPermissionLevel>Editor</t:InboxFolderPermissionLevel>
-            <t:ContactsFolderPermissionLevel>Reviewer</t:ContactsFolderPermissionLevel>
-            <t:TasksFolderPermissionLevel>None</t:TasksFolderPermissionLevel>
-            <t:NotesFolderPermissionLevel>None</t:NotesFolderPermissionLevel>
-            <t:JournalFolderPermissionLevel>None</t:JournalFolderPermissionLevel>
-          </t:DelegatePermissions>
-          <t:ReceiveCopiesOfMeetingMessages>false</t:ReceiveCopiesOfMeetingMessages>
-          <t:ViewPrivateItems>false</t:ViewPrivateItems>
-        </t:DelegateUser>
-      </m:DelegateUsers>
-    </m:AddDelegate>
-"@
-            Invoke-EwsRequest -Token $ewsToken -Action 'AddDelegate' -BodyXml $body | Out-Null
+            $ewsScope = @('https://outlook.office365.com/EWS.AccessAsUser.All')
+            $ewsTok   = $null
+            $accts    = $MsalApp.GetAccountsAsync().GetAwaiter().GetResult()
+            $acct     = $accts | Select-Object -First 1
+            if ($acct) {
+                try {
+                    $r = $MsalApp.AcquireTokenSilent($ewsScope, $acct).ExecuteAsync().GetAwaiter().GetResult()
+                    if ($r.AccessToken) { $ewsTok = $r.AccessToken }
+                } catch {}
+            }
+            if (-not $ewsTok) {
+                $r = $MsalApp.AcquireTokenInteractive($ewsScope).ExecuteAsync().GetAwaiter().GetResult()
+                if (-not $r.AccessToken) { throw 'Could not acquire Exchange Online token.' }
+                $ewsTok = $r.AccessToken
+            }
+            function Send-EwsCall([string]$Tok, [string]$Action, [string]$BodyXml) {
+                $env = '<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages" xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Header><t:RequestServerVersion Version="Exchange2016"/></soap:Header><soap:Body>' + $BodyXml + '</soap:Body></soap:Envelope>'
+                $resp = Invoke-WebRequest -Uri 'https://outlook.office365.com/EWS/Exchange.asmx' -Method POST `
+                    -Headers @{ Authorization = "Bearer $Tok"; SOAPAction = ('"http://schemas.microsoft.com/exchange/services/2006/messages/' + $Action + '"') } `
+                    -ContentType 'text/xml; charset=utf-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($env))
+                if ($resp.Content -match '<faultstring>([^<]*)') { throw "EWS: $($Matches[1])" }
+                $resp.Content
+            }
+            $bodyXml  = "<m:AddDelegate><m:Mailbox><t:EmailAddress>$OwnerUpn</t:EmailAddress></m:Mailbox><m:DelegateUsers><t:DelegateUser><t:UserId><t:PrimarySmtpAddress>$DelegateEmail</t:PrimarySmtpAddress></t:UserId><t:DelegatePermissions><t:CalendarFolderPermissionLevel>Editor</t:CalendarFolderPermissionLevel><t:InboxFolderPermissionLevel>Editor</t:InboxFolderPermissionLevel><t:ContactsFolderPermissionLevel>Reviewer</t:ContactsFolderPermissionLevel><t:TasksFolderPermissionLevel>None</t:TasksFolderPermissionLevel><t:NotesFolderPermissionLevel>None</t:NotesFolderPermissionLevel><t:JournalFolderPermissionLevel>None</t:JournalFolderPermissionLevel></t:DelegatePermissions><t:ReceiveCopiesOfMeetingMessages>false</t:ReceiveCopiesOfMeetingMessages><t:ViewPrivateItems>false</t:ViewPrivateItems></t:DelegateUser></m:DelegateUsers></m:AddDelegate>"
+            Send-EwsCall -Tok $ewsTok -Action 'AddDelegate' -BodyXml $bodyXml | Out-Null
             $Ref['Ok'] = $true
         } -OnComplete {
             param($ref)
@@ -365,22 +386,38 @@ function Start-MdEwsRemove {
         return
     }
     Write-MdLog "Removing full-access delegate $DelegateEmail..." 'TextDim'
+    $msalApp = $Script:MsalApps[$Script:CurrentTenantId]
     if ($Script:MD_ActionTimer) { $Script:MD_ActionTimer.Stop() }
     $Script:MD_ActionTimer = Start-AsyncWork `
-        -Vars    @{ OwnerUpn = $ownerUpn; DelegateEmail = $DelegateEmail } `
+        -Vars    @{ OwnerUpn = $ownerUpn; DelegateEmail = $DelegateEmail; MsalApp = $msalApp } `
         -RefSeed @{ Ok = $false } `
         -NoToken `
         -Script {
-            $ewsToken = Get-ExchangeToken
-            $body = @"
-    <m:RemoveDelegate>
-      <m:Mailbox><t:EmailAddress>$OwnerUpn</t:EmailAddress></m:Mailbox>
-      <m:UserIds>
-        <t:UserId><t:PrimarySmtpAddress>$DelegateEmail</t:PrimarySmtpAddress></t:UserId>
-      </m:UserIds>
-    </m:RemoveDelegate>
-"@
-            Invoke-EwsRequest -Token $ewsToken -Action 'RemoveDelegate' -BodyXml $body | Out-Null
+            $ewsScope = @('https://outlook.office365.com/EWS.AccessAsUser.All')
+            $ewsTok   = $null
+            $accts    = $MsalApp.GetAccountsAsync().GetAwaiter().GetResult()
+            $acct     = $accts | Select-Object -First 1
+            if ($acct) {
+                try {
+                    $r = $MsalApp.AcquireTokenSilent($ewsScope, $acct).ExecuteAsync().GetAwaiter().GetResult()
+                    if ($r.AccessToken) { $ewsTok = $r.AccessToken }
+                } catch {}
+            }
+            if (-not $ewsTok) {
+                $r = $MsalApp.AcquireTokenInteractive($ewsScope).ExecuteAsync().GetAwaiter().GetResult()
+                if (-not $r.AccessToken) { throw 'Could not acquire Exchange Online token.' }
+                $ewsTok = $r.AccessToken
+            }
+            function Send-EwsCall([string]$Tok, [string]$Action, [string]$BodyXml) {
+                $env = '<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages" xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Header><t:RequestServerVersion Version="Exchange2016"/></soap:Header><soap:Body>' + $BodyXml + '</soap:Body></soap:Envelope>'
+                $resp = Invoke-WebRequest -Uri 'https://outlook.office365.com/EWS/Exchange.asmx' -Method POST `
+                    -Headers @{ Authorization = "Bearer $Tok"; SOAPAction = ('"http://schemas.microsoft.com/exchange/services/2006/messages/' + $Action + '"') } `
+                    -ContentType 'text/xml; charset=utf-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($env))
+                if ($resp.Content -match '<faultstring>([^<]*)') { throw "EWS: $($Matches[1])" }
+                $resp.Content
+            }
+            $bodyXml = "<m:RemoveDelegate><m:Mailbox><t:EmailAddress>$OwnerUpn</t:EmailAddress></m:Mailbox><m:UserIds><t:UserId><t:PrimarySmtpAddress>$DelegateEmail</t:PrimarySmtpAddress></t:UserId></m:UserIds></m:RemoveDelegate>"
+            Send-EwsCall -Tok $ewsTok -Action 'RemoveDelegate' -BodyXml $bodyXml | Out-Null
             $Ref['Ok'] = $true
         } -OnComplete {
             param($ref)
@@ -729,7 +766,6 @@ function Initialize-MailboxDelegationTool {
         EwsStatus      = $content.FindName('MdEwsStatus')
         EwsAddEmail    = $content.FindName('MdEwsAddEmail')
         BtnEwsAdd      = $content.FindName('MdBtnEwsAdd')
-        _EwsToken      = $null
     }
 
     $Script:MD_UI.UserSearch.Add_TextChanged({
