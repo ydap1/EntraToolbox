@@ -12,13 +12,10 @@ WPF PowerShell GUI for Entra ID (Azure AD) tenant management. Requires Windows a
 | **User Password Reset** | Users | Single-account password reset with live `forceChangePasswordNextSignIn` toggle and group membership view. |
 | **Bulk UPN Change** | Users | Move cloud-only users to a different verified domain. Import by department, office location, or individual search. |
 | **Immutable ID** | Users | Assign or remove `onPremisesImmutableId` on cloud-only accounts. Per-row checkboxes, confirm-by-typing-YES safety gate. |
-| **Licence Assignment** | Users | View assigned M365 licences for any user, assign from the tenant pool (with available seat counts), or remove licences. |
 | **Last Device** | Devices | Intune device lookup by user or by device name. Stale device filter (7 / 30 / 60 / 90 days). Time Logs sub-tab. |
 | **Sign-In Logs** | Audit | Last 50 sign-ins for any user — app, result, IP, location, device. |
-| **Mailbox Delegation** | Mailbox & Exchange | Manage Send on Behalf (Graph) and full-access delegates (EWS). Advisory panel for Send As with link to Exchange Admin Center. |
 | **Group Copy** | Groups & Teams | Copy all group memberships from one user to another. Skips groups the target already belongs to. |
 | **Teams Provisioning** | Groups & Teams | Create a Class or Standard team, populate members from a year group or direct user search, assign per-person Owner roles. |
-| **Secure Score** | Security | Tenant Microsoft Secure Score with percentage headline, threshold guide (Excellent / Good / Moderate / High risk), and per-control breakdown table. |
 
 Multi-tenant. Profiles saved locally, token cache persisted across sessions — no re-authentication unless the refresh token expires.
 
@@ -46,9 +43,6 @@ Uses the Microsoft Intune PowerShell public client ID — no app registration re
 | `GroupMember.ReadWrite.All` | Group membership view and Group Copy tab |
 | `Team.Create` | Create new Teams |
 | `TeamMember.ReadWrite.All` | Add members and owners to Teams |
-| `Directory.Read.All` | Read directory objects for Licence Assignment |
-| `MailboxSettings.ReadWrite` | Mailbox Delegation — Send on Behalf via Graph |
-| `SecurityEvents.Read.All` | Secure Score tab |
 
 ## Screenshots
 

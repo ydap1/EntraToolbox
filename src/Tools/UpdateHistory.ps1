@@ -10,18 +10,6 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
-        Version = '0.10.0'
-        Date    = '2026-06-10'
-        Changes = @(
-            'New tool: Licence Assignment — view, assign, and remove M365 licences per user'
-            'New tool: Mailbox Delegation — manage Send on Behalf (Graph) and full-access delegates (EWS) with a direct link to Exchange Admin Center for Send As'
-            'New tool: Secure Score — tenant Microsoft Secure Score with percentage headline, threshold guide, and per-control breakdown table'
-            'Nav sidebar: search box filters tools by name or description as you type, hiding empty categories automatically'
-            'Font changed to Lexend (falls back to Segoe UI if not installed)'
-            'Three new Graph scopes added: Directory.Read.All, MailboxSettings.ReadWrite, SecurityEvents.Read.All'
-        )
-    }
-    @{
         Version = '0.9.3'
         Date    = '2026-06-09'
         Changes = @(

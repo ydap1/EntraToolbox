@@ -52,9 +52,6 @@ if (-not (Get-Module MSAL.PS -ErrorAction SilentlyContinue)) {
 . (Join-Path $PSScriptRoot 'src\Tools\BulkUpnChange.ps1')
 . (Join-Path $PSScriptRoot 'src\Tools\ImmutableId.ps1')
 . (Join-Path $PSScriptRoot 'src\Tools\UpdateHistory.ps1')
-. (Join-Path $PSScriptRoot 'src\Tools\LicenceAssignment.ps1')
-. (Join-Path $PSScriptRoot 'src\Tools\MailboxDelegation.ps1')
-. (Join-Path $PSScriptRoot 'src\Tools\SecureScore.ps1')
 . (Join-Path $PSScriptRoot 'src\MainWindow.ps1')
 
 # Capture the fully-loaded script session so WPF dispatcher callbacks can resolve

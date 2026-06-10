@@ -307,7 +307,6 @@ function Invoke-ThemeXaml([string]$Xaml) {
     foreach ($old in $Script:ThemeMap.Keys) {
         $Xaml = $Xaml.Replace($old, $Script:ThemeMap[$old])
     }
-    $Xaml = $Xaml.Replace('FontFamily="Segoe UI"', 'FontFamily="Lexend, Segoe UI"')
     $Xaml
 }
 
@@ -326,10 +325,7 @@ $Script:GraphScopes = @(
     'https://graph.microsoft.com/AuditLog.Read.All',
     'https://graph.microsoft.com/GroupMember.ReadWrite.All',
     'https://graph.microsoft.com/Team.Create',
-    'https://graph.microsoft.com/TeamMember.ReadWrite.All',
-    'https://graph.microsoft.com/Directory.Read.All',
-    'https://graph.microsoft.com/MailboxSettings.ReadWrite',
-    'https://graph.microsoft.com/SecurityEvents.Read.All'
+    'https://graph.microsoft.com/TeamMember.ReadWrite.All'
 )
 
 # Per-tool callbacks fired after a new tenant connects (token ready) or before reset (token null)
@@ -747,41 +743,6 @@ function Get-GraphPaged {
         $url = $resp.'@odata.nextLink'
     } while ($url)
     $items.ToArray()
-}
-
-function Invoke-GraphPost {
-    param([string]$Path, [hashtable]$Body)
-    Invoke-RestMethod -Uri "https://graph.microsoft.com$Path" `
-        -Headers @{ Authorization = "Bearer $Script:AccessToken"; 'Content-Type' = 'application/json' } `
-        -Method POST -Body ($Body | ConvertTo-Json -Depth 10) -ErrorAction Stop
-}
-
-function Invoke-GraphDelete {
-    param([string]$Path)
-    Invoke-RestMethod -Uri "https://graph.microsoft.com$Path" `
-        -Headers @{ Authorization = "Bearer $Script:AccessToken" } `
-        -Method DELETE -ErrorAction Stop
-}
-
-function Get-ExchangeToken {
-    # Acquires a Bearer token for EWS. Reuses the MSAL app/cache from the Graph connection.
-    # Silent first; interactive fallback if no cached account.
-    if (-not $Script:CurrentTenantId) { throw 'No tenant connected.' }
-    $app = $Script:MsalApps[$Script:CurrentTenantId]
-    if (-not $app) { throw 'No MSAL app for current tenant — connect first.' }
-    $ewsScope = 'https://outlook.office365.com/EWS.AccessAsUser.All'
-
-    $accounts = $app.GetAccountsAsync().GetAwaiter().GetResult()
-    $account  = $accounts | Select-Object -First 1
-    if ($account) {
-        try {
-            $result = $app.AcquireTokenSilent(@($ewsScope), $account).ExecuteAsync().GetAwaiter().GetResult()
-            if ($result.AccessToken) { return $result.AccessToken }
-        } catch {}
-    }
-    $result = $app.AcquireTokenInteractive(@($ewsScope)).ExecuteAsync().GetAwaiter().GetResult()
-    if (-not $result.AccessToken) { throw 'Could not acquire Exchange Online token.' }
-    return $result.AccessToken
 }
 
 function Get-TenantDisplayName {
