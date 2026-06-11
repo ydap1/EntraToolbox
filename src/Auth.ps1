@@ -297,6 +297,72 @@ $Script:ThemeMap = [ordered]@{
     '#7C3AED' = '#475569'               # demo button (was vivid purple → slate)
 }
 
+# Dark minimal scrollbar injected into every XAML via Invoke-ThemeXaml.
+# Two ControlTemplates: vertical (default) and horizontal (via Orientation trigger).
+# No arrow repeat-buttons — track + thumb only.
+$Script:ThemeScrollBarStyle = @"
+<Style TargetType="ScrollBar">
+  <Setter Property="Background" Value="Transparent"/>
+  <Setter Property="Width"      Value="8"/>
+  <Setter Property="Template">
+    <Setter.Value>
+      <ControlTemplate TargetType="ScrollBar">
+        <Grid>
+          <Border Background="$($Script:Theme.Surface)" CornerRadius="4"/>
+          <Track x:Name="PART_Track" IsDirectionReversed="True">
+            <Track.Thumb>
+              <Thumb>
+                <Thumb.Template>
+                  <ControlTemplate TargetType="Thumb">
+                    <Border x:Name="bd" Background="$($Script:Theme.Border)" CornerRadius="4" Margin="1"/>
+                    <ControlTemplate.Triggers>
+                      <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="bd" Property="Background" Value="$($Script:Theme.Muted)"/>
+                      </Trigger>
+                    </ControlTemplate.Triggers>
+                  </ControlTemplate>
+                </Thumb.Template>
+              </Thumb>
+            </Track.Thumb>
+          </Track>
+        </Grid>
+      </ControlTemplate>
+    </Setter.Value>
+  </Setter>
+  <Style.Triggers>
+    <Trigger Property="Orientation" Value="Horizontal">
+      <Setter Property="Height" Value="8"/>
+      <Setter Property="Width"  Value="Auto"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ScrollBar">
+            <Grid>
+              <Border Background="$($Script:Theme.Surface)" CornerRadius="4"/>
+              <Track x:Name="PART_Track">
+                <Track.Thumb>
+                  <Thumb>
+                    <Thumb.Template>
+                      <ControlTemplate TargetType="Thumb">
+                        <Border x:Name="bd" Background="$($Script:Theme.Border)" CornerRadius="4" Margin="1"/>
+                        <ControlTemplate.Triggers>
+                          <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="$($Script:Theme.Muted)"/>
+                          </Trigger>
+                        </ControlTemplate.Triggers>
+                      </ControlTemplate>
+                    </Thumb.Template>
+                  </Thumb>
+                </Track.Thumb>
+              </Track>
+            </Grid>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Trigger>
+  </Style.Triggers>
+</Style>
+"@
+
 function Get-ThemeHex([string]$Semantic) {
     if ($Script:Theme.ContainsKey($Semantic)) { return $Script:Theme[$Semantic] }
     return $Semantic
@@ -307,6 +373,9 @@ function Invoke-ThemeXaml([string]$Xaml) {
     foreach ($old in $Script:ThemeMap.Keys) {
         $Xaml = $Xaml.Replace($old, $Script:ThemeMap[$old])
     }
+    $Xaml = $Xaml.Replace('FontFamily="Segoe UI"', 'FontFamily="Fredoka, Segoe UI"')
+    $Xaml = $Xaml.Replace('</Grid.Resources>',   "$Script:ThemeScrollBarStyle</Grid.Resources>")
+    $Xaml = $Xaml.Replace('</Window.Resources>', "$Script:ThemeScrollBarStyle</Window.Resources>")
     $Xaml
 }
 
@@ -325,7 +394,8 @@ $Script:GraphScopes = @(
     'https://graph.microsoft.com/AuditLog.Read.All',
     'https://graph.microsoft.com/GroupMember.ReadWrite.All',
     'https://graph.microsoft.com/Team.Create',
-    'https://graph.microsoft.com/TeamMember.ReadWrite.All'
+    'https://graph.microsoft.com/TeamMember.ReadWrite.All',
+    'https://graph.microsoft.com/SecurityEvents.Read.All'
 )
 
 # Per-tool callbacks fired after a new tenant connects (token ready) or before reset (token null)

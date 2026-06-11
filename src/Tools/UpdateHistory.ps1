@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.9.4'
+        Date    = '2026-06-11'
+        Changes = @(
+            'New tool: Secure Score — tenant Microsoft Secure Score with percentage headline, threshold guide, and per-control breakdown table'
+            'New Graph scope added: SecurityEvents.Read.All'
+        )
+    }
+    @{
         Version = '0.9.3'
         Date    = '2026-06-09'
         Changes = @(
