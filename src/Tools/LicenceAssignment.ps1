@@ -615,8 +615,9 @@ function Initialize-LicenceAssignmentTool {
 
     $Script:LA_UI.UserList.Add_SelectionChanged({
         try {
-            $sel = $Script:LA_UI.UserList.SelectedItem
-            Set-LaUserSelected (if ($sel) { $sel.Tag } else { $null })
+            $sel  = $Script:LA_UI.UserList.SelectedItem
+            $user = if ($sel) { $sel.Tag } else { $null }
+            Set-LaUserSelected $user
         } catch { Write-Log "LA UserList SelectionChanged error: $_" 'ERROR' }
     })
 

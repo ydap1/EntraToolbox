@@ -475,8 +475,9 @@ function Initialize-LeaverWorkflowTool {
 
     $Script:LW_UI.UserList.Add_SelectionChanged({
         try {
-            $sel = $Script:LW_UI.UserList.SelectedItem
-            Set-LwUserSelected (if ($sel) { $sel.Tag } else { $null })
+            $sel  = $Script:LW_UI.UserList.SelectedItem
+            $user = if ($sel) { $sel.Tag } else { $null }
+            Set-LwUserSelected $user
         } catch {
             Write-Log "LW UserList SelectionChanged error: $_" 'ERROR'
         }
