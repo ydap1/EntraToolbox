@@ -47,6 +47,7 @@ Uses the Microsoft Intune PowerShell public client ID — no app registration re
 | `GroupMember.ReadWrite.All` | Group membership view and Group Copy tab |
 | `Team.Create` | Create new Teams |
 | `TeamMember.ReadWrite.All` | Add members and owners to Teams |
+| `SecurityEvents.Read.All` | Secure Score tab |
 | `User.RevokeSessions.All` | Leaver Workflow — invalidate active sessions |
 | `DeviceManagementConfiguration.Read.All` | Device Compliance — fetch failing policy details |
 | `LicenseAssignment.ReadWrite.All` | Licence Assignment — read tenant SKUs, assign/remove licences |
