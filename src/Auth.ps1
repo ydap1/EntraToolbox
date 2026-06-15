@@ -390,12 +390,15 @@ $Script:GraphClientId = '14d82eec-204b-4c2f-b7e8-296a70dab67e'
 # Combined scopes for all tools
 $Script:GraphScopes = @(
     'https://graph.microsoft.com/User.ReadWrite.All',
+    'https://graph.microsoft.com/User.RevokeSessions.All',
     'https://graph.microsoft.com/DeviceManagementManagedDevices.Read.All',
+    'https://graph.microsoft.com/DeviceManagementConfiguration.Read.All',
     'https://graph.microsoft.com/AuditLog.Read.All',
     'https://graph.microsoft.com/GroupMember.ReadWrite.All',
     'https://graph.microsoft.com/Team.Create',
     'https://graph.microsoft.com/TeamMember.ReadWrite.All',
-    'https://graph.microsoft.com/SecurityEvents.Read.All'
+    'https://graph.microsoft.com/SecurityEvents.Read.All',
+    'https://graph.microsoft.com/LicenseAssignment.ReadWrite.All'
 )
 
 # Per-tool callbacks fired after a new tenant connects (token ready) or before reset (token null)

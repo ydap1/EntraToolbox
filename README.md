@@ -10,12 +10,16 @@ WPF PowerShell GUI for Entra ID (Azure AD) tenant management. Requires Windows a
 |------|----------|-------------|
 | **Year Group Passwords** | Users | Bulk password reset by department. Memorable password generation, dry-run preview, CSV export. |
 | **User Password Reset** | Users | Single-account password reset with live `forceChangePasswordNextSignIn` toggle and group membership view. |
+| **Leaver Workflow** | Users | Disable account, revoke sign-in sessions, and remove from all groups in one click. Each step is individually togglable. Dry-run aware. |
+| **Licence Assignment** | Users | View a user's assigned Microsoft 365 licences. Assign or remove individual SKUs. Shows available seats remaining per SKU. |
 | **Bulk UPN Change** | Users | Move cloud-only users to a different verified domain. Import by department, office location, or individual search. |
 | **Immutable ID** | Users | Assign or remove `onPremisesImmutableId` on cloud-only accounts. Per-row checkboxes, confirm-by-typing-YES safety gate. |
 | **Last Device** | Devices | Intune device lookup by user or by device name. Stale device filter (7 / 30 / 60 / 90 days). Time Logs sub-tab. |
+| **Device Compliance** | Devices | Overview of all Intune-managed device compliance states. Selecting a non-compliant device shows which policies are failing and how many settings are out of compliance. |
 | **Sign-In Logs** | Audit | Last 50 sign-ins for any user — app, result, IP, location, device. |
 | **Group Copy** | Groups & Teams | Copy all group memberships from one user to another. Skips groups the target already belongs to. |
 | **Teams Provisioning** | Groups & Teams | Create a Class or Standard team, populate members from a year group or direct user search, assign per-person Owner roles. |
+| **Secure Score** | Security | Microsoft Secure Score percentage headline with per-control breakdown table. |
 
 Multi-tenant. Profiles saved locally, token cache persisted across sessions — no re-authentication unless the refresh token expires.
 
@@ -43,6 +47,9 @@ Uses the Microsoft Intune PowerShell public client ID — no app registration re
 | `GroupMember.ReadWrite.All` | Group membership view and Group Copy tab |
 | `Team.Create` | Create new Teams |
 | `TeamMember.ReadWrite.All` | Add members and owners to Teams |
+| `User.RevokeSessions.All` | Leaver Workflow — invalidate active sessions |
+| `DeviceManagementConfiguration.Read.All` | Device Compliance — fetch failing policy details |
+| `LicenseAssignment.ReadWrite.All` | Licence Assignment — read tenant SKUs, assign/remove licences |
 
 ## Screenshots
 

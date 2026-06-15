@@ -696,9 +696,12 @@ function Show-MainWindow {
     $Script:NavInitializers = @{
         'YearGroup'   = 'Initialize-PasswordResetTool'
         'UserReset'   = 'Initialize-UserPasswordResetTool'
+        'Leaver'      = 'Initialize-LeaverWorkflowTool'
+        'Licence'     = 'Initialize-LicenceAssignmentTool'
         'BulkUpn'     = 'Initialize-BulkUpnChangeTool'
         'ImmutableId' = 'Initialize-ImmutableIdTool'
         'LastDevice'  = 'Initialize-LastDeviceTool'
+        'DevComp'     = 'Initialize-DeviceComplianceTool'
         'SignIn'      = 'Initialize-SignInLogsTool'
         'GroupCopy'   = 'Initialize-GroupCopyTool'
         'Teams'       = 'Initialize-TeamsProvisioningTool'
@@ -708,9 +711,12 @@ function Show-MainWindow {
     $Script:NavConnectFns = @{
         'YearGroup'   = @('Start-PwUserLoad')
         'UserReset'   = @('Start-UprUserLoad')
+        'Leaver'      = @('Start-LwUserLoad')
+        'Licence'     = @('Start-LaUserLoad', 'Start-LaSkuLoad')
         'BulkUpn'     = @('Start-BucLoad')
         'ImmutableId' = @('Invoke-IidOnConnect')
         'LastDevice'  = @('Start-LdUserLoad', 'Start-LdAllDevicesLoad')
+        'DevComp'     = @('Start-DcLoad')
         'SignIn'      = @('Start-SlUserLoad')
         'GroupCopy'   = @('Start-GcUserLoad')
         'Teams'       = @('Start-TpUserLoad')
@@ -724,10 +730,13 @@ function Show-MainWindow {
         @{ Type = 'cat';  Label = 'USERS' }
         @{ Type = 'tool'; Name = 'YearGroup';   Title = 'Year Group Passwords'; Desc = 'Reset passwords for an entire year group' }
         @{ Type = 'tool'; Name = 'UserReset';   Title = 'User Password Reset';  Desc = 'Reset a single account password' }
+        @{ Type = 'tool'; Name = 'Leaver';      Title = 'Leaver Workflow';      Desc = 'Disable, revoke sessions, remove from groups' }
+        @{ Type = 'tool'; Name = 'Licence';     Title = 'Licence Assignment';   Desc = 'View and assign Microsoft 365 licences' }
         @{ Type = 'tool'; Name = 'BulkUpn';     Title = 'Bulk UPN Change';      Desc = 'Move users to a different verified domain' }
         @{ Type = 'tool'; Name = 'ImmutableId'; Title = 'Immutable ID';         Desc = 'Assign immutable ID to user' }
         @{ Type = 'cat';  Label = 'DEVICES' }
         @{ Type = 'tool'; Name = 'LastDevice';  Title = 'Last Device';          Desc = 'Login history and stale device detection' }
+        @{ Type = 'tool'; Name = 'DevComp';     Title = 'Device Compliance';    Desc = 'Compliance overview with failure reasons' }
         @{ Type = 'cat';  Label = 'AUDIT' }
         @{ Type = 'tool'; Name = 'SignIn';       Title = 'Sign-In Logs';        Desc = 'Browse Entra ID sign-in events' }
         @{ Type = 'cat';  Label = 'GROUPS & TEAMS' }

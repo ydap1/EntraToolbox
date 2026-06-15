@@ -10,6 +10,16 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.10.0'
+        Date    = '2026-06-15'
+        Changes = @(
+            'New tool: Leaver Workflow — disable account, revoke sign-in sessions, and remove from all groups in one click'
+            'New tool: Device Compliance — overview of all Intune device compliance states with per-device failing policy breakdown'
+            'New tool: Licence Assignment — view, assign, and remove Microsoft 365 licence SKUs per user'
+            'New Graph scopes: User.RevokeSessions.All, DeviceManagementConfiguration.Read.All, LicenseAssignment.ReadWrite.All'
+        )
+    }
+    @{
         Version = '0.9.4'
         Date    = '2026-06-11'
         Changes = @(
