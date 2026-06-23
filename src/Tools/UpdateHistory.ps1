@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.12.1'
+        Date    = '2026-06-23'
+        Changes = @(
+            'Last Device (By Device) report: added Model and Serial Number columns'
+            'Users are now listed one-per-line within the cell so devices with many users stay readable'
+        )
+    }
+    @{
         Version = '0.12.0'
         Date    = '2026-06-23'
         Changes = @(

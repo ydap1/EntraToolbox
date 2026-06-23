@@ -194,7 +194,7 @@ function Start-LdAllDevicesLoad {
     if ($Script:LD_AllDevTimer) { $Script:LD_AllDevTimer.Stop() }
     $Script:LD_AllDevTimer = Start-AsyncWork -RefSeed @{ Devices = $null } -Script {
         $devices = [System.Collections.Generic.List[object]]::new()
-        $url = 'https://graph.microsoft.com/beta/deviceManagement/managedDevices?$select=id,deviceName,usersLoggedOn,lastSyncDateTime&$top=999'
+        $url = 'https://graph.microsoft.com/beta/deviceManagement/managedDevices?$select=id,deviceName,model,serialNumber,usersLoggedOn,lastSyncDateTime&$top=999'
         do {
             $resp = Invoke-RestMethod -Uri $url `
                 -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
@@ -416,12 +416,16 @@ function Export-LdByDeviceReport {
     $rows   = [System.Collections.Generic.List[PSObject]]::new()
     foreach ($d in $Script:LD_AllDevices) {
         $logons = Get-LdRecentLogons -Device $d -Cutoff $cutoff
+        # One user per line keeps the cell readable when 20+ users share a device
+        # (Excel shows each on its own line with wrap-text).
         $rows.Add([PSCustomObject]@{
-            DeviceName  = $d.deviceName
-            Users       = (($logons | ForEach-Object { $_.DisplayName }) -join '; ')
-            UserCount   = $logons.Count
-            LastSignIn  = if ($logons.Count) { $logons[0].SignIn.ToString('yyyy-MM-dd HH:mm') } else { '' }
-            LastCheckIn = (Get-LdCheckinString -Device $d)
+            DeviceName   = $d.deviceName
+            Users        = (($logons | ForEach-Object { $_.DisplayName }) -join "`r`n")
+            Model        = $d.model
+            SerialNumber = $d.serialNumber
+            UserCount    = $logons.Count
+            LastSignIn   = if ($logons.Count) { $logons[0].SignIn.ToString('yyyy-MM-dd HH:mm') } else { '' }
+            LastCheckIn  = (Get-LdCheckinString -Device $d)
         })
     }
     $sorted = $rows | Sort-Object DeviceName
