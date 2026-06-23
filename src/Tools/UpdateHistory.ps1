@@ -10,6 +10,13 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.12.2'
+        Date    = '2026-06-23'
+        Changes = @(
+            'Last Device reports: de-duplicate users per device so each user is listed once (most recent sign-in)'
+        )
+    }
+    @{
         Version = '0.12.1'
         Date    = '2026-06-23'
         Changes = @(

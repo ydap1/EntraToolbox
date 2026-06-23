@@ -329,7 +329,8 @@ function Show-LdDeviceUsers {
 # ── CSV reports: devices + the users who signed in over the past 3 months ───────
 $Script:LD_ReportMonths = 3
 
-# Collect (user, sign-in) pairs for a device within the cutoff window, newest first.
+# Collect (user, sign-in) pairs for a device within the cutoff window, newest
+# first and one entry per user (a user can appear multiple times in usersLoggedOn).
 function Get-LdRecentLogons {
     param($Device, [datetime]$Cutoff)
     $result = [System.Collections.Generic.List[PSObject]]::new()
@@ -339,12 +340,15 @@ function Get-LdRecentLogons {
         if ($signIn -lt $Cutoff) { continue }
         $user = $Script:LD_AllUsers | Where-Object { $_.id -eq $logon.userId } | Select-Object -First 1
         $result.Add([PSCustomObject]@{
+            UserId      = $logon.userId
             DisplayName = if ($user) { $user.displayName } else { $logon.userId }
             UPN         = if ($user) { $user.userPrincipalName } else { '' }
             SignIn      = $signIn
         })
     }
-    @($result | Sort-Object SignIn -Descending)
+    # newest first, then keep only the most recent sign-in per user
+    $seen = [System.Collections.Generic.HashSet[string]]::new()
+    @($result | Sort-Object SignIn -Descending | Where-Object { $seen.Add([string]$_.UserId) })
 }
 
 # Format a device's Intune lastSyncDateTime as local time (blank if never synced).
