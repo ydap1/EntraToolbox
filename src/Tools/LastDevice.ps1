@@ -326,52 +326,106 @@ function Show-LdDeviceUsers {
     $Script:LD_UI.DevUserList.Visibility        = 'Visible'
 }
 
-# ── CSV report: every device + users who signed in over the past month ──────────
-function Export-LdMonthlyReport {
+# ── CSV reports: devices + the users who signed in over the past 3 months ───────
+$Script:LD_ReportMonths = 3
+
+# Collect (user, sign-in) pairs for a device within the cutoff window, newest first.
+function Get-LdRecentLogons {
+    param($Device, [datetime]$Cutoff)
+    $result = [System.Collections.Generic.List[PSObject]]::new()
+    foreach ($logon in $Device.usersLoggedOn) {
+        if (-not $logon.lastLogOnDateTime) { continue }
+        try { $signIn = ([datetime]$logon.lastLogOnDateTime).ToLocalTime() } catch { continue }
+        if ($signIn -lt $Cutoff) { continue }
+        $user = $Script:LD_AllUsers | Where-Object { $_.id -eq $logon.userId } | Select-Object -First 1
+        $result.Add([PSCustomObject]@{
+            DisplayName = if ($user) { $user.displayName } else { $logon.userId }
+            UPN         = if ($user) { $user.userPrincipalName } else { '' }
+            SignIn      = $signIn
+        })
+    }
+    @($result | Sort-Object SignIn -Descending)
+}
+
+# Format a device's Intune lastSyncDateTime as local time (blank if never synced).
+function Get-LdCheckinString {
+    param($Device)
+    if (-not $Device.lastSyncDateTime) { return '' }
+    try {
+        $parsed = [datetime]::Parse($Device.lastSyncDateTime,
+            [System.Globalization.CultureInfo]::InvariantCulture,
+            [System.Globalization.DateTimeStyles]::RoundtripKind)
+        if ($parsed.Year -gt 1) { return $parsed.ToLocalTime().ToString('yyyy-MM-dd HH:mm') }
+    } catch {}
+    return ''
+}
+
+# Prompt for a path and write rows to CSV. Returns $true if saved.
+function Save-LdReportCsv {
+    param([object[]]$Rows, [string]$BaseName)
+    $dlg = New-Object Microsoft.Win32.SaveFileDialog
+    $dlg.Filter   = 'CSV files (*.csv)|*.csv'
+    $dlg.FileName = "${BaseName}_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+    if (-not $dlg.ShowDialog()) { return $false }
+    $Rows | Export-Csv -Path $dlg.FileName -NoTypeInformation -Encoding UTF8
+    Write-Log "LastDevice: exported $($Rows.Count) rows to $($dlg.FileName)" 'INFO'
+    Write-LdLog "Report exported: $($dlg.FileName) ($($Rows.Count) rows)" 'Success'
+    Set-MainStatus "Saved: $($dlg.FileName)" 'Success'
+    [System.Windows.MessageBox]::Show("Saved to:`n$($dlg.FileName)", 'Report Complete', 'OK', 'Information') | Out-Null
+    return $true
+}
+
+# By User: one row per device/user sign-in within the past 3 months.
+function Export-LdByUserReport {
     if (-not $Script:LD_AllDevices -or $Script:LD_AllDevices.Count -eq 0) {
         Write-LdLog 'Report: no device data loaded yet — connect a tenant first.' 'Warning'
         Set-MainStatus 'No device data loaded yet.' 'Warning'
         return
     }
-
-    $cutoff = [datetime]::Now.AddMonths(-1)
+    $cutoff = [datetime]::Now.AddMonths(-$Script:LD_ReportMonths)
     $rows   = [System.Collections.Generic.List[PSObject]]::new()
-
     foreach ($d in $Script:LD_AllDevices) {
-        foreach ($logon in $d.usersLoggedOn) {
-            if (-not $logon.lastLogOnDateTime) { continue }
-            try { $signIn = ([datetime]$logon.lastLogOnDateTime).ToLocalTime() } catch { continue }
-            if ($signIn -lt $cutoff) { continue }
-            $user = $Script:LD_AllUsers | Where-Object { $_.id -eq $logon.userId } | Select-Object -First 1
+        foreach ($logon in (Get-LdRecentLogons -Device $d -Cutoff $cutoff)) {
             $rows.Add([PSCustomObject]@{
                 DeviceName        = $d.deviceName
-                User              = if ($user) { $user.displayName } else { $logon.userId }
-                UserPrincipalName = if ($user) { $user.userPrincipalName } else { '' }
-                LastSignIn        = $signIn.ToString('yyyy-MM-dd HH:mm')
+                User              = $logon.DisplayName
+                UserPrincipalName = $logon.UPN
+                LastSignIn        = $logon.SignIn.ToString('yyyy-MM-dd HH:mm')
             })
         }
     }
-
     if ($rows.Count -eq 0) {
-        Write-LdLog 'Report: no sign-ins in the past month.' 'TextDim'
-        Set-MainStatus 'No sign-ins in the past month.' 'TextDim'
+        Write-LdLog 'Report: no sign-ins in the past 3 months.' 'TextDim'
+        Set-MainStatus 'No sign-ins in the past 3 months.' 'TextDim'
         return
     }
-
-    $dlg = New-Object Microsoft.Win32.SaveFileDialog
-    $dlg.Filter   = 'CSV files (*.csv)|*.csv'
-    $dlg.FileName = "DeviceUserReport_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
-    if (-not $dlg.ShowDialog()) { return }
-
     $sorted = $rows | Sort-Object `
         @{ Expression = 'DeviceName' }, `
         @{ Expression = { [datetime]$_.LastSignIn }; Descending = $true }
-    $sorted | Export-Csv -Path $dlg.FileName -NoTypeInformation -Encoding UTF8
+    [void](Save-LdReportCsv -Rows ([object[]]$sorted) -BaseName 'DeviceUserReport')
+}
 
-    Write-Log "LastDevice: exported monthly report ($($rows.Count) rows) to $($dlg.FileName)" 'INFO'
-    Write-LdLog "Report exported: $($dlg.FileName) ($($rows.Count) sign-ins)" 'Success'
-    Set-MainStatus "Saved: $($dlg.FileName)" 'Success'
-    [System.Windows.MessageBox]::Show("Saved to:`n$($dlg.FileName)", 'Report Complete', 'OK', 'Information') | Out-Null
+# By Device: one row per Intune device, listing the users that signed in over the past 3 months.
+function Export-LdByDeviceReport {
+    if (-not $Script:LD_AllDevices -or $Script:LD_AllDevices.Count -eq 0) {
+        Write-LdLog 'Report: no device data loaded yet — connect a tenant first.' 'Warning'
+        Set-MainStatus 'No device data loaded yet.' 'Warning'
+        return
+    }
+    $cutoff = [datetime]::Now.AddMonths(-$Script:LD_ReportMonths)
+    $rows   = [System.Collections.Generic.List[PSObject]]::new()
+    foreach ($d in $Script:LD_AllDevices) {
+        $logons = Get-LdRecentLogons -Device $d -Cutoff $cutoff
+        $rows.Add([PSCustomObject]@{
+            DeviceName  = $d.deviceName
+            Users       = (($logons | ForEach-Object { $_.DisplayName }) -join '; ')
+            UserCount   = $logons.Count
+            LastSignIn  = if ($logons.Count) { $logons[0].SignIn.ToString('yyyy-MM-dd HH:mm') } else { '' }
+            LastCheckIn = (Get-LdCheckinString -Device $d)
+        })
+    }
+    $sorted = $rows | Sort-Object DeviceName
+    [void](Save-LdReportCsv -Rows ([object[]]$sorted) -BaseName 'DeviceReport')
 }
 
 # ── XAML ───────────────────────────────────────────────────────────────────────
@@ -717,7 +771,7 @@ $Script:LastDeviceXaml = @'
                 <Button x:Name="LdBtnReport" Content="Export Report (CSV)"
                         Style="{StaticResource PrimaryBtn}" Background="#242436" Padding="14,7"
                         Margin="8,0,0,0" HorizontalAlignment="Left"
-                        ToolTip="Export all devices and the users that signed into them in the past month"/>
+                        ToolTip="Export all devices and the users that signed into them in the past 3 months"/>
               </StackPanel>
             </Border>
           </Grid>
@@ -766,6 +820,7 @@ $Script:LastDeviceXaml = @'
               <RowDefinition Height="Auto"/>
               <RowDefinition Height="*"/>
               <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
             <Border Grid.Row="0" Background="#1C1C2A" Padding="12,10"
                     BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
@@ -784,6 +839,13 @@ $Script:LastDeviceXaml = @'
             <Border x:Name="LdDevUserDetailPanel" Grid.Row="2" Background="#1C1C2A" Padding="10,6"
                     BorderBrush="#3C3C5A" BorderThickness="0,1,0,0" Visibility="Collapsed">
               <TextBlock x:Name="LdDevUserDetail" Foreground="#7878A0" FontSize="11" TextWrapping="Wrap"/>
+            </Border>
+            <Border Grid.Row="3" Background="#1C1C2A" Padding="10,8"
+                    BorderBrush="#3C3C5A" BorderThickness="0,1,0,0">
+              <Button x:Name="LdBtnDeviceReport" Content="Export Report (CSV)"
+                      Style="{StaticResource PrimaryBtn}" Background="#242436" Padding="14,7"
+                      HorizontalAlignment="Left"
+                      ToolTip="Export every Intune device and the users that signed into it in the past 3 months"/>
             </Border>
           </Grid>
         </Border>
@@ -840,6 +902,7 @@ function Initialize-LastDeviceTool {
         DevDetailPanel    = $content.FindName('LdDevDetailPanel')
         BtnCopy           = $content.FindName('LdBtnCopy')
         BtnReport         = $content.FindName('LdBtnReport')
+        BtnDeviceReport   = $content.FindName('LdBtnDeviceReport')
         DevBrowserSearch  = $content.FindName('LdDevBrowserSearch')
         DevBrowserList    = $content.FindName('LdDevBrowserList')
         DevUserList       = $content.FindName('LdDevUserList')
@@ -923,10 +986,16 @@ function Initialize-LastDeviceTool {
         }
     })
 
-    # Export monthly device/user report
+    # Export By-User report (one row per device/user sign-in, past 3 months)
     $Script:LD_UI.BtnReport.Add_Click({
-        try { Export-LdMonthlyReport }
+        try { Export-LdByUserReport }
         catch { Write-Log "BtnReport click error: $_" 'ERROR' }
+    })
+
+    # Export By-Device report (one row per device, past 3 months)
+    $Script:LD_UI.BtnDeviceReport.Add_Click({
+        try { Export-LdByDeviceReport }
+        catch { Write-Log "BtnDeviceReport click error: $_" 'ERROR' }
     })
 
     # By Device: device search filter

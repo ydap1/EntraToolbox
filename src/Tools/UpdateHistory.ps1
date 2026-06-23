@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.12.0'
+        Date    = '2026-06-23'
+        Changes = @(
+            'Last Device (By Device): new "Export Report (CSV)" button — one row per Intune device listing the users that signed into it (with user count, last sign-in, and last check-in) over the past 3 months'
+            'Last Device (By User): report window extended from 1 month to 3 months'
+        )
+    }
+    @{
         Version = '0.11.0'
         Date    = '2026-06-23'
         Changes = @(

@@ -14,7 +14,7 @@ WPF PowerShell GUI for Entra ID (Azure AD) tenant management. Requires Windows a
 | **Licence Assignment** | Users | View a user's assigned Microsoft 365 licences. Assign or remove individual SKUs. Shows available seats remaining per SKU. |
 | **Bulk UPN Change** | Users | Move cloud-only users to a different verified domain. Import by department, office location, or individual search. |
 | **Immutable ID** | Users | Assign or remove `onPremisesImmutableId` on cloud-only accounts. Per-row checkboxes, confirm-by-typing-YES safety gate. |
-| **Last Device** | Devices | Intune device lookup by user or by device name. Stale device filter (7 / 30 / 60 / 90 days). Time Logs sub-tab. Export a CSV report of every device and the users that signed into it in the past month. |
+| **Last Device** | Devices | Intune device lookup by user or by device name. Stale device filter (7 / 30 / 60 / 90 days). Time Logs sub-tab. Export CSV reports (per device/user sign-in, or one row per device) of the users that signed into each device in the past 3 months. |
 | **Device Compliance** | Devices | Overview of all Intune-managed device compliance states. Selecting a non-compliant device shows which policies are failing and how many settings are out of compliance. |
 | **Sign-In Logs** | Audit | Last 50 sign-ins for any user — app, result, IP, location, device. |
 | **Group Copy** | Groups & Teams | Copy all group memberships from one user to another. Skips groups the target already belongs to. |
