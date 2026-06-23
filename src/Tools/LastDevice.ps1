@@ -326,6 +326,54 @@ function Show-LdDeviceUsers {
     $Script:LD_UI.DevUserList.Visibility        = 'Visible'
 }
 
+# ── CSV report: every device + users who signed in over the past month ──────────
+function Export-LdMonthlyReport {
+    if (-not $Script:LD_AllDevices -or $Script:LD_AllDevices.Count -eq 0) {
+        Write-LdLog 'Report: no device data loaded yet — connect a tenant first.' 'Warning'
+        Set-MainStatus 'No device data loaded yet.' 'Warning'
+        return
+    }
+
+    $cutoff = [datetime]::Now.AddMonths(-1)
+    $rows   = [System.Collections.Generic.List[PSObject]]::new()
+
+    foreach ($d in $Script:LD_AllDevices) {
+        foreach ($logon in $d.usersLoggedOn) {
+            if (-not $logon.lastLogOnDateTime) { continue }
+            try { $signIn = ([datetime]$logon.lastLogOnDateTime).ToLocalTime() } catch { continue }
+            if ($signIn -lt $cutoff) { continue }
+            $user = $Script:LD_AllUsers | Where-Object { $_.id -eq $logon.userId } | Select-Object -First 1
+            $rows.Add([PSCustomObject]@{
+                DeviceName        = $d.deviceName
+                User              = if ($user) { $user.displayName } else { $logon.userId }
+                UserPrincipalName = if ($user) { $user.userPrincipalName } else { '' }
+                LastSignIn        = $signIn.ToString('yyyy-MM-dd HH:mm')
+            })
+        }
+    }
+
+    if ($rows.Count -eq 0) {
+        Write-LdLog 'Report: no sign-ins in the past month.' 'TextDim'
+        Set-MainStatus 'No sign-ins in the past month.' 'TextDim'
+        return
+    }
+
+    $dlg = New-Object Microsoft.Win32.SaveFileDialog
+    $dlg.Filter   = 'CSV files (*.csv)|*.csv'
+    $dlg.FileName = "DeviceUserReport_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+    if (-not $dlg.ShowDialog()) { return }
+
+    $sorted = $rows | Sort-Object `
+        @{ Expression = 'DeviceName' }, `
+        @{ Expression = { [datetime]$_.LastSignIn }; Descending = $true }
+    $sorted | Export-Csv -Path $dlg.FileName -NoTypeInformation -Encoding UTF8
+
+    Write-Log "LastDevice: exported monthly report ($($rows.Count) rows) to $($dlg.FileName)" 'INFO'
+    Write-LdLog "Report exported: $($dlg.FileName) ($($rows.Count) sign-ins)" 'Success'
+    Set-MainStatus "Saved: $($dlg.FileName)" 'Success'
+    [System.Windows.MessageBox]::Show("Saved to:`n$($dlg.FileName)", 'Report Complete', 'OK', 'Information') | Out-Null
+}
+
 # ── XAML ───────────────────────────────────────────────────────────────────────
 $Script:LastDeviceXaml = @'
 <Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -662,9 +710,15 @@ $Script:LastDeviceXaml = @'
             </Border>
             <Border Grid.Row="3" Background="#1C1C2A" Padding="10,8"
                     BorderBrush="#3C3C5A" BorderThickness="0,1,0,0">
-              <Button x:Name="LdBtnCopy" Content="Copy Device Name" IsEnabled="False"
-                      Style="{StaticResource PrimaryBtn}" Background="#6366F1" Padding="14,7"
-                      HorizontalAlignment="Left"/>
+              <StackPanel Orientation="Horizontal">
+                <Button x:Name="LdBtnCopy" Content="Copy Device Name" IsEnabled="False"
+                        Style="{StaticResource PrimaryBtn}" Background="#6366F1" Padding="14,7"
+                        HorizontalAlignment="Left"/>
+                <Button x:Name="LdBtnReport" Content="Export Report (CSV)"
+                        Style="{StaticResource PrimaryBtn}" Background="#242436" Padding="14,7"
+                        Margin="8,0,0,0" HorizontalAlignment="Left"
+                        ToolTip="Export all devices and the users that signed into them in the past month"/>
+              </StackPanel>
             </Border>
           </Grid>
         </Border>
@@ -785,6 +839,7 @@ function Initialize-LastDeviceTool {
         DevDetail         = $content.FindName('LdDevDetail')
         DevDetailPanel    = $content.FindName('LdDevDetailPanel')
         BtnCopy           = $content.FindName('LdBtnCopy')
+        BtnReport         = $content.FindName('LdBtnReport')
         DevBrowserSearch  = $content.FindName('LdDevBrowserSearch')
         DevBrowserList    = $content.FindName('LdDevBrowserList')
         DevUserList       = $content.FindName('LdDevUserList')
@@ -866,6 +921,12 @@ function Initialize-LastDeviceTool {
         } catch {
             Write-Log "BtnCopy click error: $_" 'ERROR'
         }
+    })
+
+    # Export monthly device/user report
+    $Script:LD_UI.BtnReport.Add_Click({
+        try { Export-LdMonthlyReport }
+        catch { Write-Log "BtnReport click error: $_" 'ERROR' }
     })
 
     # By Device: device search filter

@@ -10,6 +10,13 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.11.0'
+        Date    = '2026-06-23'
+        Changes = @(
+            'Last Device (By User): new "Export Report (CSV)" button — exports every device and the users that signed into it within the past month'
+        )
+    }
+    @{
         Version = '0.10.0'
         Date    = '2026-06-15'
         Changes = @(
