@@ -118,7 +118,7 @@ function Start-LdDeviceLoad {
             # Intune OData does not support lambda filters on usersLoggedOn, so we page
             # all devices and match client-side.
             $matches = [System.Collections.Generic.List[object]]::new()
-            $url = 'https://graph.microsoft.com/beta/deviceManagement/managedDevices?$select=id,deviceName,usersLoggedOn&$top=999'
+            $url = 'https://graph.microsoft.com/beta/deviceManagement/managedDevices?$select=id,deviceName,model,usersLoggedOn&$top=999'
             do {
                 $resp = Invoke-RestMethod -Uri $url `
                     -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
@@ -964,17 +964,24 @@ function Initialize-LastDeviceTool {
             Set-MainStatus "Copied: $($sel.Content)" 'Success'
             $Script:LD_UI.BtnCopy.IsEnabled = $true
 
+            $parts = [System.Collections.Generic.List[string]]::new()
+            if ($sel.Tag.model) { $parts.Add("Model: $($sel.Tag.model)") }
+
             $userSel = $Script:LD_UI.UserList.SelectedItem
             if ($userSel) {
                 $userId = $userSel.Tag.id
                 $entry = $sel.Tag.usersLoggedOn | Where-Object { $_.userId -eq $userId } | Select-Object -First 1
                 if ($entry -and $entry.lastLogOnDateTime) {
                     $dt = ([datetime]$entry.lastLogOnDateTime).ToLocalTime().ToString('yyyy-MM-dd HH:mm')
-                    $Script:LD_UI.DevDetail.Text = "Last used by $($userSel.Content) on this device: $dt"
-                    $Script:LD_UI.DevDetailPanel.Visibility = 'Visible'
-                } else {
-                    $Script:LD_UI.DevDetailPanel.Visibility = 'Collapsed'
+                    $parts.Add("Last used by $($userSel.Content): $dt")
                 }
+            }
+
+            if ($parts.Count -gt 0) {
+                $Script:LD_UI.DevDetail.Text = $parts -join '  ·  '
+                $Script:LD_UI.DevDetailPanel.Visibility = 'Visible'
+            } else {
+                $Script:LD_UI.DevDetailPanel.Visibility = 'Collapsed'
             }
         } catch {
             Write-Log "DevList SelectionChanged error: $_" 'ERROR'

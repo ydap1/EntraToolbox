@@ -10,6 +10,13 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.12.3'
+        Date    = '2026-06-30'
+        Changes = @(
+            'Last Device (By User): device detail bar now shows the model alongside the last sign-in timestamp'
+        )
+    }
+    @{
         Version = '0.12.2'
         Date    = '2026-06-23'
         Changes = @(
