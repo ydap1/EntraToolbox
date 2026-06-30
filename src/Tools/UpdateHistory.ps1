@@ -10,6 +10,18 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.13.0'
+        Date    = '2026-06-30'
+        Changes = @(
+            'Last Device (By User): compliance dot (green/red/grey) on each device in the list'
+            'Last Device (By User): detail bar now shows serial number, OS version, and last Intune sync alongside model'
+            'Last Device (By User): Sync Device button requests an immediate Intune sync for the selected device'
+            'Last Device (Stale Devices): Model column added to the grid'
+            'Last Device (Stale Devices): Export Report (CSV) button added'
+            'Auth: upgraded to DeviceManagementManagedDevices.ReadWrite.All scope (re-auth required)'
+        )
+    }
+    @{
         Version = '0.12.3'
         Date    = '2026-06-30'
         Changes = @(

@@ -117,19 +117,19 @@ function Start-LdDeviceLoad {
         -Script {
             # Intune OData does not support lambda filters on usersLoggedOn, so we page
             # all devices and match client-side.
-            $matches = [System.Collections.Generic.List[object]]::new()
-            $url = 'https://graph.microsoft.com/beta/deviceManagement/managedDevices?$select=id,deviceName,model,usersLoggedOn&$top=999'
+            $found = [System.Collections.Generic.List[object]]::new()
+            $url = 'https://graph.microsoft.com/beta/deviceManagement/managedDevices?$select=id,deviceName,model,serialNumber,osVersion,complianceState,lastSyncDateTime,usersLoggedOn&$top=999'
             do {
                 $resp = Invoke-RestMethod -Uri $url `
                     -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
                 foreach ($d in $resp.value) {
                     if ($d.usersLoggedOn | Where-Object { $_.userId -eq $UserId }) {
-                        [void]$matches.Add($d)
+                        [void]$found.Add($d)
                     }
                 }
                 $url = $resp.'@odata.nextLink'
             } while ($url)
-            $Ref['Devices'] = $matches.ToArray()
+            $Ref['Devices'] = $found.ToArray()
         } -OnComplete {
             param($ref)
             try {
@@ -164,9 +164,32 @@ function Start-LdDeviceLoad {
                 }
 
                 foreach ($d in $devices) {
-                    $lbi         = [System.Windows.Controls.ListBoxItem]::new()
-                    $lbi.Content = $d.deviceName
-                    $lbi.Tag     = $d
+                    $lbi     = [System.Windows.Controls.ListBoxItem]::new()
+                    $lbi.Tag = $d
+
+                    $panel = [System.Windows.Controls.StackPanel]::new()
+                    $panel.Orientation = 'Horizontal'
+
+                    $dot = [System.Windows.Controls.TextBlock]::new()
+                    $dot.Text              = '●'
+                    $dot.FontSize          = 10
+                    $dot.VerticalAlignment = 'Center'
+                    $dot.Margin            = [System.Windows.Thickness]::new(0, 0, 6, 0)
+                    $dotColor = switch ($d.complianceState) {
+                        'compliant'    { '#22C55E' }
+                        'noncompliant' { '#EF4444' }
+                        default        { '#50507A' }
+                    }
+                    $dot.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($dotColor)
+
+                    $nameText = [System.Windows.Controls.TextBlock]::new()
+                    $nameText.Text              = $d.deviceName
+                    $nameText.VerticalAlignment = 'Center'
+
+                    [void]$panel.Children.Add($dot)
+                    [void]$panel.Children.Add($nameText)
+                    $lbi.Content = $panel
+
                     $entry = $d.usersLoggedOn | Where-Object { $_.userId -eq $userId } | Select-Object -First 1
                     if ($entry -and $entry.lastLogOnDateTime) {
                         $lbi.ToolTip = "Last check-in: $([datetime]$entry.lastLogOnDateTime)"
@@ -283,6 +306,7 @@ function Update-LdStaleFilter {
 
         $rows.Add([PSCustomObject]@{
             DeviceName  = $d.deviceName
+            Model       = $d.model
             LastUser    = $lastUser
             LastCheckin = $checkinStr
             DaysSince   = if ($sortNum -eq [int]::MaxValue) { 'Never' } else { "$sortNum" }
@@ -434,6 +458,17 @@ function Export-LdByDeviceReport {
     }
     $sorted = $rows | Sort-Object DeviceName
     [void](Save-LdReportCsv -Rows ([object[]]$sorted) -BaseName 'DeviceReport')
+}
+
+function Export-LdStaleReport {
+    $rows = $Script:LD_UI.StaleGrid.ItemsSource
+    if (-not $rows -or @($rows).Count -eq 0) {
+        Write-LdLog 'Stale report: no data — connect a tenant first.' 'Warning'
+        Set-MainStatus 'No stale device data.' 'Warning'
+        return
+    }
+    $clean = @($rows) | Select-Object DeviceName, Model, LastUser, LastCheckin, DaysSince
+    [void](Save-LdReportCsv -Rows ([object[]]$clean) -BaseName 'StaleDevices')
 }
 
 # ── XAML ───────────────────────────────────────────────────────────────────────
@@ -776,6 +811,10 @@ $Script:LastDeviceXaml = @'
                 <Button x:Name="LdBtnCopy" Content="Copy Device Name" IsEnabled="False"
                         Style="{StaticResource PrimaryBtn}" Background="#6366F1" Padding="14,7"
                         HorizontalAlignment="Left"/>
+                <Button x:Name="LdBtnSync" Content="Sync Device" IsEnabled="False"
+                        Style="{StaticResource PrimaryBtn}" Background="#242436" Padding="14,7"
+                        Margin="8,0,0,0" HorizontalAlignment="Left"
+                        ToolTip="Request an immediate Intune sync for the selected device"/>
                 <Button x:Name="LdBtnReport" Content="Export Report (CSV)"
                         Style="{StaticResource PrimaryBtn}" Background="#242436" Padding="14,7"
                         Margin="8,0,0,0" HorizontalAlignment="Left"
@@ -866,6 +905,7 @@ $Script:LastDeviceXaml = @'
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto"/>
           <RowDefinition Height="*"/>
+          <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <Border Grid.Row="0" Background="#1C1C2A" Padding="12,10"
                 BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
@@ -882,11 +922,19 @@ $Script:LastDeviceXaml = @'
                   VirtualizingPanel.VirtualizationMode="Recycling">
           <DataGrid.Columns>
             <DataGridTextColumn Header="Device Name"   Binding="{Binding DeviceName}"  Width="*"/>
+            <DataGridTextColumn Header="Model"         Binding="{Binding Model}"       Width="*"/>
             <DataGridTextColumn Header="Last User"     Binding="{Binding LastUser}"    Width="*"/>
             <DataGridTextColumn Header="Last Check-In" Binding="{Binding LastCheckin}" Width="140"/>
             <DataGridTextColumn Header="Days Since"    Binding="{Binding DaysSince}"   Width="90"/>
           </DataGrid.Columns>
         </DataGrid>
+        <Border Grid.Row="2" Background="#1C1C2A" Padding="10,8"
+                BorderBrush="#3C3C5A" BorderThickness="0,1,0,0">
+          <Button x:Name="LdBtnStaleExport" Content="Export Report (CSV)"
+                  Style="{StaticResource PrimaryBtn}" Background="#242436" Padding="14,7"
+                  HorizontalAlignment="Left"
+                  ToolTip="Export the current stale devices list to CSV"/>
+        </Border>
       </Grid>
     </TabItem>
 
@@ -909,8 +957,10 @@ function Initialize-LastDeviceTool {
         DevDetail         = $content.FindName('LdDevDetail')
         DevDetailPanel    = $content.FindName('LdDevDetailPanel')
         BtnCopy           = $content.FindName('LdBtnCopy')
+        BtnSync           = $content.FindName('LdBtnSync')
         BtnReport         = $content.FindName('LdBtnReport')
         BtnDeviceReport   = $content.FindName('LdBtnDeviceReport')
+        BtnStaleExport    = $content.FindName('LdBtnStaleExport')
         DevBrowserSearch  = $content.FindName('LdDevBrowserSearch')
         DevBrowserList    = $content.FindName('LdDevBrowserList')
         DevUserList       = $content.FindName('LdDevUserList')
@@ -954,18 +1004,33 @@ function Initialize-LastDeviceTool {
     $Script:LD_UI.DevList.Add_SelectionChanged({
         try {
             $sel = $Script:LD_UI.DevList.SelectedItem
-            if (-not $sel) { 
-                $Script:LD_UI.BtnCopy.IsEnabled = $false
+            if (-not $sel) {
+                $Script:LD_UI.BtnCopy.IsEnabled         = $false
+                $Script:LD_UI.BtnSync.IsEnabled         = $false
                 $Script:LD_UI.DevDetailPanel.Visibility = 'Collapsed'
-                return 
+                return
             }
-            Write-Log "LastDevice: device selected '$($sel.Content)'" 'DEBUG'
-            [System.Windows.Clipboard]::SetText($sel.Content)
-            Set-MainStatus "Copied: $($sel.Content)" 'Success'
+            $deviceName = $sel.Tag.deviceName
+            Write-Log "LastDevice: device selected '$deviceName'" 'DEBUG'
+            [System.Windows.Clipboard]::SetText($deviceName)
+            Set-MainStatus "Copied: $deviceName" 'Success'
             $Script:LD_UI.BtnCopy.IsEnabled = $true
+            $Script:LD_UI.BtnSync.IsEnabled = $true
 
             $parts = [System.Collections.Generic.List[string]]::new()
-            if ($sel.Tag.model) { $parts.Add("Model: $($sel.Tag.model)") }
+            if ($sel.Tag.model)        { $parts.Add("Model: $($sel.Tag.model)") }
+            if ($sel.Tag.serialNumber) { $parts.Add("S/N: $($sel.Tag.serialNumber)") }
+            if ($sel.Tag.osVersion)    { $parts.Add("OS: $($sel.Tag.osVersion)") }
+            if ($sel.Tag.lastSyncDateTime) {
+                try {
+                    $parsed = [datetime]::Parse($sel.Tag.lastSyncDateTime,
+                        [System.Globalization.CultureInfo]::InvariantCulture,
+                        [System.Globalization.DateTimeStyles]::RoundtripKind)
+                    if ($parsed.Year -gt 1) {
+                        $parts.Add("Last Intune sync: $($parsed.ToLocalTime().ToString('yyyy-MM-dd HH:mm'))")
+                    }
+                } catch {}
+            }
 
             $userSel = $Script:LD_UI.UserList.SelectedItem
             if ($userSel) {
@@ -993,11 +1058,48 @@ function Initialize-LastDeviceTool {
         try {
             $sel = $Script:LD_UI.DevList.SelectedItem
             if (-not $sel) { return }
-            Write-Log "LastDevice: BtnCopy clicked for '$($sel.Content)'" 'DEBUG'
-            [System.Windows.Clipboard]::SetText($sel.Content)
-            Set-MainStatus "Copied: $($sel.Content)" 'Success'
+            Write-Log "LastDevice: BtnCopy clicked for '$($sel.Tag.deviceName)'" 'DEBUG'
+            [System.Windows.Clipboard]::SetText($sel.Tag.deviceName)
+            Set-MainStatus "Copied: $($sel.Tag.deviceName)" 'Success'
         } catch {
             Write-Log "BtnCopy click error: $_" 'ERROR'
+        }
+    })
+
+    # Sync selected device with Intune
+    $Script:LD_UI.BtnSync.Add_Click({
+        try {
+            $sel = $Script:LD_UI.DevList.SelectedItem
+            if (-not $sel) { return }
+            $deviceId   = $sel.Tag.id
+            $deviceName = $sel.Tag.deviceName
+            if ($Script:DryMode) {
+                Write-LdLog "[DRY] Would request Intune sync for $deviceName" 'Warning'
+                Set-MainStatus '[DRY] Sync skipped.' 'Warning'
+                return
+            }
+            $Script:LD_UI.BtnSync.IsEnabled = $false
+            Start-AsyncWork `
+                -Vars    @{ DeviceId = $deviceId } `
+                -RefSeed @{ Ok = $false; DeviceName = $deviceName } `
+                -Script {
+                    Invoke-RestMethod -Uri "https://graph.microsoft.com/beta/deviceManagement/managedDevices/$DeviceId/syncDevice" `
+                        -Headers @{ Authorization = "Bearer $Token" } -Method POST -ErrorAction Stop
+                    $Ref['Ok'] = $true
+                } `
+                -OnComplete {
+                    param($ref)
+                    $Script:LD_UI.BtnSync.IsEnabled = ($null -ne $Script:LD_UI.DevList.SelectedItem)
+                    if ($ref['Error']) {
+                        Write-LdLog "Sync failed for $($ref['DeviceName']): $($ref['Error'])" 'Danger'
+                        Set-MainStatus 'Sync request failed.' 'Danger'
+                    } else {
+                        Write-LdLog "Intune sync requested for $($ref['DeviceName'])" 'Success'
+                        Set-MainStatus "Sync requested: $($ref['DeviceName'])" 'Success'
+                    }
+                }
+        } catch {
+            Write-Log "BtnSync click error: $_" 'ERROR'
         }
     })
 
@@ -1011,6 +1113,12 @@ function Initialize-LastDeviceTool {
     $Script:LD_UI.BtnDeviceReport.Add_Click({
         try { Export-LdByDeviceReport }
         catch { Write-Log "BtnDeviceReport click error: $_" 'ERROR' }
+    })
+
+    # Stale Devices export
+    $Script:LD_UI.BtnStaleExport.Add_Click({
+        try { Export-LdStaleReport }
+        catch { Write-Log "BtnStaleExport click error: $_" 'ERROR' }
     })
 
     # By Device: device search filter
@@ -1072,6 +1180,7 @@ function Initialize-LastDeviceTool {
         $Script:LD_UI.DevPlaceholder.Text       = 'Select a user to see their devices'
         $Script:LD_UI.DevPlaceholder.Visibility = 'Visible'
         $Script:LD_UI.BtnCopy.IsEnabled         = $false
+        $Script:LD_UI.BtnSync.IsEnabled         = $false
 
         $Script:LD_UI.DevBrowserSearch.Text      = ''
         $Script:LD_UI.DevBrowserSearch.IsEnabled = $false

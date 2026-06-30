@@ -70,55 +70,55 @@ $Script:Demo_Users = @(
 # ── Fake devices ───────────────────────────────────────────────────────────────
 # lastSyncDateTime strings are UTC (relative to 2026-05-13)
 $Script:Demo_Devices = @(
-    [PSCustomObject]@{ id='d-lt-001'; deviceName='CTX-LT-001'; model='Dell Latitude 5520'; serialNumber='SLT0001'; lastSyncDateTime='2026-05-12T09:14:00Z'
+    [PSCustomObject]@{ id='d-lt-001'; deviceName='CTX-LT-001'; model='Dell Latitude 5520'; serialNumber='SLT0001'; complianceState='compliant';    lastSyncDateTime='2026-05-12T09:14:00Z'
         usersLoggedOn=@( @{userId='u-y10-01';lastLogOnDateTime='2026-05-12T08:55:00Z'}, @{userId='u-y10-02';lastLogOnDateTime='2026-05-10T13:22:00Z'} ) },
-    [PSCustomObject]@{ id='d-lt-002'; deviceName='CTX-LT-002'; model='Dell Latitude 5520'; serialNumber='SLT0002'; lastSyncDateTime='2026-05-10T11:30:00Z'
+    [PSCustomObject]@{ id='d-lt-002'; deviceName='CTX-LT-002'; model='Dell Latitude 5520'; serialNumber='SLT0002'; complianceState='compliant';    lastSyncDateTime='2026-05-10T11:30:00Z'
         usersLoggedOn=@( @{userId='u-y10-03';lastLogOnDateTime='2026-05-10T11:00:00Z'}, @{userId='u-y10-04';lastLogOnDateTime='2026-05-09T14:10:00Z'} ) },
-    [PSCustomObject]@{ id='d-lt-003'; deviceName='CTX-LT-003'; model='Dell Latitude 5520'; serialNumber='SLT0003'; lastSyncDateTime='2026-05-08T08:00:00Z'
+    [PSCustomObject]@{ id='d-lt-003'; deviceName='CTX-LT-003'; model='Dell Latitude 5520'; serialNumber='SLT0003'; complianceState='compliant';    lastSyncDateTime='2026-05-08T08:00:00Z'
         usersLoggedOn=@( @{userId='u-y10-05';lastLogOnDateTime='2026-05-08T07:45:00Z'}, @{userId='u-y10-06';lastLogOnDateTime='2026-05-07T15:30:00Z'} ) },
-    [PSCustomObject]@{ id='d-lt-004'; deviceName='CTX-LT-004'; model='Dell Latitude 5520'; serialNumber='SLT0004'; lastSyncDateTime='2026-04-25T14:00:00Z'
+    [PSCustomObject]@{ id='d-lt-004'; deviceName='CTX-LT-004'; model='Dell Latitude 5520'; serialNumber='SLT0004'; complianceState='noncompliant'; lastSyncDateTime='2026-04-25T14:00:00Z'
         usersLoggedOn=@( @{userId='u-y10-07';lastLogOnDateTime='2026-04-25T13:50:00Z'}, @{userId='u-y10-08';lastLogOnDateTime='2026-04-24T09:20:00Z'} ) },
-    [PSCustomObject]@{ id='d-lt-005'; deviceName='CTX-LT-005'; model='Dell Latitude 5520'; serialNumber='SLT0005'; lastSyncDateTime='2026-04-20T10:45:00Z'
+    [PSCustomObject]@{ id='d-lt-005'; deviceName='CTX-LT-005'; model='Dell Latitude 5520'; serialNumber='SLT0005'; complianceState='compliant';    lastSyncDateTime='2026-04-20T10:45:00Z'
         usersLoggedOn=@( @{userId='u-y10-09';lastLogOnDateTime='2026-04-20T10:30:00Z'}, @{userId='u-y10-10';lastLogOnDateTime='2026-04-18T12:00:00Z'} ) },
-    [PSCustomObject]@{ id='d-lt-006'; deviceName='CTX-LT-006'; model='Dell Latitude 5520'; serialNumber='SLT0006'; lastSyncDateTime='2026-05-02T09:00:00Z'
+    [PSCustomObject]@{ id='d-lt-006'; deviceName='CTX-LT-006'; model='Dell Latitude 5520'; serialNumber='SLT0006'; complianceState='compliant';    lastSyncDateTime='2026-05-02T09:00:00Z'
         usersLoggedOn=@( @{userId='u-y11-01';lastLogOnDateTime='2026-05-02T08:45:00Z'}, @{userId='u-y11-02';lastLogOnDateTime='2026-04-30T16:00:00Z'} ) },
-    [PSCustomObject]@{ id='d-lt-007'; deviceName='CTX-LT-007'; model='Dell Latitude 5520'; serialNumber='SLT0007'; lastSyncDateTime='2026-03-30T08:30:00Z'
+    [PSCustomObject]@{ id='d-lt-007'; deviceName='CTX-LT-007'; model='Dell Latitude 5520'; serialNumber='SLT0007'; complianceState='noncompliant'; lastSyncDateTime='2026-03-30T08:30:00Z'
         usersLoggedOn=@( @{userId='u-y11-03';lastLogOnDateTime='2026-03-30T08:20:00Z'}, @{userId='u-y11-04';lastLogOnDateTime='2026-03-28T14:15:00Z'} ) },
-    [PSCustomObject]@{ id='d-lt-008'; deviceName='CTX-LT-008'; model='Dell Latitude 5520'; serialNumber='SLT0008'; lastSyncDateTime='2026-03-15T12:00:00Z'
+    [PSCustomObject]@{ id='d-lt-008'; deviceName='CTX-LT-008'; model='Dell Latitude 5520'; serialNumber='SLT0008'; complianceState='compliant';    lastSyncDateTime='2026-03-15T12:00:00Z'
         usersLoggedOn=@( @{userId='u-y11-05';lastLogOnDateTime='2026-03-15T11:50:00Z'}, @{userId='u-y11-06';lastLogOnDateTime='2026-03-14T09:30:00Z'} ) },
-    [PSCustomObject]@{ id='d-lt-009'; deviceName='CTX-LT-009'; model='Dell Latitude 5520'; serialNumber='SLT0009'; lastSyncDateTime='2026-02-20T09:00:00Z'
+    [PSCustomObject]@{ id='d-lt-009'; deviceName='CTX-LT-009'; model='Dell Latitude 5520'; serialNumber='SLT0009'; complianceState='noncompliant'; lastSyncDateTime='2026-02-20T09:00:00Z'
         usersLoggedOn=@( @{userId='u-y12-01';lastLogOnDateTime='2026-02-20T08:50:00Z'}, @{userId='u-y12-02';lastLogOnDateTime='2026-02-18T15:00:00Z'} ) },
-    [PSCustomObject]@{ id='d-lt-010'; deviceName='CTX-LT-010'; model='Dell Latitude 5520'; serialNumber='SLT0010'; lastSyncDateTime='2025-11-10T10:00:00Z'
+    [PSCustomObject]@{ id='d-lt-010'; deviceName='CTX-LT-010'; model='Dell Latitude 5520'; serialNumber='SLT0010'; complianceState='noncompliant'; lastSyncDateTime='2025-11-10T10:00:00Z'
         usersLoggedOn=@( @{userId='u-y12-03';lastLogOnDateTime='2025-11-10T09:45:00Z'}, @{userId='u-y12-04';lastLogOnDateTime='2025-11-08T13:00:00Z'} ) },
-    [PSCustomObject]@{ id='d-sp-001'; deviceName='CTX-SP-001'; model='Surface Pro 7'; serialNumber='SSP0001'; lastSyncDateTime='2026-05-13T07:30:00Z'
+    [PSCustomObject]@{ id='d-sp-001'; deviceName='CTX-SP-001'; model='Surface Pro 7'; serialNumber='SSP0001'; complianceState='compliant';    lastSyncDateTime='2026-05-13T07:30:00Z'
         usersLoggedOn=@( @{userId='u-st-01';lastLogOnDateTime='2026-05-13T07:20:00Z'}, @{userId='u-y12-05';lastLogOnDateTime='2026-05-12T16:00:00Z'} ) },
-    [PSCustomObject]@{ id='d-sp-002'; deviceName='CTX-SP-002'; model='Surface Pro 7'; serialNumber='SSP0002'; lastSyncDateTime='2026-05-12T15:00:00Z'
+    [PSCustomObject]@{ id='d-sp-002'; deviceName='CTX-SP-002'; model='Surface Pro 7'; serialNumber='SSP0002'; complianceState='compliant';    lastSyncDateTime='2026-05-12T15:00:00Z'
         usersLoggedOn=@( @{userId='u-st-02';lastLogOnDateTime='2026-05-12T14:50:00Z'}, @{userId='u-y12-06';lastLogOnDateTime='2026-05-11T10:30:00Z'} ) },
-    [PSCustomObject]@{ id='d-sp-003'; deviceName='CTX-SP-003'; model='Surface Pro 7'; serialNumber='SSP0003'; lastSyncDateTime='2026-05-11T11:00:00Z'
+    [PSCustomObject]@{ id='d-sp-003'; deviceName='CTX-SP-003'; model='Surface Pro 7'; serialNumber='SSP0003'; complianceState='compliant';    lastSyncDateTime='2026-05-11T11:00:00Z'
         usersLoggedOn=@( @{userId='u-st-03';lastLogOnDateTime='2026-05-11T10:45:00Z'}, @{userId='u-y11-07';lastLogOnDateTime='2026-05-09T14:00:00Z'} ) },
-    [PSCustomObject]@{ id='d-sp-004'; deviceName='CTX-SP-004'; model='Surface Pro 7'; serialNumber='SSP0004'; lastSyncDateTime='2026-04-01T08:00:00Z'
+    [PSCustomObject]@{ id='d-sp-004'; deviceName='CTX-SP-004'; model='Surface Pro 7'; serialNumber='SSP0004'; complianceState='noncompliant'; lastSyncDateTime='2026-04-01T08:00:00Z'
         usersLoggedOn=@( @{userId='u-st-04';lastLogOnDateTime='2026-04-01T07:55:00Z'}, @{userId='u-y11-08';lastLogOnDateTime='2026-03-31T16:30:00Z'} ) },
-    [PSCustomObject]@{ id='d-sp-005'; deviceName='CTX-SP-005'; model='Surface Pro 7'; serialNumber='SSP0005'; lastSyncDateTime='2026-05-13T08:45:00Z'
+    [PSCustomObject]@{ id='d-sp-005'; deviceName='CTX-SP-005'; model='Surface Pro 7'; serialNumber='SSP0005'; complianceState='compliant';    lastSyncDateTime='2026-05-13T08:45:00Z'
         usersLoggedOn=@( @{userId='u-st-05';lastLogOnDateTime='2026-05-13T08:40:00Z'}, @{userId='u-y12-07';lastLogOnDateTime='2026-05-12T12:00:00Z'} ) },
-    [PSCustomObject]@{ id='d-sp-006'; deviceName='CTX-SP-006'; model='Surface Pro 7'; serialNumber='SSP0006'; lastSyncDateTime='2026-03-01T09:00:00Z'
+    [PSCustomObject]@{ id='d-sp-006'; deviceName='CTX-SP-006'; model='Surface Pro 7'; serialNumber='SSP0006'; complianceState='noncompliant'; lastSyncDateTime='2026-03-01T09:00:00Z'
         usersLoggedOn=@( @{userId='u-st-06';lastLogOnDateTime='2026-03-01T08:55:00Z'}, @{userId='u-y10-11';lastLogOnDateTime='2026-02-28T15:00:00Z'} ) },
-    [PSCustomObject]@{ id='d-sp-007'; deviceName='CTX-SP-007'; model='Surface Pro 7'; serialNumber='SSP0007'; lastSyncDateTime='2026-05-12T13:00:00Z'
+    [PSCustomObject]@{ id='d-sp-007'; deviceName='CTX-SP-007'; model='Surface Pro 7'; serialNumber='SSP0007'; complianceState='compliant';    lastSyncDateTime='2026-05-12T13:00:00Z'
         usersLoggedOn=@( @{userId='u-st-07';lastLogOnDateTime='2026-05-12T12:55:00Z'}, @{userId='u-y12-08';lastLogOnDateTime='2026-05-11T09:00:00Z'} ) },
-    [PSCustomObject]@{ id='d-sp-008'; deviceName='CTX-SP-008'; model='Surface Pro 7'; serialNumber='SSP0008'; lastSyncDateTime='2026-05-09T10:00:00Z'
+    [PSCustomObject]@{ id='d-sp-008'; deviceName='CTX-SP-008'; model='Surface Pro 7'; serialNumber='SSP0008'; complianceState='compliant';    lastSyncDateTime='2026-05-09T10:00:00Z'
         usersLoggedOn=@( @{userId='u-st-08';lastLogOnDateTime='2026-05-09T09:50:00Z'}, @{userId='u-y11-09';lastLogOnDateTime='2026-05-08T14:00:00Z'} ) },
-    [PSCustomObject]@{ id='d-cb-001'; deviceName='CTX-CB-001'; model='HP Chromebook 14'; serialNumber='SCB0001'; lastSyncDateTime='2026-05-10T08:00:00Z'
+    [PSCustomObject]@{ id='d-cb-001'; deviceName='CTX-CB-001'; model='HP Chromebook 14'; serialNumber='SCB0001'; complianceState='compliant';    lastSyncDateTime='2026-05-10T08:00:00Z'
         usersLoggedOn=@( @{userId='u-y10-12';lastLogOnDateTime='2026-05-10T07:50:00Z'} ) },
-    [PSCustomObject]@{ id='d-cb-002'; deviceName='CTX-CB-002'; model='HP Chromebook 14'; serialNumber='SCB0002'; lastSyncDateTime='2026-05-07T09:30:00Z'
+    [PSCustomObject]@{ id='d-cb-002'; deviceName='CTX-CB-002'; model='HP Chromebook 14'; serialNumber='SCB0002'; complianceState='compliant';    lastSyncDateTime='2026-05-07T09:30:00Z'
         usersLoggedOn=@( @{userId='u-y10-13';lastLogOnDateTime='2026-05-07T09:20:00Z'} ) },
-    [PSCustomObject]@{ id='d-cb-003'; deviceName='CTX-CB-003'; model='HP Chromebook 14'; serialNumber='SCB0003'; lastSyncDateTime='2026-04-28T08:15:00Z'
+    [PSCustomObject]@{ id='d-cb-003'; deviceName='CTX-CB-003'; model='HP Chromebook 14'; serialNumber='SCB0003'; complianceState='compliant';    lastSyncDateTime='2026-04-28T08:15:00Z'
         usersLoggedOn=@( @{userId='u-y10-14';lastLogOnDateTime='2026-04-28T08:05:00Z'} ) },
-    [PSCustomObject]@{ id='d-cb-004'; deviceName='CTX-CB-004'; model='HP Chromebook 14'; serialNumber='SCB0004'; lastSyncDateTime='2025-12-15T10:00:00Z'
+    [PSCustomObject]@{ id='d-cb-004'; deviceName='CTX-CB-004'; model='HP Chromebook 14'; serialNumber='SCB0004'; complianceState='noncompliant'; lastSyncDateTime='2025-12-15T10:00:00Z'
         usersLoggedOn=@( @{userId='u-y10-15';lastLogOnDateTime='2025-12-15T09:45:00Z'} ) },
-    [PSCustomObject]@{ id='d-cb-005'; deviceName='CTX-CB-005'; model='HP Chromebook 14'; serialNumber='SCB0005'; lastSyncDateTime='2026-05-05T11:00:00Z'
+    [PSCustomObject]@{ id='d-cb-005'; deviceName='CTX-CB-005'; model='HP Chromebook 14'; serialNumber='SCB0005'; complianceState='compliant';    lastSyncDateTime='2026-05-05T11:00:00Z'
         usersLoggedOn=@( @{userId='u-y11-10';lastLogOnDateTime='2026-05-05T10:50:00Z'} ) },
-    [PSCustomObject]@{ id='d-cb-006'; deviceName='CTX-CB-006'; model='HP Chromebook 14'; serialNumber='SCB0006'; lastSyncDateTime='2026-01-08T09:00:00Z'
+    [PSCustomObject]@{ id='d-cb-006'; deviceName='CTX-CB-006'; model='HP Chromebook 14'; serialNumber='SCB0006'; complianceState='noncompliant'; lastSyncDateTime='2026-01-08T09:00:00Z'
         usersLoggedOn=@( @{userId='u-y11-11';lastLogOnDateTime='2026-01-08T08:55:00Z'} ) },
-    [PSCustomObject]@{ id='d-cb-007'; deviceName='CTX-CB-007'; model='HP Chromebook 14'; serialNumber='SCB0007'; lastSyncDateTime=$null
+    [PSCustomObject]@{ id='d-cb-007'; deviceName='CTX-CB-007'; model='HP Chromebook 14'; serialNumber='SCB0007'; complianceState='unknown';      lastSyncDateTime=$null
         usersLoggedOn=@() }
 )
 
@@ -255,6 +255,7 @@ function Start-LdDeviceLoadDemo {
     $Script:LD_UI.DevPlaceholder.Text       = 'Loading devices...'
     $Script:LD_UI.DevPlaceholder.Visibility = 'Visible'
     $Script:LD_UI.BtnCopy.IsEnabled         = $false
+    $Script:LD_UI.BtnSync.IsEnabled         = $false
 
     $devices = @($Script:Demo_Devices | Where-Object {
         $_.usersLoggedOn | Where-Object { $_.userId -eq $UserId }
@@ -273,9 +274,32 @@ function Start-LdDeviceLoadDemo {
     }
 
     foreach ($d in $devices) {
-        $lbi         = [System.Windows.Controls.ListBoxItem]::new()
-        $lbi.Content = $d.deviceName
-        $lbi.Tag     = $d
+        $lbi     = [System.Windows.Controls.ListBoxItem]::new()
+        $lbi.Tag = $d
+
+        $panel = [System.Windows.Controls.StackPanel]::new()
+        $panel.Orientation = 'Horizontal'
+
+        $dot = [System.Windows.Controls.TextBlock]::new()
+        $dot.Text              = '●'
+        $dot.FontSize          = 10
+        $dot.VerticalAlignment = 'Center'
+        $dot.Margin            = [System.Windows.Thickness]::new(0, 0, 6, 0)
+        $dotColor = switch ($d.complianceState) {
+            'compliant'    { '#22C55E' }
+            'noncompliant' { '#EF4444' }
+            default        { '#50507A' }
+        }
+        $dot.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($dotColor)
+
+        $nameText = [System.Windows.Controls.TextBlock]::new()
+        $nameText.Text              = $d.deviceName
+        $nameText.VerticalAlignment = 'Center'
+
+        [void]$panel.Children.Add($dot)
+        [void]$panel.Children.Add($nameText)
+        $lbi.Content = $panel
+
         $entry = $d.usersLoggedOn | Where-Object { $_.userId -eq $UserId } | Select-Object -First 1
         if ($entry -and $entry.lastLogOnDateTime) {
             $lbi.ToolTip = "Last check-in: $([datetime]$entry.lastLogOnDateTime)"

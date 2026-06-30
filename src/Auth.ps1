@@ -391,7 +391,7 @@ $Script:GraphClientId = '14d82eec-204b-4c2f-b7e8-296a70dab67e'
 $Script:GraphScopes = @(
     'https://graph.microsoft.com/User.ReadWrite.All',
     'https://graph.microsoft.com/User.RevokeSessions.All',
-    'https://graph.microsoft.com/DeviceManagementManagedDevices.Read.All',
+    'https://graph.microsoft.com/DeviceManagementManagedDevices.ReadWrite.All',
     'https://graph.microsoft.com/DeviceManagementConfiguration.Read.All',
     'https://graph.microsoft.com/AuditLog.Read.All',
     'https://graph.microsoft.com/GroupMember.ReadWrite.All',
