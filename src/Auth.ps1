@@ -172,6 +172,41 @@ function New-BackgroundRunspace {
     $rs
 }
 
+# ── Worker Graph resilience preamble ──────────────────────────────────────────
+# Prepended to every Start-AsyncWork worker script. Defines a function named
+# Invoke-RestMethod which shadows the cmdlet (functions win command resolution),
+# so every Graph call in every tool transparently retries on 429 throttling
+# (honouring Retry-After) and transient 502/503/504 with exponential backoff.
+# Non-retryable errors are rethrown untouched, so existing per-tool catch blocks
+# (401/403 classification etc.) keep working exactly as before.
+$Script:EtbWorkerPreamble = @'
+function Invoke-RestMethod {
+    $attempt = 0
+    while ($true) {
+        try {
+            return Microsoft.PowerShell.Utility\Invoke-RestMethod @args
+        } catch {
+            $status = 0
+            $resp   = $_.Exception.Response
+            if ($resp) { try { $status = [int]$resp.StatusCode } catch {} }
+            if (($status -notin 429, 502, 503, 504) -or $attempt -ge 4) { throw }
+            $delay = 0
+            try {
+                $ra = $resp.Headers.RetryAfter
+                if ($ra) {
+                    if ($ra.Delta.HasValue)    { $delay = [int][math]::Ceiling($ra.Delta.Value.TotalSeconds) }
+                    elseif ($ra.Date.HasValue) { $delay = [int][math]::Ceiling(($ra.Date.Value.UtcDateTime - [datetime]::UtcNow).TotalSeconds) }
+                }
+            } catch {}
+            if ($delay -lt 1)  { $delay = [math]::Min(30, [math]::Pow(2, $attempt + 1)) }
+            if ($delay -gt 60) { $delay = 60 }
+            Start-Sleep -Seconds $delay
+            $attempt++
+        }
+    }
+}
+'@
+
 # ── WPF-safe async runspace + completion timer ────────────────────────────────
 # Runs $Script in a background Runspace with $Ref (synchronized hashtable), $Token
 # (current access token unless -NoToken), and any extra $Vars set as session vars.
@@ -201,7 +236,9 @@ function Start-AsyncWork {
     foreach ($k in $Vars.Keys) { $rs.SessionStateProxy.SetVariable($k, $Vars[$k]) }
     # Compile worker source inside the background runspace so Invoke-RestMethod etc.
     # resolve against that runspace — passing a main-session scriptblock does not.
-    $rs.SessionStateProxy.SetVariable('WorkerText', $Script.ToString())
+    # The resilience preamble is prepended so its Invoke-RestMethod retry shim is
+    # in scope for the whole worker body.
+    $rs.SessionStateProxy.SetVariable('WorkerText', $Script:EtbWorkerPreamble + "`n" + $Script.ToString())
 
     $ps = [System.Management.Automation.PowerShell]::Create()
     $ps.Runspace = $rs
@@ -598,6 +635,7 @@ function Disconnect-Tenant {
     param([Parameter(Mandatory)][string]$TenantId)
     $Script:AccessToken     = $null
     $Script:CurrentTenantId = $null
+    $Script:TokenExpiresOn  = $null
     $Script:MsalApps.Remove($TenantId)
     $cacheFile = Get-TenantCacheFile -TenantId $TenantId
     if (Test-Path $cacheFile) { Remove-Item $cacheFile -Force -ErrorAction SilentlyContinue }
@@ -635,6 +673,7 @@ function Start-TenantConnectAsync {
         Error        = $null
         TenantId     = $TenantId
         AccountUPN   = $null
+        ExpiresOn    = $null
         CacheEnabled = $false
         CacheWarning = $null
         App          = $null
@@ -727,6 +766,7 @@ function Start-TenantConnectAsync {
             if ($token -and $token.AccessToken) {
                 $AuthRef['Token']      = $token.AccessToken
                 $AuthRef['AccountUPN'] = $token.Account.Username
+                $AuthRef['ExpiresOn']  = $token.ExpiresOn.UtcDateTime
                 $AuthRef['App']        = $app
                 # The cache is written to disk automatically by the after-access callback above.
             } else {
@@ -766,6 +806,8 @@ function Start-TenantConnectAsync {
                 Write-Log 'Auth succeeded - token acquired' 'INFO'
                 $Script:AccessToken     = $Script:AuthRef['Token']
                 $Script:CurrentTenantId = $Script:AuthRef['TenantId']
+                $Script:TokenExpiresOn  = $Script:AuthRef['ExpiresOn']
+                Start-TokenRefreshTimer
                 if ($Script:AuthRef['App']) {
                     $Script:MsalApps[$Script:AuthRef['TenantId']] = $Script:AuthRef['App']
                 }
@@ -786,22 +828,126 @@ function Start-TenantConnectAsync {
     $Script:AuthTimer.Start()
 }
 
+# ── Silent token refresh ───────────────────────────────────────────────────────
+# Access tokens live ~60-75 minutes. Rather than letting long sessions die with
+# "session expired" errors, a once-a-minute timer checks remaining lifetime and,
+# inside the final 10 minutes, silently re-acquires the token from the cached
+# MSAL app on a background runspace (refresh token → no browser popup).
+$Script:TokenExpiresOn    = $null
+$Script:TokenRefreshTimer = $null
+$Script:TokenRefreshBusy  = $false
+
+function Start-TokenRefreshTimer {
+    if ($Script:TokenRefreshTimer) { return }
+    $Script:TokenRefreshTimer = New-EtbDispatcherTimer -IntervalMs 60000
+    $Script:TokenRefreshTimer.Add_Tick({
+        try { Invoke-EtbScript { Invoke-TokenRefreshCheck } }
+        catch { Write-Host "[ERROR] Token refresh tick: $_" -ForegroundColor Red }
+    })
+    $Script:TokenRefreshTimer.Start()
+    Write-Log 'Auth: token refresh watchdog started' 'DEBUG'
+}
+
+function Invoke-TokenRefreshCheck {
+    if ($Script:DemoMode -or $Script:TokenRefreshBusy) { return }
+    if (-not $Script:AccessToken -or -not $Script:CurrentTenantId -or -not $Script:TokenExpiresOn) { return }
+    $remaining = ($Script:TokenExpiresOn - [datetime]::UtcNow).TotalMinutes
+    if ($remaining -gt 10) { return }
+    $app = $Script:MsalApps[$Script:CurrentTenantId]
+    if (-not $app) { return }
+
+    $Script:TokenRefreshBusy = $true
+    Write-Log "Auth: access token expires in $([int]$remaining) min — refreshing silently" 'DEBUG'
+    $null = Start-AsyncWork -NoToken `
+        -Vars @{
+            App    = $app
+            Scopes = $Script:GraphScopes
+            Hint   = (Get-TenantAccountHint -TenantId $Script:CurrentTenantId)
+        } `
+        -RefSeed @{ Token = $null; ExpiresOn = $null } `
+        -Script {
+            Import-Module MSAL.PS -ErrorAction Stop
+            $p = @{
+                PublicClientApplication = $App
+                Scopes                  = $Scopes
+                Silent                  = $true
+                ForceRefresh            = $true
+                ErrorAction             = 'Stop'
+            }
+            if ($Hint) { $p['LoginHint'] = $Hint }
+            $t = Get-MsalToken @p
+            $Ref['Token']     = $t.AccessToken
+            $Ref['ExpiresOn'] = $t.ExpiresOn.UtcDateTime
+        } `
+        -OnComplete {
+            param($ref)
+            $Script:TokenRefreshBusy = $false
+            if ($ref['Error']) {
+                Write-Log "Auth: silent token refresh failed — $($ref['Error'])" 'WARN'
+                return
+            }
+            if ($ref['Token']) {
+                $Script:AccessToken    = $ref['Token']
+                $Script:TokenExpiresOn = $ref['ExpiresOn']
+                Write-Log 'Auth: access token refreshed silently' 'INFO'
+            }
+        }
+}
+
 # ── Graph REST helpers ─────────────────────────────────────────────────────────
+# All three helpers route through Invoke-EtbGraphRequest, which retries 429
+# throttling (honouring Retry-After) and transient 502/503/504 with backoff —
+# the same policy the worker preamble applies inside background runspaces.
+function Invoke-EtbGraphRequest {
+    param(
+        [Parameter(Mandatory)][string]$Uri,
+        [string]$Method = 'GET',
+        [hashtable]$Body = $null
+    )
+    $params = @{
+        Uri         = $Uri
+        Method      = $Method
+        Headers     = @{ Authorization = "Bearer $Script:AccessToken" }
+        ErrorAction = 'Stop'
+    }
+    if ($Body) {
+        $params.Headers['Content-Type'] = 'application/json'
+        $params.Body = $Body | ConvertTo-Json -Depth 10
+    }
+    $attempt = 0
+    while ($true) {
+        try {
+            return Invoke-RestMethod @params
+        } catch {
+            $status = 0
+            $resp   = $_.Exception.Response
+            if ($resp) { try { $status = [int]$resp.StatusCode } catch {} }
+            if (($status -notin 429, 502, 503, 504) -or $attempt -ge 4) { throw }
+            $delay = 0
+            try {
+                $ra = $resp.Headers.RetryAfter
+                if ($ra) {
+                    if ($ra.Delta.HasValue)    { $delay = [int][math]::Ceiling($ra.Delta.Value.TotalSeconds) }
+                    elseif ($ra.Date.HasValue) { $delay = [int][math]::Ceiling(($ra.Date.Value.UtcDateTime - [datetime]::UtcNow).TotalSeconds) }
+                }
+            } catch {}
+            if ($delay -lt 1)  { $delay = [math]::Min(30, [math]::Pow(2, $attempt + 1)) }
+            if ($delay -gt 60) { $delay = 60 }
+            Write-Log "Graph $status on $Uri — retrying in ${delay}s (attempt $($attempt + 1)/4)" 'WARN'
+            Start-Sleep -Seconds $delay
+            $attempt++
+        }
+    }
+}
+
 function Invoke-GraphGet {
     param([string]$Path)
-    Invoke-RestMethod -Uri "https://graph.microsoft.com$Path" `
-        -Headers @{ Authorization = "Bearer $Script:AccessToken" } `
-        -Method GET -ErrorAction Stop
+    Invoke-EtbGraphRequest -Uri "https://graph.microsoft.com$Path"
 }
 
 function Invoke-GraphPatch {
     param([string]$Path, [hashtable]$Body)
-    Invoke-RestMethod -Uri "https://graph.microsoft.com$Path" `
-        -Headers @{
-            Authorization  = "Bearer $Script:AccessToken"
-            'Content-Type' = 'application/json'
-        } `
-        -Method PATCH -Body ($Body | ConvertTo-Json -Depth 10) -ErrorAction Stop
+    Invoke-EtbGraphRequest -Uri "https://graph.microsoft.com$Path" -Method PATCH -Body $Body
 }
 
 function Get-GraphPaged {
@@ -809,9 +955,7 @@ function Get-GraphPaged {
     $items = [System.Collections.Generic.List[object]]::new()
     $url = "https://graph.microsoft.com$Path"
     do {
-        $resp = Invoke-RestMethod -Uri $url `
-            -Headers @{ Authorization = "Bearer $Script:AccessToken" } `
-            -Method GET -ErrorAction Stop
+        $resp = Invoke-EtbGraphRequest -Uri $url
         foreach ($i in $resp.value) { $items.Add($i) }
         $url = $resp.'@odata.nextLink'
     } while ($url)
