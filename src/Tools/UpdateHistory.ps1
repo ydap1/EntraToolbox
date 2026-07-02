@@ -10,6 +10,13 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.15.1'
+        Date    = '2026-07-02'
+        Changes = @(
+            'Fixed the white box that flashed in the user list while users were loading — disabled lists now keep the dark theme and dim slightly instead'
+        )
+    }
+    @{
         Version = '0.15.0'
         Date    = '2026-07-02'
         Changes = @(

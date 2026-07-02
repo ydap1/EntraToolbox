@@ -400,6 +400,33 @@ $Script:ThemeScrollBarStyle = @"
 </Style>
 "@
 
+# Injected into every '<Style TargetType="ListBox">' by Invoke-ThemeXaml.
+# The stock WPF ListBox template paints the control white when IsEnabled=False
+# (SystemColors.ControlBrush), which flashed a white box while tools disable
+# their user lists during Graph loads. This template keeps the themed
+# background and just dims the list instead.
+$Script:ThemeListBoxTemplate = @'
+<Setter Property="Template">
+  <Setter.Value>
+    <ControlTemplate TargetType="ListBox">
+      <Border Background="{TemplateBinding Background}"
+              BorderBrush="{TemplateBinding BorderBrush}"
+              BorderThickness="{TemplateBinding BorderThickness}"
+              Padding="{TemplateBinding Padding}">
+        <ScrollViewer Focusable="False">
+          <ItemsPresenter/>
+        </ScrollViewer>
+      </Border>
+      <ControlTemplate.Triggers>
+        <Trigger Property="IsEnabled" Value="False">
+          <Setter Property="Opacity" Value="0.55"/>
+        </Trigger>
+      </ControlTemplate.Triggers>
+    </ControlTemplate>
+  </Setter.Value>
+</Setter>
+'@
+
 function Get-ThemeHex([string]$Semantic) {
     if ($Script:Theme.ContainsKey($Semantic)) { return $Script:Theme[$Semantic] }
     return $Semantic
@@ -413,6 +440,7 @@ function Invoke-ThemeXaml([string]$Xaml) {
     $Xaml = $Xaml.Replace('FontFamily="Segoe UI"', 'FontFamily="Fredoka, Segoe UI"')
     $Xaml = $Xaml.Replace('</Grid.Resources>',   "$Script:ThemeScrollBarStyle</Grid.Resources>")
     $Xaml = $Xaml.Replace('</Window.Resources>', "$Script:ThemeScrollBarStyle</Window.Resources>")
+    $Xaml = $Xaml.Replace('<Style TargetType="ListBox">', "<Style TargetType=`"ListBox`">$Script:ThemeListBoxTemplate")
     $Xaml
 }
 
