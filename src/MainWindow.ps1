@@ -19,6 +19,7 @@ $Script:DlgCancel      = $null
 $Script:NavItems       = [System.Collections.Generic.List[hashtable]]::new()
 $Script:NavContents    = @{}   # name → built WPF panel (populated lazily)
 $Script:CurrentNavItem = $null
+$Script:TenantNameTimer = $null # async tenant display-name fetch after connect
 
 # Lazy-init maps: populated in Show-MainWindow, consumed in Set-NavSelection.
 $Script:NavInitializers = @{}   # name → 'Initialize-*Tool' function name
@@ -173,6 +174,12 @@ function Set-NavSelection {
 
     $Script:MainUI.ContentArea.Content = $Script:NavContents[$Name]
     $Script:CurrentNavItem = $Name
+
+    # Quick fade-in so panel switches feel fluid instead of snapping.
+    $fade = [System.Windows.Media.Animation.DoubleAnimation]::new(
+        0.0, 1.0, [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(160)))
+    $fade.EasingFunction = [System.Windows.Media.Animation.QuadraticEase]::new()
+    $Script:MainUI.ContentArea.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fade)
 }
 
 # ── Main window XAML ───────────────────────────────────────────────────────────
@@ -182,6 +189,8 @@ $Script:MainXaml = @'
         Title="Art's Entra Toolbox" Width="1280" Height="800"
         MinWidth="900" MinHeight="600"
         Background="#12121C" FontFamily="Segoe UI" FontSize="13"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType"
         WindowStartupLocation="CenterScreen">
   <Window.Resources>
 
@@ -358,7 +367,7 @@ $Script:MainXaml = @'
                 ToolTip="Toggle dry mode — actions are logged but not executed"/>
         <Button x:Name="BtnLog" Content="Log" Style="{StaticResource FlatBtn}"
                 Background="#3C3C5A" Padding="10,6" Margin="8,0,0,0"
-                ToolTip="Show/hide activity log"/>
+                ToolTip="Show/hide activity log (Ctrl+L)"/>
         <Button x:Name="BtnDemo" Content="Demo" Style="{StaticResource FlatBtn}"
                 Background="#7C3AED" Padding="10,6" Margin="12,0,0,0"
                 ToolTip="Run in demo mode with fake Contoso Academy data"/>
@@ -530,9 +539,9 @@ $Script:AddTenantXaml = @'
         <ColumnDefinition Width="8"/>
         <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
-      <Button x:Name="DlgCancel" Grid.Column="0" Content="Cancel"
+      <Button x:Name="DlgCancel" Grid.Column="0" Content="Cancel" IsCancel="True"
               Style="{StaticResource Btn}" Background="#3C3C5A" Padding="0,8"/>
-      <Button x:Name="DlgConnect" Grid.Column="2" Content="Connect"
+      <Button x:Name="DlgConnect" Grid.Column="2" Content="Connect" IsDefault="True"
               Style="{StaticResource Btn}" Background="#6366F1" Padding="20,8"/>
     </Grid>
   </Grid>
@@ -626,19 +635,47 @@ function Show-AddTenantDialog {
 }
 
 function Invoke-PostConnect {
-    try {
-        $name = Get-TenantDisplayName
-        if ($name) {
-            $Script:MainUI.TenantName.Text        = $name
-            $Script:MainUI.TenantBadge.Visibility = 'Visible'
+    # Resolve the tenant display name off the UI thread — a synchronous Graph call
+    # here froze the window for the duration of the request on every connect.
+    if ($Script:DemoMode) {
+        $Script:MainUI.TenantName.Text        = 'Contoso Academy'
+        $Script:MainUI.TenantBadge.Visibility = 'Visible'
+        $Script:MainUI.TenantBadge.ToolTip    = 'Demo mode — no real tenant'
+    } else {
+        $hint = try { Get-TenantAccountHint -TenantId $Script:CurrentTenantId } catch { $null }
+        $Script:MainUI.TenantBadge.ToolTip =
+            "Tenant: $($Script:CurrentTenantId)$(if ($hint) { "`nSigned in as: $hint" })"
+        if ($Script:TenantNameTimer) { $Script:TenantNameTimer.Stop() }
+        $Script:TenantNameTimer = Start-AsyncWork -RefSeed @{ Name = '' } -Script {
+            $r = Invoke-RestMethod -Uri 'https://graph.microsoft.com/v1.0/organization?$select=displayName' `
+                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
+            if ($r.value -and $r.value.Count -gt 0) { $Ref['Name'] = $r.value[0].displayName }
+        } -OnComplete {
+            param($ref)
+            try {
+                if (-not $ref['Error'] -and $ref['Name']) {
+                    $Script:MainUI.TenantName.Text        = $ref['Name']
+                    $Script:MainUI.TenantBadge.Visibility = 'Visible'
+                }
+            } catch {}
         }
-    } catch {}
+    }
 
     $Script:MainUI.BtnDisconnect.IsEnabled = $true
     if (-not $Script:DemoMode -and $Script:CurrentTenantId) {
         try { Set-AppSetting -Name 'LastTenantId' -Value $Script:CurrentTenantId } catch {}
     }
     Invoke-ConnectCallbacks
+}
+
+function Invoke-LogPaneToggle {
+    if ($Script:MainUI.LogPaneGrid.Visibility -eq 'Visible') {
+        $Script:MainUI.LogPaneGrid.Visibility = 'Collapsed'
+        $Script:MainUI.BtnLog.Background = New-SolidBrush 'Border'
+    } else {
+        $Script:MainUI.LogPaneGrid.Visibility = 'Visible'
+        $Script:MainUI.BtnLog.Background = New-SolidBrush 'Accent'
+    }
 }
 
 function Invoke-ResetTools {
@@ -690,7 +727,10 @@ function Show-MainWindow {
     # Walk up: LogPane.Parent = Grid (inner), .Parent = Border, .Parent = Grid (outer)
     $Script:MainUI.LogPaneGrid = $Script:MainUI.LogPane.Parent.Parent.Parent
 
-    if ($AppVersion) { $Script:MainUI.Version.Text = "v$AppVersion" }
+    if ($AppVersion) {
+        $Script:MainUI.Version.Text = "v$AppVersion"
+        $window.Title = "Art's Entra Toolbox — v$AppVersion"
+    }
 
     # ── Register lazy-init maps (panels built on first nav click) ────────────
     $Script:NavInitializers = @{
@@ -797,20 +837,19 @@ function Show-MainWindow {
         }
     })
 
-    # ── Log pane toggle ──────────────────────────────────────────────────────
+    # ── Log pane toggle (button + Ctrl+L) ────────────────────────────────────
     $Script:MainUI.BtnLog.Add_Click({
+        try { Invoke-LogPaneToggle }
+        catch { Write-Log "BtnLog click error: $_" 'ERROR' }
+    })
+    $window.Add_PreviewKeyDown({
+        param($s, $e)
         try {
-            $vis = $Script:MainUI.LogPaneGrid.Visibility
-            if ($vis -eq 'Visible') {
-                $Script:MainUI.LogPaneGrid.Visibility = 'Collapsed'
-                $Script:MainUI.BtnLog.Background = New-SolidBrush 'Border'
-            } else {
-                $Script:MainUI.LogPaneGrid.Visibility = 'Visible'
-                $Script:MainUI.BtnLog.Background = New-SolidBrush 'Accent'
+            if ($e.Key -eq 'L' -and [System.Windows.Input.Keyboard]::Modifiers -eq [System.Windows.Input.ModifierKeys]::Control) {
+                Invoke-LogPaneToggle
+                $e.Handled = $true
             }
-        } catch {
-            Write-Log "BtnLog click error: $_" 'ERROR'
-        }
+        } catch {}
     })
 
     # ── Clear log ─────────────────────────────────────────────────────────────
