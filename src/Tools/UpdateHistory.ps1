@@ -10,6 +10,19 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.14.0'
+        Date    = '2026-07-02'
+        Changes = @(
+            'Reliability: every Graph call now retries automatically on throttling (429, honouring Retry-After) and transient server errors (502/503/504) with exponential backoff'
+            'Reliability: the access token is refreshed silently in the background before it expires — long sessions no longer fail with "session expired"'
+            'UI: tool panels fade in when switching; text rendering is crisper (display-mode formatting and layout rounding)'
+            'UI: connecting no longer freezes the window while the tenant name loads'
+            'UI: tenant badge tooltip shows the tenant ID and signed-in account'
+            'UI: Add Tenant dialog — Enter connects, Esc cancels'
+            'UI: Ctrl+L toggles the activity log pane; window title now shows the version'
+        )
+    }
+    @{
         Version = '0.13.0'
         Date    = '2026-06-30'
         Changes = @(
