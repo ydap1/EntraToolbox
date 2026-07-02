@@ -656,11 +656,17 @@ function Start-TenantConnectAsync {
         [Parameter(Mandatory)][scriptblock]$OnFailure
     )
 
-    Write-Log "Auth: starting token acquisition for tenant $TenantId" 'DEBUG'
+    Write-Log "Auth: starting token acquisition for '$TenantId'" 'DEBUG'
     Initialize-TokenCacheHelper
-    $cacheFile   = Get-TenantCacheFile  -TenantId $TenantId
-    $accountHint = Get-TenantAccountHint -TenantId $TenantId
-    if ($accountHint) { Write-Log "Auth: using saved account hint $accountHint" 'DEBUG' }
+    # $TenantId may be a GUID, a verified domain, or an admin UPN. Non-GUID input
+    # is resolved to the tenant GUID inside the worker (public discovery endpoint,
+    # no auth needed); a UPN also becomes the login hint so the sign-in prompt is
+    # pre-filled. The cache file path is computed in the worker after resolution
+    # so domain/UPN input maps to the same cache as the GUID.
+    $enteredUpn  = if ($TenantId -like '*@*') { $TenantId.Trim() } else { $null }
+    $cacheDir    = Split-Path (Get-TenantCacheFile -TenantId $TenantId)
+    $accountHint = if ($enteredUpn) { $enteredUpn } else { Get-TenantAccountHint -TenantId $TenantId }
+    if ($accountHint) { Write-Log "Auth: using account hint $accountHint" 'DEBUG' }
 
     # Reuse the existing app for this tenant if we have one — its in-memory MSAL cache
     # means silent auth within the same session never opens the browser.
@@ -689,7 +695,7 @@ function Start-TenantConnectAsync {
     $rs.SessionStateProxy.SetVariable('TenantId',     $TenantId)
     $rs.SessionStateProxy.SetVariable('ClientId',     $clientId)
     $rs.SessionStateProxy.SetVariable('Scopes',       $scopes)
-    $rs.SessionStateProxy.SetVariable('CacheFile',    $cacheFile)
+    $rs.SessionStateProxy.SetVariable('CacheDir',     $cacheDir)
     $rs.SessionStateProxy.SetVariable('AccountHint',  $accountHint)
     $rs.SessionStateProxy.SetVariable('ExistingApp',  $existingApp)
 
@@ -699,8 +705,29 @@ function Start-TenantConnectAsync {
         try {
             Import-Module MSAL.PS -ErrorAction Stop
 
+            # Resolve domain / UPN input to the tenant GUID via the public OpenID
+            # discovery endpoint. GUID input passes straight through.
+            $guidRx      = '[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}'
+            $resolvedTid = $TenantId
+            if ($TenantId -notmatch "^$guidRx$") {
+                $domain = if ($TenantId -like '*@*') { ($TenantId -split '@')[-1] } else { $TenantId }
+                try {
+                    $oidc = Invoke-RestMethod `
+                        -Uri "https://login.microsoftonline.com/$domain/v2.0/.well-known/openid-configuration" `
+                        -Method GET -ErrorAction Stop
+                } catch {
+                    throw "No tenant found for '$domain'. Check the domain / UPN and try again."
+                }
+                if ($oidc.issuer -notmatch "($guidRx)") {
+                    throw "Could not resolve a tenant ID for '$domain'."
+                }
+                $resolvedTid = $Matches[1]
+            }
+            $AuthRef['TenantId'] = $resolvedTid
+            $CacheFile = Join-Path $CacheDir ("token_cache_" + ($resolvedTid -replace '[^a-zA-Z0-9]', '') + '.bin')
+
             $app = if ($ExistingApp) { $ExistingApp } else {
-                New-MsalClientApplication -ClientId $ClientId -TenantId $TenantId
+                New-MsalClientApplication -ClientId $ClientId -TenantId $resolvedTid
             }
 
             # Hook the compiled token cache helper onto this app so the MSAL cache is read
@@ -774,7 +801,10 @@ function Start-TenantConnectAsync {
             }
         } catch {
             $ex = $_.Exception
-            $detail = "$($ex.GetType().Name): $($ex.Message)"
+            # Plain `throw "message"` (e.g. tenant resolution failures) surfaces as a
+            # RuntimeException whose type name is noise — show just the message.
+            $detail = if ($ex.GetType().Name -eq 'RuntimeException') { $ex.Message }
+                      else { "$($ex.GetType().Name): $($ex.Message)" }
             if ($ex.InnerException) { $detail += " | inner: $($ex.InnerException.GetType().Name): $($ex.InnerException.Message)" }
             $AuthRef['Error'] = $detail
         } finally {

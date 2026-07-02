@@ -31,7 +31,7 @@ Launch.cmd
 
 Downloads `MSAL.PS` automatically on first run. No admin rights required.
 
-Add a tenant with the **+** button — enter your Tenant ID, sign in interactively, done. Subsequent launches connect silently.
+Add a tenant with the **+** button — enter a Tenant ID, a verified domain, or a global admin UPN (domains and UPNs are resolved to the tenant automatically), sign in interactively, done. Subsequent launches connect silently.
 
 Use **Dry Run** in the tenant bar to preview destructive actions (password resets, UPN changes, ID assignments) without executing them.
 

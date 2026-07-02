@@ -524,8 +524,8 @@ $Script:AddTenantXaml = @'
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
     <StackPanel Grid.Row="0">
-      <TextBlock Text="Tenant ID" Margin="0,0,0,4"/>
-      <TextBox x:Name="DlgTenantId"/>
+      <TextBlock Text="Tenant ID, domain, or admin UPN" Margin="0,0,0,4"/>
+      <TextBox x:Name="DlgTenantId" ToolTip="e.g. 00000000-…, contoso.com, or admin@contoso.com"/>
     </StackPanel>
     <StackPanel Grid.Row="2">
       <TextBlock Text="Display name (optional)" Margin="0,0,0,4"/>
@@ -581,12 +581,11 @@ function Show-AddTenantDialog {
 
     $Script:DlgOk.Add_Click({
         try {
-            $tid   = $Script:DlgTid.Text.Trim()
-            $dname = $Script:DlgName.Text.Trim()
-            Write-Log "DlgConnect: attempting tenant $tid" 'INFO'
+            $tid = $Script:DlgTid.Text.Trim()
+            Write-Log "DlgConnect: attempting tenant '$tid'" 'INFO'
 
             if ([string]::IsNullOrWhiteSpace($tid)) {
-                $Script:DlgStat.Text       = 'Tenant ID is required.'
+                $Script:DlgStat.Text       = 'Enter a tenant ID, verified domain, or admin UPN.'
                 $Script:DlgStat.Visibility = 'Visible'
                 return
             }
@@ -600,13 +599,20 @@ function Show-AddTenantDialog {
 
             Start-TenantConnectAsync -TenantId $tid `
                 -OnSuccess {
-                    Write-Log "DlgConnect: auth succeeded for $($Script:DlgTid.Text.Trim())" 'INFO'
-                    Save-Tenant -TenantId $Script:DlgTid.Text.Trim() `
-                                -DisplayName $Script:DlgName.Text.Trim()
+                    # Auth resolved domain/UPN input to the tenant GUID — save that,
+                    # not the raw input, so the cache and dedupe stay canonical.
+                    $entered = $Script:DlgTid.Text.Trim()
+                    $dname   = $Script:DlgName.Text.Trim()
+                    if (-not $dname -and $entered -ne $Script:CurrentTenantId) {
+                        # Domain/UPN input makes a friendlier default label than a GUID.
+                        $dname = if ($entered -like '*@*') { ($entered -split '@')[-1] } else { $entered }
+                    }
+                    Write-Log "DlgConnect: auth succeeded for '$entered' (tenant $($Script:CurrentTenantId))" 'INFO'
+                    Save-Tenant -TenantId $Script:CurrentTenantId -DisplayName $dname
                     Update-TenantCombo
 
                     for ($i = 0; $i -lt $Script:MainUI.TenantCombo.Items.Count; $i++) {
-                        if ($Script:MainUI.TenantCombo.Items[$i].Tag.TenantId -eq $Script:DlgTid.Text.Trim()) {
+                        if ($Script:MainUI.TenantCombo.Items[$i].Tag.TenantId -eq $Script:CurrentTenantId) {
                             $Script:MainUI.TenantCombo.SelectedIndex = $i
                             break
                         }

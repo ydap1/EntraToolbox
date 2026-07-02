@@ -10,6 +10,15 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.15.0'
+        Date    = '2026-07-02'
+        Changes = @(
+            'Add Tenant: accepts a tenant ID, a verified domain, or a global admin UPN — domains and UPNs are resolved to the tenant ID automatically'
+            'Add Tenant: entering a UPN pre-fills the sign-in prompt with that account'
+            'Add Tenant: when no display name is given, a domain/UPN entry is used as the tenant label instead of the raw GUID'
+        )
+    }
+    @{
         Version = '0.14.0'
         Date    = '2026-07-02'
         Changes = @(
