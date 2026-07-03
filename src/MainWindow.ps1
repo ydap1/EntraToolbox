@@ -404,6 +404,9 @@ $Script:MainXaml = @'
         <Button x:Name="BtnDemo" Content="Demo" Style="{StaticResource FlatBtn}"
                 Background="#7C3AED" Padding="10,6" Margin="12,0,0,0"
                 ToolTip="Run in demo mode with fake Contoso Academy data"/>
+        <Button x:Name="BtnSearch" Content="🔍 Search" Style="{StaticResource FlatBtn}"
+                Background="#3C3C5A" Padding="10,6" Margin="12,0,0,0"
+                ToolTip="Global user search — find a user and jump to any tool (Ctrl+K)"/>
       </StackPanel>
     </Border>
 
@@ -427,6 +430,10 @@ $Script:MainXaml = @'
                      Margin="17,0,12,0" Cursor="Hand" Visibility="Collapsed"
                      TextWrapping="Wrap"
                      ToolTip="A newer version is available on GitHub — click to open"/>
+          <TextBlock x:Name="MainShortcuts" DockPanel.Dock="Bottom"
+                     Text="Keyboard shortcuts  (F1)" Foreground="#50507A" FontSize="11"
+                     Margin="17,0,12,2" Cursor="Hand"
+                     ToolTip="Show the keyboard shortcut guide"/>
           <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel x:Name="NavPanel" Margin="0,8,0,16"/>
           </ScrollViewer>
@@ -509,6 +516,67 @@ $Script:MainXaml = @'
           </StackPanel>
           <TextBlock Text="Type a name or UPN  •  ↑↓ select  •  Enter opens Password Reset  •  Esc closes"
                      Foreground="#50507A" FontSize="11" Margin="2,10,0,0"/>
+        </StackPanel>
+      </Border>
+    </Grid>
+
+    <!-- ── Keyboard shortcut guide overlay (F1) ────────────────────────────── -->
+    <Grid x:Name="HelpOverlay" Grid.Row="0" Grid.RowSpan="6" Visibility="Collapsed">
+      <Grid.Resources>
+        <Style x:Key="KeyChip" TargetType="Border">
+          <Setter Property="Background"   Value="#242436"/>
+          <Setter Property="BorderBrush"  Value="#3C3C5A"/>
+          <Setter Property="BorderThickness" Value="1"/>
+          <Setter Property="CornerRadius" Value="4"/>
+          <Setter Property="Padding"      Value="9,3"/>
+          <Setter Property="HorizontalAlignment" Value="Left"/>
+          <Setter Property="VerticalAlignment"   Value="Center"/>
+          <Setter Property="Margin"       Value="0,4,14,4"/>
+        </Style>
+        <Style x:Key="KeyText" TargetType="TextBlock">
+          <Setter Property="Foreground" Value="#E2E2F0"/>
+          <Setter Property="FontFamily" Value="Consolas"/>
+          <Setter Property="FontSize"   Value="12"/>
+        </Style>
+        <Style x:Key="KeyDesc" TargetType="TextBlock">
+          <Setter Property="Foreground" Value="#7878A0"/>
+          <Setter Property="FontSize"   Value="12"/>
+          <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+      </Grid.Resources>
+      <Border x:Name="HelpBackdrop" Background="#000000" Opacity="0.55"/>
+      <Border Width="430" VerticalAlignment="Center" HorizontalAlignment="Center"
+              Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="1" CornerRadius="10">
+        <Border.Effect>
+          <DropShadowEffect BlurRadius="24" ShadowDepth="4" Opacity="0.5" Color="Black"/>
+        </Border.Effect>
+        <StackPanel Margin="24,20">
+          <TextBlock Text="Keyboard Shortcuts" Foreground="#E2E2F0" FontSize="15"
+                     FontWeight="Bold" Margin="0,0,0,12"/>
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="110"/>
+              <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+              <RowDefinition/><RowDefinition/><RowDefinition/>
+              <RowDefinition/><RowDefinition/><RowDefinition/>
+            </Grid.RowDefinitions>
+            <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource KeyChip}"><TextBlock Style="{StaticResource KeyText}" Text="Ctrl + K"/></Border>
+            <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource KeyDesc}" Text="Global user search — jump to any tool for a user"/>
+            <Border Grid.Row="1" Grid.Column="0" Style="{StaticResource KeyChip}"><TextBlock Style="{StaticResource KeyText}" Text="Ctrl + L"/></Border>
+            <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource KeyDesc}" Text="Show / hide the activity log pane"/>
+            <Border Grid.Row="2" Grid.Column="0" Style="{StaticResource KeyChip}"><TextBlock Style="{StaticResource KeyText}" Text="F1"/></Border>
+            <TextBlock Grid.Row="2" Grid.Column="1" Style="{StaticResource KeyDesc}" Text="This shortcut guide"/>
+            <Border Grid.Row="3" Grid.Column="0" Style="{StaticResource KeyChip}"><TextBlock Style="{StaticResource KeyText}" Text="Esc"/></Border>
+            <TextBlock Grid.Row="3" Grid.Column="1" Style="{StaticResource KeyDesc}" Text="Close overlays and cancel dialogs"/>
+            <Border Grid.Row="4" Grid.Column="0" Style="{StaticResource KeyChip}"><TextBlock Style="{StaticResource KeyText}" Text="Enter"/></Border>
+            <TextBlock Grid.Row="4" Grid.Column="1" Style="{StaticResource KeyDesc}" Text="Confirm dialogs; in search, open Password Reset"/>
+            <Border Grid.Row="5" Grid.Column="0" Style="{StaticResource KeyChip}"><TextBlock Style="{StaticResource KeyText}" Text="↑  ↓"/></Border>
+            <TextBlock Grid.Row="5" Grid.Column="1" Style="{StaticResource KeyDesc}" Text="Move through search results"/>
+          </Grid>
+          <TextBlock Text="Press Esc or click outside to close" Foreground="#50507A"
+                     FontSize="11" Margin="0,14,0,0"/>
         </StackPanel>
       </Border>
     </Grid>
@@ -599,7 +667,7 @@ $Script:AddTenantXaml = @'
     </Grid.RowDefinitions>
     <StackPanel Grid.Row="0">
       <TextBlock Text="Tenant ID, domain, or admin UPN" Margin="0,0,0,4"/>
-      <TextBox x:Name="DlgTenantId" ToolTip="e.g. 00000000-…, contoso.com, or admin@contoso.com"/>
+      <TextBox x:Name="DlgTenantId" ToolTip="e.g. a tenant GUID, contoso.com, or admin@contoso.com"/>
     </StackPanel>
     <StackPanel Grid.Row="2">
       <TextBlock Text="Display name (optional)" Margin="0,0,0,4"/>
@@ -817,6 +885,15 @@ function Open-CmdUserInTool {
     }
 }
 
+# ── Keyboard shortcut guide (F1) ────────────────────────────────────────────────
+function Show-HelpOverlay {
+    $Script:MainUI.HelpOverlay.Visibility = 'Visible'
+}
+
+function Hide-HelpOverlay {
+    $Script:MainUI.HelpOverlay.Visibility = 'Collapsed'
+}
+
 # ── Update checker ──────────────────────────────────────────────────────────────
 # Compares version.txt on GitHub main against the running version; shows a
 # clickable label in the sidebar when a newer release exists. Fails silently.
@@ -912,6 +989,10 @@ function Show-MainWindow {
         CmdActSignIns   = $window.FindName('CmdActSignIns')
         CmdActLicences  = $window.FindName('CmdActLicences')
         CmdActLeaver    = $window.FindName('CmdActLeaver')
+        BtnSearch       = $window.FindName('BtnSearch')
+        HelpOverlay     = $window.FindName('HelpOverlay')
+        HelpBackdrop    = $window.FindName('HelpBackdrop')
+        ShortcutsLabel  = $window.FindName('MainShortcuts')
     }
 
     $Script:AppLogBox = $Script:MainUI.LogPane
@@ -1040,9 +1121,20 @@ function Show-MainWindow {
             $ctrl = [System.Windows.Input.Keyboard]::Modifiers -eq [System.Windows.Input.ModifierKeys]::Control
             if ($e.Key -eq 'L' -and $ctrl) { Invoke-LogPaneToggle; $e.Handled = $true; return }
             if ($e.Key -eq 'K' -and $ctrl) { Show-CmdPalette;      $e.Handled = $true; return }
-            if ($e.Key -eq 'Escape' -and $Script:MainUI.CmdOverlay.Visibility -eq 'Visible') {
-                Hide-CmdPalette
+            if ($e.Key -eq 'F1') {
+                if ($Script:MainUI.HelpOverlay.Visibility -eq 'Visible') { Hide-HelpOverlay }
+                else { Show-HelpOverlay }
                 $e.Handled = $true
+                return
+            }
+            if ($e.Key -eq 'Escape') {
+                if ($Script:MainUI.HelpOverlay.Visibility -eq 'Visible') {
+                    Hide-HelpOverlay
+                    $e.Handled = $true
+                } elseif ($Script:MainUI.CmdOverlay.Visibility -eq 'Visible') {
+                    Hide-CmdPalette
+                    $e.Handled = $true
+                }
             }
         } catch {}
     })
@@ -1092,6 +1184,19 @@ function Show-MainWindow {
     $Script:MainUI.UpdateLabel.Add_MouseLeftButtonDown({
         try { Start-Process 'https://github.com/ydap1/EntraToolbox' }
         catch { Write-Log "UpdateLabel click error: $_" 'ERROR' }
+    })
+
+    # ── Search button + shortcut guide ───────────────────────────────────────
+    $Script:MainUI.BtnSearch.Add_Click({
+        try { Show-CmdPalette }
+        catch { Write-Log "BtnSearch click error: $_" 'ERROR' }
+    })
+    $Script:MainUI.ShortcutsLabel.Add_MouseLeftButtonDown({
+        try { Show-HelpOverlay }
+        catch { Write-Log "ShortcutsLabel click error: $_" 'ERROR' }
+    })
+    $Script:MainUI.HelpBackdrop.Add_MouseLeftButtonDown({
+        try { Hide-HelpOverlay } catch {}
     })
 
     # ── Clear log ─────────────────────────────────────────────────────────────
