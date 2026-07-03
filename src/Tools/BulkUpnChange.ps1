@@ -169,57 +169,59 @@ function Start-BucLoad {
     $Script:BUC_UI.DomainCombo.Items.Clear()
     Write-BucLog 'Loading users and verified domains...' 'TextDim'
 
-    if ($Script:BUC_LoadTimer) { $Script:BUC_LoadTimer.Stop() }
-    $Script:BUC_LoadTimer = Start-AsyncWork -RefSeed @{ Users = $null; Domains = $null } -Script {
-        $users = [System.Collections.Generic.List[object]]::new()
-        $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,onPremisesSyncEnabled,department,officeLocation&$top=999&$filter=accountEnabled eq true'
-        do {
-            $resp = Invoke-RestMethod -Uri $url `
-                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-            foreach ($u in $resp.value) {
-                if (-not $u.onPremisesSyncEnabled) { $users.Add($u) }
-            }
-            $url = $resp.'@odata.nextLink'
-        } while ($url)
+    Request-EtbUsers -OnReady 'Complete-BucUsers'
+}
 
-        $dResp = Invoke-RestMethod `
-            -Uri 'https://graph.microsoft.com/v1.0/domains?$select=id,isVerified' `
-            -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-        $domains = @($dResp.value | Where-Object { $_.isVerified } | ForEach-Object { $_.id } | Sort-Object)
-
-        $Ref['Users']   = $users.ToArray()
-        $Ref['Domains'] = $domains
-    } -OnComplete {
-        param($ref)
-        try {
-            if ($ref['Error'] -eq '401') {
-                Write-BucLog 'Session expired — reconnect via the tenant selector.' 'Danger'
-                Set-MainStatus 'Session expired.' 'Danger'
-                return
-            }
-            if ($ref['Error']) {
-                Write-BucLog "Load error: $($ref['Error'])" 'Danger'
-                return
-            }
-
-            $Script:BUC_AllUsers = @($ref['Users'] | Sort-Object { $_.displayName })
-            $Script:BUC_Domains  = $ref['Domains']
-
-            foreach ($d in $Script:BUC_Domains) { [void]$Script:BUC_UI.DomainCombo.Items.Add($d) }
-            if ($Script:BUC_UI.DomainCombo.Items.Count -gt 0) {
-                $Script:BUC_UI.DomainCombo.SelectedIndex = 0
-            }
-
-            Update-BucGroupCombos
-            Update-BucUserFilter
-            $Script:BUC_UI.Search.IsEnabled   = $true
-            $Script:BUC_UI.UserList.IsEnabled = $true
-            $n = $Script:BUC_AllUsers.Count; $nd = $Script:BUC_Domains.Count
-            Write-BucLog "Loaded $n cloud-only user(s) and $nd verified domain(s)." 'Success'
-            Set-MainStatus "BUC: $n users loaded." 'Success'
-        } catch {
-            Write-Log "BUC load-timer error: $_" 'ERROR'
+function Complete-BucUsers {
+    try {
+        if ($Script:UserCache.Error -eq '401') {
+            Write-BucLog 'Session expired — reconnect via the tenant selector.' 'Danger'
+            Set-MainStatus 'Session expired.' 'Danger'
+            return
         }
+        if ($Script:UserCache.Error) {
+            Write-BucLog "Load error: $($Script:UserCache.Error)" 'Danger'
+            return
+        }
+
+        $Script:BUC_AllUsers = @($Script:UserCache.Users |
+            Where-Object { $_.accountEnabled -and -not $_.onPremisesSyncEnabled } |
+            Sort-Object { $_.displayName })
+
+        # Verified domains are not part of the shared user cache — small fetch.
+        if ($Script:BUC_LoadTimer) { $Script:BUC_LoadTimer.Stop() }
+        $Script:BUC_LoadTimer = Start-AsyncWork -RefSeed @{ Domains = $null } -Script {
+            $dResp = Invoke-RestMethod `
+                -Uri 'https://graph.microsoft.com/v1.0/domains?$select=id,isVerified' `
+                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
+            $Ref['Domains'] = @($dResp.value | Where-Object { $_.isVerified } | ForEach-Object { $_.id } | Sort-Object)
+        } -OnComplete {
+            param($ref)
+            try {
+                if ($ref['Error']) {
+                    Write-BucLog "Load error: $($ref['Error'])" 'Danger'
+                    return
+                }
+                $Script:BUC_Domains = $ref['Domains']
+
+                foreach ($d in $Script:BUC_Domains) { [void]$Script:BUC_UI.DomainCombo.Items.Add($d) }
+                if ($Script:BUC_UI.DomainCombo.Items.Count -gt 0) {
+                    $Script:BUC_UI.DomainCombo.SelectedIndex = 0
+                }
+
+                Update-BucGroupCombos
+                Update-BucUserFilter
+                $Script:BUC_UI.Search.IsEnabled   = $true
+                $Script:BUC_UI.UserList.IsEnabled = $true
+                $n = $Script:BUC_AllUsers.Count; $nd = $Script:BUC_Domains.Count
+                Write-BucLog "Loaded $n cloud-only user(s) and $nd verified domain(s)." 'Success'
+                Set-MainStatus "BUC: $n users loaded." 'Success'
+            } catch {
+                Write-Log "BUC load-timer error: $_" 'ERROR'
+            }
+        }
+    } catch {
+        Write-Log "BUC user-load error: $_" 'ERROR'
     }
 }
 

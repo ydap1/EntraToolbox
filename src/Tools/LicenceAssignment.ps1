@@ -11,7 +11,6 @@ $Script:LA_UI           = $null
 $Script:LA_AllUsers     = @()
 $Script:LA_AllSkus      = @()
 $Script:LA_SelectedUser = $null
-$Script:LA_UserTimer    = $null
 $Script:LA_SkuTimer     = $null
 $Script:LA_LicTimer     = $null
 $Script:LA_ActionTimer  = $null
@@ -72,37 +71,27 @@ function Start-LaUserLoad {
     $Script:LA_UI.UserList.IsEnabled   = $false
     Write-LaLog 'Loading users...' 'TextDim'
 
-    if ($Script:LA_UserTimer) { $Script:LA_UserTimer.Stop() }
-    $Script:LA_UserTimer = Start-AsyncWork -RefSeed @{ Users = $null } -Script {
-        $users = [System.Collections.Generic.List[object]]::new()
-        $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName&$top=999'
-        do {
-            $resp = Invoke-RestMethod -Uri $url `
-                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-            foreach ($u in $resp.value) { $users.Add($u) }
-            $url = $resp.'@odata.nextLink'
-        } while ($url)
-        $Ref['Users'] = $users.ToArray()
-    } -OnComplete {
-        param($ref)
-        try {
-            if ($ref['Error'] -eq '401') {
-                Write-LaLog 'Session expired — reconnect.' 'Danger'
-                return
-            }
-            if ($ref['Error']) {
-                Write-LaLog "Error loading users: $($ref['Error'])" 'Danger'
-                return
-            }
-            $Script:LA_AllUsers = @($ref['Users'] | Sort-Object { $_.displayName })
-            Update-LaUserFilter
-            $Script:LA_UI.UserSearch.IsEnabled = $true
-            $Script:LA_UI.UserList.IsEnabled   = $true
-            Write-LaLog "Loaded $($Script:LA_AllUsers.Count) users." 'Success'
-            Set-MainStatus "Loaded $($Script:LA_AllUsers.Count) users." 'Success'
-        } catch {
-            Write-Log "LA user-load timer error: $_" 'ERROR'
+    Request-EtbUsers -OnReady 'Complete-LaUserLoad'
+}
+
+function Complete-LaUserLoad {
+    try {
+        if ($Script:UserCache.Error -eq '401') {
+            Write-LaLog 'Session expired — reconnect.' 'Danger'
+            return
         }
+        if ($Script:UserCache.Error) {
+            Write-LaLog "Error loading users: $($Script:UserCache.Error)" 'Danger'
+            return
+        }
+        $Script:LA_AllUsers = @($Script:UserCache.Users | Sort-Object { $_.displayName })
+        Update-LaUserFilter
+        $Script:LA_UI.UserSearch.IsEnabled = $true
+        $Script:LA_UI.UserList.IsEnabled   = $true
+        Write-LaLog "Loaded $($Script:LA_AllUsers.Count) users." 'Success'
+        Set-MainStatus "Loaded $($Script:LA_AllUsers.Count) users." 'Success'
+    } catch {
+        Write-Log "LA user-load error: $_" 'ERROR'
     }
 }
 
@@ -609,7 +598,7 @@ function Initialize-LicenceAssignmentTool {
     }
 
     $Script:LA_UI.UserSearch.Add_TextChanged({
-        try { Update-LaUserFilter }
+        try { Invoke-EtbDebounced -Key 'LA_User' -Command 'Update-LaUserFilter' }
         catch { Write-Log "LA UserSearch error: $_" 'ERROR' }
     })
 
@@ -649,7 +638,6 @@ function Initialize-LicenceAssignmentTool {
         $Script:LA_AllUsers     = @()
         $Script:LA_AllSkus      = @()
         $Script:LA_SelectedUser = $null
-        if ($Script:LA_UserTimer)   { $Script:LA_UserTimer.Stop() }
         if ($Script:LA_SkuTimer)    { $Script:LA_SkuTimer.Stop() }
         if ($Script:LA_LicTimer)    { $Script:LA_LicTimer.Stop() }
         if ($Script:LA_ActionTimer) { $Script:LA_ActionTimer.Stop() }

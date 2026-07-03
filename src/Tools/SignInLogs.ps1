@@ -9,7 +9,6 @@
 # ── Script-level state ─────────────────────────────────────────────────────────
 $Script:SL_UI        = $null
 $Script:SL_AllUsers  = @()
-$Script:SL_UserTimer = $null
 $Script:SL_LogsTimer = $null
 
 # ── Log helper ─────────────────────────────────────────────────────────────────
@@ -27,44 +26,35 @@ function Start-SlUserLoad {
     Set-MainStatus 'Loading users...' 'TextDim'
     Write-SlLog 'Fetching users from Entra ID...' 'TextDim'
 
-    if ($Script:SL_UserTimer) { $Script:SL_UserTimer.Stop() }
-    $Script:SL_UserTimer = Start-AsyncWork -RefSeed @{ Users = $null } -Script {
-        $users = [System.Collections.Generic.List[object]]::new()
-        $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName&$top=999&$filter=accountEnabled eq true'
-        do {
-            $resp = Invoke-RestMethod -Uri $url `
-                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-            foreach ($u in $resp.value) { $users.Add($u) }
-            $url = $resp.'@odata.nextLink'
-        } while ($url)
-        $Ref['Users'] = $users.ToArray()
-    } -OnComplete {
-        param($ref)
-        try {
-            if ($ref['Error'] -eq '401') {
-                Write-Log 'SignInLogs: user load 401 - session expired' 'ERROR'
-                Write-SlLog 'Session expired - reconnect via the tenant selector.' 'Danger'
-                Set-MainStatus 'Session expired.' 'Danger'
-                return
-            }
-            if ($ref['Error']) {
-                Write-Log "SignInLogs: user load failed - $($ref['Error'])" 'ERROR'
-                Write-SlLog "Error loading users: $($ref['Error'])" 'Danger'
-                Set-MainStatus 'Failed to load users.' 'Danger'
-                return
-            }
+    Request-EtbUsers -OnReady 'Complete-SlUserLoad'
+}
 
-            $Script:SL_AllUsers = @($ref['Users'] | Sort-Object { $_.displayName })
-            Update-SlUserFilter
-            $Script:SL_UI.UserSearch.IsEnabled = $true
-            $Script:SL_UI.UserList.IsEnabled   = $true
-            $n = $Script:SL_AllUsers.Count
-            Write-Log "SignInLogs: loaded $n users" 'INFO'
-            Write-SlLog "Loaded $n users." 'Success'
-            Set-MainStatus "Loaded $n users." 'Success'
-        } catch {
-            Write-Log "SignInLogs user-load timer error: $_" 'ERROR'
+function Complete-SlUserLoad {
+    try {
+        if ($Script:UserCache.Error -eq '401') {
+            Write-Log 'SignInLogs: user load 401 - session expired' 'ERROR'
+            Write-SlLog 'Session expired - reconnect via the tenant selector.' 'Danger'
+            Set-MainStatus 'Session expired.' 'Danger'
+            return
         }
+        if ($Script:UserCache.Error) {
+            Write-Log "SignInLogs: user load failed - $($Script:UserCache.Error)" 'ERROR'
+            Write-SlLog "Error loading users: $($Script:UserCache.Error)" 'Danger'
+            Set-MainStatus 'Failed to load users.' 'Danger'
+            return
+        }
+
+        $Script:SL_AllUsers = @($Script:UserCache.Users |
+            Where-Object { $_.accountEnabled } | Sort-Object { $_.displayName })
+        Update-SlUserFilter
+        $Script:SL_UI.UserSearch.IsEnabled = $true
+        $Script:SL_UI.UserList.IsEnabled   = $true
+        $n = $Script:SL_AllUsers.Count
+        Write-Log "SignInLogs: loaded $n users" 'INFO'
+        Write-SlLog "Loaded $n users." 'Success'
+        Set-MainStatus "Loaded $n users." 'Success'
+    } catch {
+        Write-Log "SignInLogs user-load error: $_" 'ERROR'
     }
 }
 
@@ -452,7 +442,7 @@ function Initialize-SignInLogsTool {
     }
 
     $Script:SL_UI.UserSearch.Add_TextChanged({
-        try { Update-SlUserFilter }
+        try { Invoke-EtbDebounced -Key 'SL_User' -Command 'Update-SlUserFilter' }
         catch { Write-Log "SL UserSearch TextChanged error: $_" 'ERROR' }
     })
 

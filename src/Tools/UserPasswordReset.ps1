@@ -12,7 +12,6 @@
 $Script:UPR_UI         = $null
 $Script:UPR_AllUsers   = @()
 $Script:UPR_AllGroups  = @()
-$Script:UPR_UserTimer  = $null
 $Script:UPR_ProfTimer  = $null
 $Script:UPR_GrpTimer   = $null
 
@@ -31,44 +30,35 @@ function Start-UprUserLoad {
     Set-MainStatus 'Loading users...' 'TextDim'
     Write-UprLog 'Fetching users from Entra ID...' 'TextDim'
 
-    if ($Script:UPR_UserTimer) { $Script:UPR_UserTimer.Stop() }
-    $Script:UPR_UserTimer = Start-AsyncWork -RefSeed @{ Users = $null } -Script {
-        $users = [System.Collections.Generic.List[object]]::new()
-        $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName&$top=999&$filter=accountEnabled eq true'
-        do {
-            $resp = Invoke-RestMethod -Uri $url `
-                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-            foreach ($u in $resp.value) { $users.Add($u) }
-            $url = $resp.'@odata.nextLink'
-        } while ($url)
-        $Ref['Users'] = $users.ToArray()
-    } -OnComplete {
-        param($ref)
-        try {
-            if ($ref['Error'] -eq '401') {
-                Write-Log 'UPR: user load 401 - session expired' 'ERROR'
-                Write-UprLog 'Session expired - reconnect via the tenant selector.' 'Danger'
-                Set-MainStatus 'Session expired.' 'Danger'
-                return
-            }
-            if ($ref['Error']) {
-                Write-Log "UPR: user load failed - $($ref['Error'])" 'ERROR'
-                Write-UprLog "Error loading users: $($ref['Error'])" 'Danger'
-                Set-MainStatus 'Failed to load users.' 'Danger'
-                return
-            }
+    Request-EtbUsers -OnReady 'Complete-UprUserLoad'
+}
 
-            $Script:UPR_AllUsers = @($ref['Users'] | Sort-Object { $_.displayName })
-            Update-UprUserFilter
-            $Script:UPR_UI.UserSearch.IsEnabled = $true
-            $Script:UPR_UI.UserList.IsEnabled   = $true
-            $n = $Script:UPR_AllUsers.Count
-            Write-Log "UPR: loaded $n users" 'INFO'
-            Write-UprLog "Loaded $n users." 'Success'
-            Set-MainStatus "Loaded $n users." 'Success'
-        } catch {
-            Write-Log "UPR user-load timer error: $_" 'ERROR'
+function Complete-UprUserLoad {
+    try {
+        if ($Script:UserCache.Error -eq '401') {
+            Write-Log 'UPR: user load 401 - session expired' 'ERROR'
+            Write-UprLog 'Session expired - reconnect via the tenant selector.' 'Danger'
+            Set-MainStatus 'Session expired.' 'Danger'
+            return
         }
+        if ($Script:UserCache.Error) {
+            Write-Log "UPR: user load failed - $($Script:UserCache.Error)" 'ERROR'
+            Write-UprLog "Error loading users: $($Script:UserCache.Error)" 'Danger'
+            Set-MainStatus 'Failed to load users.' 'Danger'
+            return
+        }
+
+        $Script:UPR_AllUsers = @($Script:UserCache.Users |
+            Where-Object { $_.accountEnabled } | Sort-Object { $_.displayName })
+        Update-UprUserFilter
+        $Script:UPR_UI.UserSearch.IsEnabled = $true
+        $Script:UPR_UI.UserList.IsEnabled   = $true
+        $n = $Script:UPR_AllUsers.Count
+        Write-Log "UPR: loaded $n users" 'INFO'
+        Write-UprLog "Loaded $n users." 'Success'
+        Set-MainStatus "Loaded $n users." 'Success'
+    } catch {
+        Write-Log "UPR user-load error: $_" 'ERROR'
     }
 }
 
@@ -580,13 +570,13 @@ function Initialize-UserPasswordResetTool {
     }
 
     $Script:UPR_UI.GrpSearch.Add_TextChanged({
-        try { Update-UprGroupFilter }
+        try { Invoke-EtbDebounced -Key 'UPR_Grp' -Command 'Update-UprGroupFilter' }
         catch { Write-Log "UPR GrpSearch TextChanged error: $_" 'ERROR' }
     })
 
     # Search filter
     $Script:UPR_UI.UserSearch.Add_TextChanged({
-        try { Update-UprUserFilter }
+        try { Invoke-EtbDebounced -Key 'UPR_User' -Command 'Update-UprUserFilter' }
         catch { Write-Log "UPR UserSearch TextChanged error: $_" 'ERROR' }
     })
 

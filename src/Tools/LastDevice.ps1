@@ -11,7 +11,6 @@
 # ── Script-level state ─────────────────────────────────────────────────────────
 $Script:LD_UI          = $null
 $Script:LD_AllUsers    = @()
-$Script:LD_UserTimer   = $null
 $Script:LD_DevTimer    = $null
 $Script:LD_AllDevices  = @()
 $Script:LD_AllDevTimer = $null
@@ -37,44 +36,34 @@ function Start-LdUserLoad {
     Set-MainStatus 'Loading users...' 'TextDim'
     Write-LdLog 'Fetching users from Entra ID...' 'TextDim'
 
-    if ($Script:LD_UserTimer) { $Script:LD_UserTimer.Stop() }
-    $Script:LD_UserTimer = Start-AsyncWork -RefSeed @{ Users = $null } -Script {
-        $users = [System.Collections.Generic.List[object]]::new()
-        $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName&$top=999'
-        do {
-            $resp = Invoke-RestMethod -Uri $url `
-                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-            foreach ($u in $resp.value) { $users.Add($u) }
-            $url = $resp.'@odata.nextLink'
-        } while ($url)
-        $Ref['Users'] = $users.ToArray()
-    } -OnComplete {
-        param($ref)
-        try {
-            if ($ref['Error'] -eq '401') {
-                Write-Log 'LastDevice: user load 401 - session expired' 'ERROR'
-                Write-LdLog 'Session expired - reconnect via the tenant selector.' 'Danger'
-                Set-MainStatus 'Session expired.' 'Danger'
-                return
-            }
-            if ($ref['Error']) {
-                Write-Log "LastDevice: user load failed - $($ref['Error'])" 'ERROR'
-                Write-LdLog "Error loading users: $($ref['Error'])" 'Danger'
-                Set-MainStatus 'Failed to load users.' 'Danger'
-                return
-            }
+    Request-EtbUsers -OnReady 'Complete-LdUserLoad'
+}
 
-            $Script:LD_AllUsers = @($ref['Users'] | Sort-Object { $_.displayName })
-            Update-LdUserFilter
-            $Script:LD_UI.UserSearch.IsEnabled = $true
-            $Script:LD_UI.UserList.IsEnabled   = $true
-            $n = $Script:LD_AllUsers.Count
-            Write-Log "LastDevice: loaded $n users" 'INFO'
-            Write-LdLog "Loaded $n users." 'Success'
-            Set-MainStatus "Loaded $n users." 'Success'
-        } catch {
-            Write-Log "LastDevice user-load timer error: $_" 'ERROR'
+function Complete-LdUserLoad {
+    try {
+        if ($Script:UserCache.Error -eq '401') {
+            Write-Log 'LastDevice: user load 401 - session expired' 'ERROR'
+            Write-LdLog 'Session expired - reconnect via the tenant selector.' 'Danger'
+            Set-MainStatus 'Session expired.' 'Danger'
+            return
         }
+        if ($Script:UserCache.Error) {
+            Write-Log "LastDevice: user load failed - $($Script:UserCache.Error)" 'ERROR'
+            Write-LdLog "Error loading users: $($Script:UserCache.Error)" 'Danger'
+            Set-MainStatus 'Failed to load users.' 'Danger'
+            return
+        }
+
+        $Script:LD_AllUsers = @($Script:UserCache.Users | Sort-Object { $_.displayName })
+        Update-LdUserFilter
+        $Script:LD_UI.UserSearch.IsEnabled = $true
+        $Script:LD_UI.UserList.IsEnabled   = $true
+        $n = $Script:LD_AllUsers.Count
+        Write-Log "LastDevice: loaded $n users" 'INFO'
+        Write-LdLog "Loaded $n users." 'Success'
+        Set-MainStatus "Loaded $n users." 'Success'
+    } catch {
+        Write-Log "LastDevice user-load error: $_" 'ERROR'
     }
 }
 
@@ -984,7 +973,7 @@ function Initialize-LastDeviceTool {
 
     # Search box
     $Script:LD_UI.UserSearch.Add_TextChanged({
-        try { Update-LdUserFilter }
+        try { Invoke-EtbDebounced -Key 'LD_User' -Command 'Update-LdUserFilter' }
         catch { Write-Log "UserSearch TextChanged error: $_" 'ERROR' }
     })
 
@@ -1123,7 +1112,7 @@ function Initialize-LastDeviceTool {
 
     # By Device: device search filter
     $Script:LD_UI.DevBrowserSearch.Add_TextChanged({
-        try { Update-LdDevBrowserFilter }
+        try { Invoke-EtbDebounced -Key 'LD_Dev' -Command 'Update-LdDevBrowserFilter' }
         catch { Write-Log "DevBrowserSearch TextChanged error: $_" 'ERROR' }
     })
 

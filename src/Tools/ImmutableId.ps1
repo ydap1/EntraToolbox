@@ -15,7 +15,6 @@ $Script:IID_UI           = @{}
 $Script:IID_Rows         = $null   # ObservableCollection[PSObject]
 $Script:IID_CheckboxCol  = $null   # reference to col 0 for hit-testing
 $Script:IID_LoadState    = @{ Done = $false; Users = $null; Error = $null }
-$Script:IID_LoadTimer    = $null
 $Script:IID_ApplyTimer   = $null
 
 # ── New-ImmutableIdValue ───────────────────────────────────────────────────────
@@ -570,37 +569,28 @@ function Start-IidLoad {
     $Script:IID_UI.BtnUncheckAll.IsEnabled = $false
     Write-IidLog 'Loading cloud-only users from Entra…' 'Accent'
 
-    if ($Script:IID_LoadTimer) { $Script:IID_LoadTimer.Stop() }
-    $Script:IID_LoadTimer = Start-AsyncWork -RefSeed @{ Users = $null } -Script {
-        $all = [System.Collections.Generic.List[object]]::new()
-        $url = "https://graph.microsoft.com/v1.0/users?`$select=id,displayName,userPrincipalName,onPremisesImmutableId,onPremisesSyncEnabled&`$top=999&`$filter=userType eq 'Member'"
-        do {
-            $r = Invoke-RestMethod $url -Method GET -Headers @{ Authorization = "Bearer $Token" } -ErrorAction Stop
-            foreach ($u in $r.value) {
-                if (-not $u.onPremisesSyncEnabled) { $all.Add($u) }
-            }
-            $url = $r.'@odata.nextLink'
-        } while ($url)
-        $Ref['Users'] = $all.ToArray()
-    } -OnComplete {
-        param($ref)
-        try {
-            if ($ref['Error']) {
-                Write-IidLog "Load failed: $($ref['Error'])" 'Danger'
-                Write-Log "ImmutableId: load error: $($ref['Error'])" 'ERROR'
-                $Script:IID_UI.LblCount.Text = 'Load failed.'
-                return
-            }
-            $Script:IID_LoadState.Users = $ref['Users']
-            $Script:IID_LoadState.Done  = $true
-            Write-Log "ImmutableId: loaded $($ref['Users'].Count) cloud-only members" 'INFO'
-            Rebuild-IidRows
-            $Script:IID_UI.BtnCheckAll.IsEnabled   = $true
-            $Script:IID_UI.BtnUncheckAll.IsEnabled = $true
-            Write-IidLog "Loaded $($Script:IID_Rows.Count) user(s)." 'Success'
-        } catch {
-            Write-Log "ImmutableId load timer error: $_" 'ERROR'
+    Request-EtbUsers -OnReady 'Complete-IidLoad'
+}
+
+function Complete-IidLoad {
+    try {
+        if ($Script:UserCache.Error) {
+            Write-IidLog "Load failed: $($Script:UserCache.Error)" 'Danger'
+            Write-Log "ImmutableId: load error: $($Script:UserCache.Error)" 'ERROR'
+            $Script:IID_UI.LblCount.Text = 'Load failed.'
+            return
         }
+        $Script:IID_LoadState.Users = @($Script:UserCache.Users | Where-Object {
+            $_.userType -eq 'Member' -and -not $_.onPremisesSyncEnabled
+        })
+        $Script:IID_LoadState.Done  = $true
+        Write-Log "ImmutableId: loaded $($Script:IID_LoadState.Users.Count) cloud-only members" 'INFO'
+        Rebuild-IidRows
+        $Script:IID_UI.BtnCheckAll.IsEnabled   = $true
+        $Script:IID_UI.BtnUncheckAll.IsEnabled = $true
+        Write-IidLog "Loaded $($Script:IID_Rows.Count) user(s)." 'Success'
+    } catch {
+        Write-Log "ImmutableId load error: $_" 'ERROR'
     }
 }
 
@@ -734,7 +724,6 @@ function Initialize-ImmutableIdTool {
     Register-ConnectCallback 'Invoke-IidOnConnect'
     $Script:ResetCallbacks.Add({
         try {
-            if ($Script:IID_LoadTimer)  { $Script:IID_LoadTimer.Stop();  $Script:IID_LoadTimer  = $null }
             if ($Script:IID_ApplyTimer) { $Script:IID_ApplyTimer.Stop(); $Script:IID_ApplyTimer = $null }
             $Script:IID_Rows.Clear()
             $Script:IID_LoadState.Done  = $false

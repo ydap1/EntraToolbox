@@ -1019,3 +1019,94 @@ function Get-GraphPaged {
     } while ($url)
     $items.ToArray()
 }
+
+# ── Shared directory user cache ────────────────────────────────────────────────
+# Every tool used to download the full user list independently (~10 identical
+# paged Graph fetches per connect). Tools now call Request-EtbUsers with the
+# name of a completion function; the first request triggers ONE paged fetch with
+# a superset $select, and every later request is served from the cache
+# instantly. Completion functions read $Script:UserCache.Users / .Error and
+# apply their own client-side filters. The cache is cleared on tenant switch or
+# disconnect via Clear-EtbUserCache (called from Invoke-ResetTools).
+$Script:UserCache = @{
+    Users   = $null   # array of user objects once loaded
+    Error   = $null   # last load error ('401' = expired session)
+    Loading = $false
+    Waiters = [System.Collections.Generic.List[string]]::new()
+    Timer   = $null
+}
+
+function Clear-EtbUserCache {
+    if ($Script:UserCache.Timer) { $Script:UserCache.Timer.Stop(); $Script:UserCache.Timer = $null }
+    $Script:UserCache.Users   = $null
+    $Script:UserCache.Error   = $null
+    $Script:UserCache.Loading = $false
+    $Script:UserCache.Waiters.Clear()
+}
+
+function Request-EtbUsers {
+    param([Parameter(Mandatory)][string]$OnReady)
+    if ($null -ne $Script:UserCache.Users) {
+        try { Invoke-EtbCommand $OnReady }
+        catch { Write-Log "UserCache callback '$OnReady' error: $_" 'ERROR' }
+        return
+    }
+    $Script:UserCache.Waiters.Add($OnReady)
+    if ($Script:UserCache.Loading) { return }
+    $Script:UserCache.Error   = $null
+    $Script:UserCache.Loading = $true
+    Write-Log 'UserCache: fetching directory users (shared load)' 'DEBUG'
+    $Script:UserCache.Timer = Start-AsyncWork -RefSeed @{ Users = $null } -Script {
+        $users = [System.Collections.Generic.List[object]]::new()
+        $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,accountEnabled,userType,department,officeLocation,onPremisesSyncEnabled,onPremisesImmutableId&$top=999'
+        do {
+            $resp = Invoke-RestMethod -Uri $url `
+                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
+            foreach ($u in $resp.value) { $users.Add($u) }
+            $url = $resp.'@odata.nextLink'
+        } while ($url)
+        $Ref['Users'] = $users.ToArray()
+    } -OnComplete {
+        param($ref)
+        $Script:UserCache.Loading = $false
+        if ($ref['Error']) {
+            $Script:UserCache.Error = $ref['Error']
+            Write-Log "UserCache: load failed — $($ref['Error'])" 'ERROR'
+        } else {
+            $Script:UserCache.Users = $ref['Users']
+            Write-Log "UserCache: loaded $($ref['Users'].Count) users (shared across tools)" 'INFO'
+        }
+        $waiters = @($Script:UserCache.Waiters)
+        $Script:UserCache.Waiters.Clear()
+        foreach ($w in $waiters) {
+            try { Invoke-EtbCommand $w }
+            catch { Write-Log "UserCache callback '$w' error: $_" 'ERROR' }
+        }
+    }
+}
+
+# ── Debounced invocation ───────────────────────────────────────────────────────
+# Search boxes rebuild their entire ListBox on every keystroke. Routing the
+# TextChanged handler through this waits for a pause in typing instead.
+# One timer per key; Command is a dot-sourced function name.
+$Script:DebounceTimers = @{}
+function Invoke-EtbDebounced {
+    param(
+        [Parameter(Mandatory)][string]$Key,
+        [Parameter(Mandatory)][string]$Command,
+        [int]$Ms = 200
+    )
+    $t = $Script:DebounceTimers[$Key]
+    if (-not $t) {
+        $t = New-EtbDispatcherTimer -IntervalMs $Ms
+        $t.Add_Tick({
+            $this.Stop()
+            try { Invoke-EtbCommand $this.Tag }
+            catch { Write-Log "Debounced '$($this.Tag)' error: $_" 'ERROR' }
+        })
+        $Script:DebounceTimers[$Key] = $t
+    }
+    $t.Tag = $Command
+    $t.Stop()
+    $t.Start()
+}

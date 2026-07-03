@@ -65,7 +65,6 @@ function Write-PwLog {
 }
 
 # ── Async user load ────────────────────────────────────────────────────────────
-$Script:PwUserTimer  = $null
 $Script:PwResetTimer = $null
 
 function Start-PwUserLoad {
@@ -78,30 +77,20 @@ function Start-PwUserLoad {
     Set-MainStatus 'Loading users...' 'TextDim'
     Write-PwLog 'Fetching users from Entra ID...' 'TextDim'
 
-    if ($Script:PwUserTimer) { $Script:PwUserTimer.Stop() }
-    $Script:PwUserTimer = Start-AsyncWork -RefSeed @{ Users = $null } -Script {
-        $users = [System.Collections.Generic.List[object]]::new()
-        $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,department,accountEnabled&$top=999'
-        do {
-            $resp = Invoke-RestMethod -Uri $url `
-                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-            foreach ($u in $resp.value) {
-                if ($u.accountEnabled -eq $true -and $u.department) { $users.Add($u) }
-            }
-            $url = $resp.'@odata.nextLink'
-        } while ($url)
-        $Ref['Users'] = $users.ToArray()
-    } -OnComplete {
-        param($ref)
-        try {
-            if ($ref['Error']) {
-                Write-Log "PwReset: user load failed - $($ref['Error'])" 'ERROR'
-                Write-PwLog "Failed to load users: $($ref['Error'])" 'Danger'
+    Request-EtbUsers -OnReady 'Complete-PwUserLoad'
+}
+
+function Complete-PwUserLoad {
+    try {
+            if ($Script:UserCache.Error) {
+                Write-Log "PwReset: user load failed - $($Script:UserCache.Error)" 'ERROR'
+                Write-PwLog "Failed to load users: $($Script:UserCache.Error)" 'Danger'
                 Set-MainStatus 'Failed to load users.' 'Danger'
                 return
             }
 
-            $Script:PwReset_GraphUsers = $ref['Users']
+            $Script:PwReset_GraphUsers = @($Script:UserCache.Users |
+                Where-Object { $_.accountEnabled -eq $true -and $_.department })
             Write-Log "PwReset: loaded $($Script:PwReset_GraphUsers.Count) users" 'INFO'
             Write-PwLog "Loaded $($Script:PwReset_GraphUsers.Count) enabled users with departments." 'Success'
 
@@ -127,9 +116,8 @@ function Start-PwUserLoad {
             $Script:PwReset_UI.CboYear.IsEnabled = $true
             $Script:PwReset_UI.BtnLoad.IsEnabled = $true
             Set-MainStatus "Ready - $($Script:PwReset_GraphUsers.Count) users loaded." 'Success'
-        } catch {
-            Write-Log "PwReset user-load timer error: $_" 'ERROR'
-        }
+    } catch {
+        Write-Log "PwReset user-load error: $_" 'ERROR'
     }
 }
 
@@ -807,7 +795,6 @@ function Initialize-PasswordResetTool {
     # Register with the global connect/reset hooks
     Register-ConnectCallback 'Start-PwUserLoad'
     $Script:ResetCallbacks.Add({
-        if ($Script:PwUserTimer)  { $Script:PwUserTimer.Stop();  $Script:PwUserTimer  = $null }
         if ($Script:PwResetTimer) { $Script:PwResetTimer.Stop(); $Script:PwResetTimer = $null }
         $Script:PwReset_Rows.Clear()
         $Script:PwReset_GraphUsers = @()

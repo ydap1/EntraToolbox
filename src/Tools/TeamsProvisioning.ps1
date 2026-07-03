@@ -8,7 +8,6 @@ $Script:TP_UI          = $null
 $Script:TP_AllUsers    = @()
 $Script:TP_Rows        = New-Object System.Collections.ObjectModel.ObservableCollection[PSObject]
 $Script:TP_Creating    = $false
-$Script:TP_UserTimer   = $null
 $Script:TP_CreateTimer = $null
 
 function Write-TpLog {
@@ -425,28 +424,19 @@ function Start-TpUserLoad {
     Set-MainStatus 'Teams: loading users...' 'TextDim'
     Write-TpLog 'Fetching users from Entra ID...' 'TextDim'
 
-    if ($Script:TP_UserTimer) { $Script:TP_UserTimer.Stop() }
-    $Script:TP_UserTimer = Start-AsyncWork -RefSeed @{ Users = $null } -Script {
-        $users = [System.Collections.Generic.List[object]]::new()
-        $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,department&$filter=accountEnabled eq true&$top=999'
-        do {
-            $resp = Invoke-RestMethod -Uri $url `
-                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-            foreach ($u in $resp.value) { $users.Add($u) }
-            $url = $resp.'@odata.nextLink'
-        } while ($url)
-        $Ref['Users'] = $users.ToArray()
-    } -OnComplete {
-        param($ref)
-        try {
-            if ($ref['Error']) {
-                Write-Log "TP: user load failed - $($ref['Error'])" 'ERROR'
-                Write-TpLog "Failed to load users: $($ref['Error'])" 'Danger'
+    Request-EtbUsers -OnReady 'Complete-TpUserLoad'
+}
+
+function Complete-TpUserLoad {
+    try {
+            if ($Script:UserCache.Error) {
+                Write-Log "TP: user load failed - $($Script:UserCache.Error)" 'ERROR'
+                Write-TpLog "Failed to load users: $($Script:UserCache.Error)" 'Danger'
                 Set-MainStatus 'Teams: failed to load users.' 'Danger'
                 return
             }
 
-            $Script:TP_AllUsers = $ref['Users']
+            $Script:TP_AllUsers = @($Script:UserCache.Users | Where-Object { $_.accountEnabled })
             Write-Log "TP: loaded $($Script:TP_AllUsers.Count) users" 'INFO'
             Write-TpLog "Loaded $($Script:TP_AllUsers.Count) enabled users." 'Success'
 
@@ -468,9 +458,8 @@ function Start-TpUserLoad {
             $Script:TP_UI.CboYear.IsEnabled = $true
             $Script:TP_UI.BtnLoad.IsEnabled = $true
             Set-MainStatus "Teams: $($Script:TP_AllUsers.Count) users loaded." 'Success'
-        } catch {
-            Write-Log "TP user-load timer error: $_" 'ERROR'
-        }
+    } catch {
+        Write-Log "TP user-load error: $_" 'ERROR'
     }
 }
 
@@ -723,7 +712,8 @@ function Initialize-TeamsProvisioningTool {
 
     # Direct user search — filter as user types
     $Script:TP_UI.Search.Add_TextChanged({
-        try { Update-TpSearchFilter } catch { Write-Log "TP Search TextChanged error: $_" 'ERROR' }
+        try { Invoke-EtbDebounced -Key 'TP_Search' -Command 'Update-TpSearchFilter' }
+        catch { Write-Log "TP Search TextChanged error: $_" 'ERROR' }
     })
 
     # Double-click a search result to add it to the grid
@@ -774,7 +764,6 @@ function Initialize-TeamsProvisioningTool {
     # Connect / reset callbacks
     Register-ConnectCallback 'Start-TpUserLoad'
     $Script:ResetCallbacks.Add({
-        if ($Script:TP_UserTimer)  { $Script:TP_UserTimer.Stop() }
         if ($Script:TP_CreateTimer) { $Script:TP_CreateTimer.Stop() }
         $Script:TP_Rows.Clear()
         $Script:TP_AllUsers                    = @()

@@ -10,7 +10,6 @@
 $Script:LW_UI           = $null
 $Script:LW_AllUsers     = @()
 $Script:LW_SelectedUser = $null
-$Script:LW_UserTimer    = $null
 $Script:LW_RunTimer     = $null
 
 function Write-LwLog {
@@ -26,40 +25,30 @@ function Start-LwUserLoad {
     Write-LwLog 'Loading users from Entra ID...' 'TextDim'
     Set-MainStatus 'Loading users...' 'TextDim'
 
-    if ($Script:LW_UserTimer) { $Script:LW_UserTimer.Stop() }
-    $Script:LW_UserTimer = Start-AsyncWork -RefSeed @{ Users = $null } -Script {
-        $users = [System.Collections.Generic.List[object]]::new()
-        $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,accountEnabled&$top=999'
-        do {
-            $resp = Invoke-RestMethod -Uri $url `
-                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-            foreach ($u in $resp.value) { $users.Add($u) }
-            $url = $resp.'@odata.nextLink'
-        } while ($url)
-        $Ref['Users'] = $users.ToArray()
-    } -OnComplete {
-        param($ref)
-        try {
-            if ($ref['Error'] -eq '401') {
-                Write-LwLog 'Session expired — reconnect.' 'Danger'
-                Set-MainStatus 'Session expired.' 'Danger'
-                return
-            }
-            if ($ref['Error']) {
-                Write-LwLog "Error loading users: $($ref['Error'])" 'Danger'
-                Set-MainStatus 'Failed to load users.' 'Danger'
-                return
-            }
-            $Script:LW_AllUsers = @($ref['Users'] | Sort-Object { $_.displayName })
-            Update-LwUserFilter
-            $Script:LW_UI.UserSearch.IsEnabled = $true
-            $Script:LW_UI.UserList.IsEnabled   = $true
-            $n = $Script:LW_AllUsers.Count
-            Write-LwLog "Loaded $n users." 'Success'
-            Set-MainStatus "Loaded $n users." 'Success'
-        } catch {
-            Write-Log "LW user-load timer error: $_" 'ERROR'
+    Request-EtbUsers -OnReady 'Complete-LwUserLoad'
+}
+
+function Complete-LwUserLoad {
+    try {
+        if ($Script:UserCache.Error -eq '401') {
+            Write-LwLog 'Session expired — reconnect.' 'Danger'
+            Set-MainStatus 'Session expired.' 'Danger'
+            return
         }
+        if ($Script:UserCache.Error) {
+            Write-LwLog "Error loading users: $($Script:UserCache.Error)" 'Danger'
+            Set-MainStatus 'Failed to load users.' 'Danger'
+            return
+        }
+        $Script:LW_AllUsers = @($Script:UserCache.Users | Sort-Object { $_.displayName })
+        Update-LwUserFilter
+        $Script:LW_UI.UserSearch.IsEnabled = $true
+        $Script:LW_UI.UserList.IsEnabled   = $true
+        $n = $Script:LW_AllUsers.Count
+        Write-LwLog "Loaded $n users." 'Success'
+        Set-MainStatus "Loaded $n users." 'Success'
+    } catch {
+        Write-Log "LW user-load error: $_" 'ERROR'
     }
 }
 
@@ -469,7 +458,7 @@ function Initialize-LeaverWorkflowTool {
     }
 
     $Script:LW_UI.UserSearch.Add_TextChanged({
-        try { Update-LwUserFilter }
+        try { Invoke-EtbDebounced -Key 'LW_User' -Command 'Update-LwUserFilter' }
         catch { Write-Log "LW UserSearch error: $_" 'ERROR' }
     })
 
@@ -492,7 +481,6 @@ function Initialize-LeaverWorkflowTool {
     $Script:ResetCallbacks.Add({
         $Script:LW_AllUsers     = @()
         $Script:LW_SelectedUser = $null
-        if ($Script:LW_UserTimer) { $Script:LW_UserTimer.Stop() }
         if ($Script:LW_RunTimer)  { $Script:LW_RunTimer.Stop() }
         $Script:LW_UI.UserList.Items.Clear()
         $Script:LW_UI.UserSearch.Text      = ''

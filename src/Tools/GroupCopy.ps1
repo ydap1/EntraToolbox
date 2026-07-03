@@ -14,7 +14,6 @@ $Script:GC_SourceUser   = $null
 $Script:GC_TargetUser   = $null
 $Script:GC_SourceGroups = @()
 
-$Script:GC_UserTimer    = $null
 $Script:GC_SrcGrpTimer  = $null
 $Script:GC_CopyTimer    = $null
 
@@ -34,45 +33,36 @@ function Start-GcUserLoad {
     $Script:GC_UI.TgtList.IsEnabled   = $false
     Write-GcLog 'Fetching users from Entra ID...' 'TextDim'
 
-    if ($Script:GC_UserTimer) { $Script:GC_UserTimer.Stop() }
-    $Script:GC_UserTimer = Start-AsyncWork -RefSeed @{ Users = $null } -Script {
-        $users = [System.Collections.Generic.List[object]]::new()
-        $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName&$top=999&$filter=accountEnabled eq true'
-        do {
-            $resp = Invoke-RestMethod -Uri $url `
-                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-            foreach ($u in $resp.value) { $users.Add($u) }
-            $url = $resp.'@odata.nextLink'
-        } while ($url)
-        $Ref['Users'] = $users.ToArray()
-    } -OnComplete {
-        param($ref)
-        try {
-            if ($ref['Error'] -eq '401') {
-                Write-GcLog 'Session expired - reconnect via the tenant selector.' 'Danger'
-                Set-MainStatus 'Session expired.' 'Danger'
-                return
-            }
-            if ($ref['Error']) {
-                Write-GcLog "Error loading users: $($ref['Error'])" 'Danger'
-                Set-MainStatus 'Failed to load users.' 'Danger'
-                return
-            }
+    Request-EtbUsers -OnReady 'Complete-GcUserLoad'
+}
 
-            $Script:GC_AllUsers = @($ref['Users'] | Sort-Object { $_.displayName })
-            Update-GcSrcFilter
-            Update-GcTgtFilter
-            $Script:GC_UI.SrcSearch.IsEnabled = $true
-            $Script:GC_UI.SrcList.IsEnabled   = $true
-            $Script:GC_UI.TgtSearch.IsEnabled = $true
-            $Script:GC_UI.TgtList.IsEnabled   = $true
-            $n = $Script:GC_AllUsers.Count
-            Write-Log "GC: loaded $n users" 'INFO'
-            Write-GcLog "Loaded $n users." 'Success'
-            Set-MainStatus "Loaded $n users." 'Success'
-        } catch {
-            Write-Log "GC user-load timer error: $_" 'ERROR'
+function Complete-GcUserLoad {
+    try {
+        if ($Script:UserCache.Error -eq '401') {
+            Write-GcLog 'Session expired - reconnect via the tenant selector.' 'Danger'
+            Set-MainStatus 'Session expired.' 'Danger'
+            return
         }
+        if ($Script:UserCache.Error) {
+            Write-GcLog "Error loading users: $($Script:UserCache.Error)" 'Danger'
+            Set-MainStatus 'Failed to load users.' 'Danger'
+            return
+        }
+
+        $Script:GC_AllUsers = @($Script:UserCache.Users |
+            Where-Object { $_.accountEnabled } | Sort-Object { $_.displayName })
+        Update-GcSrcFilter
+        Update-GcTgtFilter
+        $Script:GC_UI.SrcSearch.IsEnabled = $true
+        $Script:GC_UI.SrcList.IsEnabled   = $true
+        $Script:GC_UI.TgtSearch.IsEnabled = $true
+        $Script:GC_UI.TgtList.IsEnabled   = $true
+        $n = $Script:GC_AllUsers.Count
+        Write-Log "GC: loaded $n users" 'INFO'
+        Write-GcLog "Loaded $n users." 'Success'
+        Set-MainStatus "Loaded $n users." 'Success'
+    } catch {
+        Write-Log "GC user-load error: $_" 'ERROR'
     }
 }
 
@@ -562,12 +552,12 @@ function Initialize-GroupCopyTool {
     }
 
     $Script:GC_UI.SrcSearch.Add_TextChanged({
-        try { Update-GcSrcFilter }
+        try { Invoke-EtbDebounced -Key 'GC_Src' -Command 'Update-GcSrcFilter' }
         catch { Write-Log "GC SrcSearch TextChanged error: $_" 'ERROR' }
     })
 
     $Script:GC_UI.TgtSearch.Add_TextChanged({
-        try { Update-GcTgtFilter }
+        try { Invoke-EtbDebounced -Key 'GC_Tgt' -Command 'Update-GcTgtFilter' }
         catch { Write-Log "GC TgtSearch TextChanged error: $_" 'ERROR' }
     })
 
