@@ -10,6 +10,13 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.17.1'
+        Date    = '2026-07-03'
+        Changes = @(
+            'Fixed cursor flicker when hovering tools in the navigation sidebar — hovering made the item background null (not hit-testable), causing a rapid mouse enter/leave loop'
+        )
+    }
+    @{
         Version = '0.17.0'
         Date    = '2026-07-03'
         Changes = @(

@@ -88,12 +88,16 @@ function New-NavItem {
     $item = @{ Name = $Name; Border = $border; TitleTb = $titleTb }
 
     $border.Tag = $Name   # stash name so event handlers can read it via $this
-    $hoverBrush  = New-SolidBrush 'SubHeader'
 
     # MouseEnter / MouseLeave: $this is the sender Border, $this.Tag = item name.
+    # The brush must be resolved INSIDE the handler — locals like a captured
+    # $hoverBrush are gone by invocation time (event scriptblocks don't close
+    # over function locals), which set Background to $null. A null-background
+    # Border is not hit-testable, so the mouse instantly "left" again and the
+    # enter/leave loop made the cursor flicker.
     $border.Add_MouseEnter({
         try {
-            if ($Script:CurrentNavItem -ne $this.Tag) { $this.Background = $hoverBrush }
+            if ($Script:CurrentNavItem -ne $this.Tag) { $this.Background = New-SolidBrush 'SubHeader' }
         } catch {}
     })
     $border.Add_MouseLeave({
