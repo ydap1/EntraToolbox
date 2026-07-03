@@ -35,6 +35,8 @@ Add a tenant with the **+** button — enter a Tenant ID, a verified domain, or 
 
 Use **Dry Run** in the tenant bar to preview destructive actions (password resets, UPN changes, ID assignments) without executing them.
 
+Press **Ctrl+K** anywhere for global user search — type a name or UPN and jump straight to Password Reset, Devices, Sign-Ins, Licences, or Leaver for that user. All tools share one cached user list per tenant, so switching tools is instant. The sidebar shows a notice when a newer version is available on GitHub.
+
 ## Permissions
 
 Uses the Microsoft Intune PowerShell public client ID — no app registration required.

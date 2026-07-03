@@ -10,6 +10,17 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.16.0'
+        Date    = '2026-07-03'
+        Changes = @(
+            'Performance: all tools now share one cached directory user list per tenant — a single Graph fetch instead of ten identical ones; opening another tool is instant'
+            'Performance: search boxes are debounced, so typing in large tenants no longer lags while lists rebuild on every keystroke'
+            'New: global user search — press Ctrl+K anywhere, type a name or UPN, and jump straight to Password Reset, Devices, Sign-Ins, Licences, or Leaver for that user'
+            'New: update checker — the sidebar shows a clickable notice when a newer version is available on GitHub'
+            'Fixed: adding a tenant no longer triggers a second redundant sign-in behind the scenes'
+        )
+    }
+    @{
         Version = '0.15.1'
         Date    = '2026-07-02'
         Changes = @(
