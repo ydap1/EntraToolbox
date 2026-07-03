@@ -10,6 +10,16 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.18.0'
+        Date    = '2026-07-03'
+        Changes = @(
+            'New tool: Appearance (APP section) — pick a colour theme and UI font'
+            'Five theme presets: Slate & Amber (default), Indigo Night, Ocean, Forest, Rose'
+            'Font picker with live per-font preview — Fredoka is the default; only fonts installed on the machine are offered'
+            'Choices persist in settings and apply via Apply & Restart (or on next launch with Save Only)'
+        )
+    }
+    @{
         Version = '0.17.1'
         Date    = '2026-07-03'
         Changes = @(

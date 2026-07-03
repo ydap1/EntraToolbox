@@ -287,12 +287,44 @@ function Start-AsyncWork {
     return $timer
 }
 
+# ── App settings (small key/value store, e.g. last-used tenant, theme, font) ────
+# Defined before the Theme section below because theme/font selection reads them
+# at dot-source time.
+function Get-AppSettingsPath {
+    $dir = Join-Path $Global:AppRoot 'config'
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
+    Join-Path $dir 'settings.json'
+}
+
+function Get-AppSetting {
+    param([Parameter(Mandatory)][string]$Name)
+    $p = Get-AppSettingsPath
+    if (-not (Test-Path $p)) { return $null }
+    try {
+        $s = Get-Content -Path $p -Raw -ErrorAction Stop | ConvertFrom-Json
+        if ($s.PSObject.Properties.Name -contains $Name) { return $s.$Name }
+    } catch {}
+    return $null
+}
+
+function Set-AppSetting {
+    param([Parameter(Mandatory)][string]$Name, $Value)
+    $p = Get-AppSettingsPath
+    $s = if (Test-Path $p) {
+        try { Get-Content -Path $p -Raw -ErrorAction Stop | ConvertFrom-Json } catch { [PSCustomObject]@{} }
+    } else { [PSCustomObject]@{} }
+    $s | Add-Member -NotePropertyName $Name -NotePropertyValue $Value -Force
+    ConvertTo-Json $s -Depth 5 | Set-Content -Path $p -Encoding UTF8
+}
+
 # ── Theme ────────────────────────────────────────────────────────────────────
-# Neutral slate-grey dark theme with an amber accent (replaces the old indigo/purple).
 # Colours live in one place: $Script:Theme maps a semantic name to its hex value, and
 # $Script:ThemeMap maps every legacy hex literal still embedded in the XAML here-strings
 # to its new value so Invoke-ThemeXaml can re-skin the whole UI centrally.
-$Script:Theme = @{
+# The active preset and font are chosen in the Appearance page and persisted via
+# Set-AppSetting; because colours are baked into each panel's XAML at load time,
+# a change takes effect on the next launch (Appearance offers Apply & Restart).
+$Script:ThemeBase = @{
     Text      = '#E6E9EF'
     TextDim   = '#8A93A3'
     Muted     = '#5B6472'
@@ -313,6 +345,51 @@ $Script:Theme = @{
     DangerBg  = '#2B0D0D'
     WarnText  = '#CC6666'
 }
+
+# Preset name → overrides applied on top of ThemeBase.
+$Script:ThemePresets = [ordered]@{
+    'Slate & Amber' = @{}
+    'Indigo Night'  = @{
+        Accent='#6366F1'; Bg='#12121C'; Surface='#1C1C2A'; Card='#242436'; Border='#3C3C5A'
+        Text='#E2E2F0'; TextDim='#7878A0'; Muted='#50507A'
+        Hover='#1E1E38'; Selected='#2A2A50'; GridLine='#1E1E32'; AltRow='#181826'; SubHeader='#1A1A2C'
+    }
+    'Ocean' = @{
+        Accent='#38BDF8'; Bg='#0D1420'; Surface='#131C2B'; Card='#1A2537'; Border='#2C3A52'
+        Text='#E4EAF4'; TextDim='#8C98AC'; Muted='#5C6A80'
+        Hover='#182338'; Selected='#243450'; GridLine='#182338'; AltRow='#111927'; SubHeader='#141E30'
+    }
+    'Forest' = @{
+        Accent='#34D399'; Bg='#0E1512'; Surface='#14201B'; Card='#1B2A23'; Border='#2E4438'
+        Text='#E4EFE9'; TextDim='#8CA396'; Muted='#5C7264'
+        Hover='#1A2921'; Selected='#273B31'; GridLine='#1A2921'; AltRow='#111B16'; SubHeader='#15221C'
+    }
+    'Rose' = @{
+        Accent='#FB7185'; Bg='#170F13'; Surface='#1F151A'; Card='#291C22'; Border='#443039'
+        Text='#F0E6EA'; TextDim='#A38C96'; Muted='#725C64'
+        Hover='#271B21'; Selected='#3A2932'; GridLine='#271B21'; AltRow='#1B1216'; SubHeader='#211619'
+    }
+}
+
+$Script:ThemeName = 'Slate & Amber'
+try {
+    $savedTheme = Get-AppSetting -Name 'ThemeName'
+    if ($savedTheme -and $Script:ThemePresets.Contains([string]$savedTheme)) {
+        $Script:ThemeName = [string]$savedTheme
+    }
+} catch {}
+
+$Script:Theme = $Script:ThemeBase.Clone()
+foreach ($k in $Script:ThemePresets[$Script:ThemeName].Keys) {
+    $Script:Theme[$k] = $Script:ThemePresets[$Script:ThemeName][$k]
+}
+
+# UI font (first choice; Segoe UI stays as the fallback in the font stack).
+$Script:AppFont = 'Fredoka'
+try {
+    $savedFont = Get-AppSetting -Name 'FontName'
+    if ($savedFont) { $Script:AppFont = [string]$savedFont }
+} catch {}
 
 # Legacy-hex → new-hex translation applied to every XAML string at load time.
 $Script:ThemeMap = [ordered]@{
@@ -437,7 +514,9 @@ function Invoke-ThemeXaml([string]$Xaml) {
     foreach ($old in $Script:ThemeMap.Keys) {
         $Xaml = $Xaml.Replace($old, $Script:ThemeMap[$old])
     }
-    $Xaml = $Xaml.Replace('FontFamily="Segoe UI"', 'FontFamily="Fredoka, Segoe UI"')
+    if ($Script:AppFont -and $Script:AppFont -ne 'Segoe UI') {
+        $Xaml = $Xaml.Replace('FontFamily="Segoe UI"', "FontFamily=`"$Script:AppFont, Segoe UI`"")
+    }
     $Xaml = $Xaml.Replace('</Grid.Resources>',   "$Script:ThemeScrollBarStyle</Grid.Resources>")
     $Xaml = $Xaml.Replace('</Window.Resources>', "$Script:ThemeScrollBarStyle</Window.Resources>")
     $Xaml = $Xaml.Replace('<Style TargetType="ListBox">', "<Style TargetType=`"ListBox`">$Script:ThemeListBoxTemplate")
@@ -604,34 +683,6 @@ function Remove-SavedTenant {
     param([Parameter(Mandatory)][string]$TenantId)
     $remaining = @(Get-SavedTenants | Where-Object { $_.TenantId -ne $TenantId })
     ConvertTo-Json @($remaining) -Depth 3 | Set-Content -Path (Get-TenantsConfigPath) -Encoding UTF8
-}
-
-# ── App settings (small key/value store, e.g. last-used tenant) ─────────────────
-function Get-AppSettingsPath {
-    $dir = Join-Path $Global:AppRoot 'config'
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
-    Join-Path $dir 'settings.json'
-}
-
-function Get-AppSetting {
-    param([Parameter(Mandatory)][string]$Name)
-    $p = Get-AppSettingsPath
-    if (-not (Test-Path $p)) { return $null }
-    try {
-        $s = Get-Content -Path $p -Raw -ErrorAction Stop | ConvertFrom-Json
-        if ($s.PSObject.Properties.Name -contains $Name) { return $s.$Name }
-    } catch {}
-    return $null
-}
-
-function Set-AppSetting {
-    param([Parameter(Mandatory)][string]$Name, $Value)
-    $p = Get-AppSettingsPath
-    $s = if (Test-Path $p) {
-        try { Get-Content -Path $p -Raw -ErrorAction Stop | ConvertFrom-Json } catch { [PSCustomObject]@{} }
-    } else { [PSCustomObject]@{} }
-    $s | Add-Member -NotePropertyName $Name -NotePropertyValue $Value -Force
-    ConvertTo-Json $s -Depth 5 | Set-Content -Path $p -Encoding UTF8
 }
 
 function Get-TenantCacheFile {

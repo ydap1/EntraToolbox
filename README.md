@@ -20,6 +20,7 @@ WPF PowerShell GUI for Entra ID (Azure AD) tenant management. Requires Windows a
 | **Group Copy** | Groups & Teams | Copy all group memberships from one user to another. Skips groups the target already belongs to. |
 | **Teams Provisioning** | Groups & Teams | Create a Class or Standard team, populate members from a year group or direct user search, assign per-person Owner roles. |
 | **Secure Score** | Security | Microsoft Secure Score percentage headline with per-control breakdown table. |
+| **Appearance** | App | Theme presets (Slate & Amber, Indigo Night, Ocean, Forest, Rose) and UI font picker with per-font preview. |
 
 Multi-tenant. Profiles saved locally, token cache persisted across sessions — no re-authentication unless the refresh token expires. Access tokens are refreshed silently in the background during long sessions, and all Graph calls retry automatically on throttling and transient server errors.
 

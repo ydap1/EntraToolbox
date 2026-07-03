@@ -1023,6 +1023,7 @@ function Show-MainWindow {
         'GroupCopy'   = 'Initialize-GroupCopyTool'
         'Teams'       = 'Initialize-TeamsProvisioningTool'
         'Changelog'   = 'Initialize-UpdateHistoryTool'
+        'Appearance'  = 'Initialize-AppearanceTool'
         'SecureScore' = 'Initialize-SecureScoreTool'
     }
     $Script:NavConnectFns = @{
@@ -1038,6 +1039,7 @@ function Show-MainWindow {
         'GroupCopy'   = @('Start-GcUserLoad')
         'Teams'       = @('Start-TpUserLoad')
         'Changelog'   = @()
+        'Appearance'  = @()
         'SecureScore' = @('Start-SsLoad')
     }
     Write-Log 'MainWindow: lazy-init maps registered' 'DEBUG'
@@ -1062,6 +1064,7 @@ function Show-MainWindow {
         @{ Type = 'cat';  Label = 'SECURITY' }
         @{ Type = 'tool'; Name = 'SecureScore'; Title = 'Secure Score';         Desc = 'Microsoft Secure Score with control breakdown' }
         @{ Type = 'cat';  Label = 'APP' }
+        @{ Type = 'tool'; Name = 'Appearance';  Title = 'Appearance';           Desc = 'Theme and font settings' }
         @{ Type = 'tool'; Name = 'Changelog';   Title = 'Update History';       Desc = 'Version changelog and release notes' }
     )
 
