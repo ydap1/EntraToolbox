@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.17.0'
+        Date    = '2026-07-03'
+        Changes = @(
+            'New: keyboard shortcut guide — press F1 or click "Keyboard shortcuts" at the bottom of the sidebar'
+            'New: Search button in the tenant bar opens the global user search (same as Ctrl+K)'
+        )
+    }
+    @{
         Version = '0.16.0'
         Date    = '2026-07-03'
         Changes = @(
