@@ -20,6 +20,7 @@ $Script:NavItems       = [System.Collections.Generic.List[hashtable]]::new()
 $Script:NavContents    = @{}   # name → built WPF panel (populated lazily)
 $Script:CurrentNavItem = $null
 $Script:TenantNameTimer = $null # async tenant display-name fetch after connect
+$Script:SuppressTenantSelect = $false # guards TenantCombo SelectionChanged during programmatic updates
 
 # Lazy-init maps: populated in Show-MainWindow, consumed in Set-NavSelection.
 $Script:NavInitializers = @{}   # name → 'Initialize-*Tool' function name
@@ -288,6 +289,38 @@ $Script:MainXaml = @'
       </Setter>
     </Style>
 
+    <Style TargetType="ListBox">
+      <Setter Property="Background"      Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding"         Value="0"/>
+    </Style>
+
+    <Style TargetType="ListBoxItem">
+      <Setter Property="Foreground"                 Value="#E2E2F0"/>
+      <Setter Property="Background"                 Value="Transparent"/>
+      <Setter Property="Padding"                    Value="10,7"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="Cursor"                     Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ListBoxItem">
+            <Border x:Name="bd" Background="{TemplateBinding Background}"
+                    Padding="{TemplateBinding Padding}" CornerRadius="5">
+              <ContentPresenter VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="bd" Property="Background" Value="#1E1E38"/>
+              </Trigger>
+              <Trigger Property="IsSelected" Value="True">
+                <Setter TargetName="bd" Property="Background" Value="#2A2A50"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
     <Style TargetType="ComboBoxItem">
       <Setter Property="Foreground" Value="#E2E2F0"/>
       <Setter Property="Background" Value="Transparent"/>
@@ -389,6 +422,11 @@ $Script:MainXaml = @'
           <TextBlock x:Name="MainVersion" DockPanel.Dock="Bottom"
                      Foreground="#3C3C5A" FontSize="11"
                      Margin="17,8,12,10" VerticalAlignment="Center"/>
+          <TextBlock x:Name="MainUpdate" DockPanel.Dock="Bottom"
+                     Foreground="#6366F1" FontSize="11" FontWeight="SemiBold"
+                     Margin="17,0,12,0" Cursor="Hand" Visibility="Collapsed"
+                     TextWrapping="Wrap"
+                     ToolTip="A newer version is available on GitHub — click to open"/>
           <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel x:Name="NavPanel" Margin="0,8,0,16"/>
           </ScrollViewer>
@@ -438,6 +476,42 @@ $Script:MainXaml = @'
                    Foreground="#50507A" FontSize="11" VerticalAlignment="Center"/>
       </Grid>
     </Border>
+
+    <!-- ── Global user search overlay (Ctrl+K) ─────────────────────────────── -->
+    <Grid x:Name="CmdOverlay" Grid.Row="0" Grid.RowSpan="6" Visibility="Collapsed">
+      <Border x:Name="CmdBackdrop" Background="#000000" Opacity="0.55"/>
+      <Border Width="580" VerticalAlignment="Top" Margin="0,100,0,0"
+              Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="1" CornerRadius="10">
+        <Border.Effect>
+          <DropShadowEffect BlurRadius="24" ShadowDepth="4" Opacity="0.5" Color="Black"/>
+        </Border.Effect>
+        <StackPanel Margin="14">
+          <TextBox x:Name="CmdSearch" Height="38" FontSize="14"
+                   Background="#242436" Foreground="#E2E2F0" BorderBrush="#3C3C5A"
+                   BorderThickness="1" Padding="10,8" CaretBrush="#E2E2F0"
+                   VerticalContentAlignment="Center"/>
+          <ListBox x:Name="CmdResults" MaxHeight="280" Margin="0,10,0,0"
+                   VirtualizingPanel.IsVirtualizing="True"
+                   ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+          <StackPanel x:Name="CmdActions" Orientation="Horizontal" Margin="0,12,0,0" Visibility="Collapsed">
+            <TextBlock Text="Open in:" Foreground="#7878A0" FontSize="12"
+                       VerticalAlignment="Center" Margin="2,0,10,0"/>
+            <Button x:Name="CmdActReset"    Content="Password Reset" Style="{StaticResource FlatBtn}"
+                    Background="#6366F1" Padding="12,7" Margin="0,0,8,0" FontSize="12"/>
+            <Button x:Name="CmdActDevices"  Content="Devices"  Style="{StaticResource FlatBtn}"
+                    Background="#3C3C5A" Padding="12,7" Margin="0,0,8,0" FontSize="12"/>
+            <Button x:Name="CmdActSignIns"  Content="Sign-Ins" Style="{StaticResource FlatBtn}"
+                    Background="#3C3C5A" Padding="12,7" Margin="0,0,8,0" FontSize="12"/>
+            <Button x:Name="CmdActLicences" Content="Licences" Style="{StaticResource FlatBtn}"
+                    Background="#3C3C5A" Padding="12,7" Margin="0,0,8,0" FontSize="12"/>
+            <Button x:Name="CmdActLeaver"   Content="Leaver"   Style="{StaticResource FlatBtn}"
+                    Background="#3C3C5A" Padding="12,7" FontSize="12"/>
+          </StackPanel>
+          <TextBlock Text="Type a name or UPN  •  ↑↓ select  •  Enter opens Password Reset  •  Esc closes"
+                     Foreground="#50507A" FontSize="11" Margin="2,10,0,0"/>
+        </StackPanel>
+      </Border>
+    </Grid>
 
   </Grid>
 </Window>
@@ -609,13 +683,20 @@ function Show-AddTenantDialog {
                     }
                     Write-Log "DlgConnect: auth succeeded for '$entered' (tenant $($Script:CurrentTenantId))" 'INFO'
                     Save-Tenant -TenantId $Script:CurrentTenantId -DisplayName $dname
-                    Update-TenantCombo
 
-                    for ($i = 0; $i -lt $Script:MainUI.TenantCombo.Items.Count; $i++) {
-                        if ($Script:MainUI.TenantCombo.Items[$i].Tag.TenantId -eq $Script:CurrentTenantId) {
-                            $Script:MainUI.TenantCombo.SelectedIndex = $i
-                            break
+                    # We're already authenticated — sync the combo without letting its
+                    # SelectionChanged handler start a second, redundant connect.
+                    $Script:SuppressTenantSelect = $true
+                    try {
+                        Update-TenantCombo
+                        for ($i = 0; $i -lt $Script:MainUI.TenantCombo.Items.Count; $i++) {
+                            if ($Script:MainUI.TenantCombo.Items[$i].Tag.TenantId -eq $Script:CurrentTenantId) {
+                                $Script:MainUI.TenantCombo.SelectedIndex = $i
+                                break
+                            }
                         }
+                    } finally {
+                        $Script:SuppressTenantSelect = $false
                     }
                     $Script:DlgWin.Close()
                     Invoke-PostConnect
@@ -674,6 +755,99 @@ function Invoke-PostConnect {
     Invoke-ConnectCallbacks
 }
 
+# ── Global user search (Ctrl+K) ────────────────────────────────────────────────
+function Show-CmdPalette {
+    if (-not $Script:AccessToken) {
+        Set-MainStatus 'Connect a tenant to use global user search.' 'TextDim'
+        return
+    }
+    $Script:MainUI.CmdOverlay.Visibility = 'Visible'
+    $Script:MainUI.CmdSearch.Text        = ''
+    $Script:MainUI.CmdResults.Items.Clear()
+    $Script:MainUI.CmdActions.Visibility = 'Collapsed'
+    if (-not $Script:DemoMode) { Request-EtbUsers -OnReady 'Update-CmdResults' }  # warm the cache
+    $Script:MainUI.CmdSearch.Focus() | Out-Null
+}
+
+function Hide-CmdPalette {
+    $Script:MainUI.CmdOverlay.Visibility = 'Collapsed'
+}
+
+function Update-CmdResults {
+    if ($Script:MainUI.CmdOverlay.Visibility -ne 'Visible') { return }
+    $q = $Script:MainUI.CmdSearch.Text.Trim()
+    $Script:MainUI.CmdResults.Items.Clear()
+    $Script:MainUI.CmdActions.Visibility = 'Collapsed'
+    if ([string]::IsNullOrWhiteSpace($q)) { return }
+    if (-not $Script:UserCache.Users) { return }
+    $hits = @($Script:UserCache.Users | Where-Object {
+        $_.displayName -like "*$q*" -or $_.userPrincipalName -like "*$q*"
+    } | Sort-Object { $_.displayName } | Select-Object -First 30)
+    foreach ($u in $hits) {
+        $lbi         = [System.Windows.Controls.ListBoxItem]::new()
+        $lbi.Content = "$($u.displayName)   —   $($u.userPrincipalName)"
+        $lbi.Tag     = $u
+        [void]$Script:MainUI.CmdResults.Items.Add($lbi)
+    }
+    if ($Script:MainUI.CmdResults.Items.Count -gt 0) {
+        $Script:MainUI.CmdResults.SelectedIndex = 0
+    }
+}
+
+# Jump from the palette into a tool: navigate there and pre-filter its user list
+# to the chosen UPN (the tool's own search box does the filtering).
+function Open-CmdUserInTool {
+    param([string]$Tool)
+    $sel = $Script:MainUI.CmdResults.SelectedItem
+    if (-not $sel) { return }
+    $upn = $sel.Tag.userPrincipalName
+    Hide-CmdPalette
+    Set-NavSelection -Name $Tool
+    $box = switch ($Tool) {
+        'UserReset'  { $Script:UPR_UI.UserSearch }
+        'LastDevice' { $Script:LD_UI.UserSearch }
+        'SignIn'     { $Script:SL_UI.UserSearch }
+        'Licence'    { $Script:LA_UI.UserSearch }
+        'Leaver'     { $Script:LW_UI.UserSearch }
+    }
+    if ($box) {
+        $box.Text = $upn
+        $box.Focus() | Out-Null
+        Set-MainStatus "Filtered to $upn." 'TextDim'
+    }
+}
+
+# ── Update checker ──────────────────────────────────────────────────────────────
+# Compares version.txt on GitHub main against the running version; shows a
+# clickable label in the sidebar when a newer release exists. Fails silently.
+$Script:UpdateCheckTimer = $null
+function Start-UpdateCheck {
+    if ($Script:UpdateCheckTimer) { return }
+    $Script:UpdateCheckTimer = Start-AsyncWork -NoToken -RefSeed @{ Remote = '' } -Script {
+        try {
+            $Ref['Remote'] = ([string](Invoke-RestMethod `
+                -Uri 'https://raw.githubusercontent.com/ydap1/EntraToolbox/main/version.txt' `
+                -TimeoutSec 10 -ErrorAction Stop)).Trim()
+        } catch { }
+    } -OnComplete {
+        param($ref)
+        try {
+            $remote = $ref['Remote']
+            if (-not $remote -or -not $Global:AppVersion) { return }
+            $rv = $null; $lv = $null
+            if (-not [version]::TryParse($remote, [ref]$rv)) { return }
+            if (-not [version]::TryParse($Global:AppVersion, [ref]$lv)) { return }
+            if ($rv -gt $lv) {
+                $Script:MainUI.UpdateLabel.Text       = "Update available: v$remote"
+                $Script:MainUI.UpdateLabel.Visibility = 'Visible'
+                Write-Log "Update check: v$remote available on GitHub (running v$Global:AppVersion)" 'INFO'
+            } else {
+                Write-Log "Update check: up to date (local v$Global:AppVersion, remote v$remote)" 'DEBUG'
+            }
+        } catch {}
+    }
+}
+
 function Invoke-LogPaneToggle {
     if ($Script:MainUI.LogPaneGrid.Visibility -eq 'Visible') {
         $Script:MainUI.LogPaneGrid.Visibility = 'Collapsed'
@@ -685,6 +859,7 @@ function Invoke-LogPaneToggle {
 }
 
 function Invoke-ResetTools {
+    Clear-EtbUserCache
     foreach ($cb in $Script:ResetCallbacks) { & $cb }
     $Script:MainUI.TenantBadge.Visibility  = 'Collapsed'
     $Script:MainUI.TenantName.Text         = ''
@@ -726,6 +901,17 @@ function Show-MainWindow {
         HeaderBorder    = $window.FindName('MainHeaderBorder')
         TenantBarBorder = $window.FindName('MainTenantBar')
         StatusBarBorder = $window.FindName('MainStatusBar')
+        UpdateLabel     = $window.FindName('MainUpdate')
+        CmdOverlay      = $window.FindName('CmdOverlay')
+        CmdBackdrop     = $window.FindName('CmdBackdrop')
+        CmdSearch       = $window.FindName('CmdSearch')
+        CmdResults      = $window.FindName('CmdResults')
+        CmdActions      = $window.FindName('CmdActions')
+        CmdActReset     = $window.FindName('CmdActReset')
+        CmdActDevices   = $window.FindName('CmdActDevices')
+        CmdActSignIns   = $window.FindName('CmdActSignIns')
+        CmdActLicences  = $window.FindName('CmdActLicences')
+        CmdActLeaver    = $window.FindName('CmdActLeaver')
     }
 
     $Script:AppLogBox = $Script:MainUI.LogPane
@@ -851,11 +1037,61 @@ function Show-MainWindow {
     $window.Add_PreviewKeyDown({
         param($s, $e)
         try {
-            if ($e.Key -eq 'L' -and [System.Windows.Input.Keyboard]::Modifiers -eq [System.Windows.Input.ModifierKeys]::Control) {
-                Invoke-LogPaneToggle
+            $ctrl = [System.Windows.Input.Keyboard]::Modifiers -eq [System.Windows.Input.ModifierKeys]::Control
+            if ($e.Key -eq 'L' -and $ctrl) { Invoke-LogPaneToggle; $e.Handled = $true; return }
+            if ($e.Key -eq 'K' -and $ctrl) { Show-CmdPalette;      $e.Handled = $true; return }
+            if ($e.Key -eq 'Escape' -and $Script:MainUI.CmdOverlay.Visibility -eq 'Visible') {
+                Hide-CmdPalette
                 $e.Handled = $true
             }
         } catch {}
+    })
+
+    # ── Global user search wiring ────────────────────────────────────────────
+    $Script:MainUI.CmdBackdrop.Add_MouseLeftButtonDown({
+        try { Hide-CmdPalette } catch {}
+    })
+    $Script:MainUI.CmdSearch.Add_TextChanged({
+        try { Invoke-EtbDebounced -Key 'CmdPalette' -Command 'Update-CmdResults' -Ms 150 }
+        catch { Write-Log "CmdSearch TextChanged error: $_" 'ERROR' }
+    })
+    $Script:MainUI.CmdSearch.Add_PreviewKeyDown({
+        param($s, $e)
+        try {
+            $r = $Script:MainUI.CmdResults
+            if ($e.Key -eq 'Down' -and $r.Items.Count -gt 0) {
+                $r.SelectedIndex = [Math]::Min($r.SelectedIndex + 1, $r.Items.Count - 1)
+                $r.ScrollIntoView($r.SelectedItem)
+                $e.Handled = $true
+            } elseif ($e.Key -eq 'Up' -and $r.Items.Count -gt 0) {
+                $r.SelectedIndex = [Math]::Max($r.SelectedIndex - 1, 0)
+                $r.ScrollIntoView($r.SelectedItem)
+                $e.Handled = $true
+            } elseif ($e.Key -eq 'Return') {
+                Open-CmdUserInTool 'UserReset'
+                $e.Handled = $true
+            }
+        } catch {}
+    })
+    $Script:MainUI.CmdResults.Add_SelectionChanged({
+        try {
+            $Script:MainUI.CmdActions.Visibility =
+                if ($Script:MainUI.CmdResults.SelectedItem) { 'Visible' } else { 'Collapsed' }
+        } catch {}
+    })
+    $Script:MainUI.CmdResults.Add_MouseDoubleClick({
+        try { Open-CmdUserInTool 'UserReset' } catch {}
+    })
+    $Script:MainUI.CmdActReset.Add_Click({    try { Open-CmdUserInTool 'UserReset' }  catch { Write-Log "CmdActReset error: $_" 'ERROR' } })
+    $Script:MainUI.CmdActDevices.Add_Click({  try { Open-CmdUserInTool 'LastDevice' } catch { Write-Log "CmdActDevices error: $_" 'ERROR' } })
+    $Script:MainUI.CmdActSignIns.Add_Click({  try { Open-CmdUserInTool 'SignIn' }     catch { Write-Log "CmdActSignIns error: $_" 'ERROR' } })
+    $Script:MainUI.CmdActLicences.Add_Click({ try { Open-CmdUserInTool 'Licence' }    catch { Write-Log "CmdActLicences error: $_" 'ERROR' } })
+    $Script:MainUI.CmdActLeaver.Add_Click({   try { Open-CmdUserInTool 'Leaver' }     catch { Write-Log "CmdActLeaver error: $_" 'ERROR' } })
+
+    # ── Update-available label ───────────────────────────────────────────────
+    $Script:MainUI.UpdateLabel.Add_MouseLeftButtonDown({
+        try { Start-Process 'https://github.com/ydap1/EntraToolbox' }
+        catch { Write-Log "UpdateLabel click error: $_" 'ERROR' }
     })
 
     # ── Clear log ─────────────────────────────────────────────────────────────
@@ -912,6 +1148,7 @@ function Show-MainWindow {
     # ── Tenant combo → authenticate ───────────────────────────────────────────
     $Script:MainUI.TenantCombo.Add_SelectionChanged({
         try {
+            if ($Script:SuppressTenantSelect) { return }
             $sel = $Script:MainUI.TenantCombo.SelectedItem
             if (-not $sel) { return }
 
@@ -948,6 +1185,7 @@ function Show-MainWindow {
     $window.Add_Loaded({
         try {
             Write-Log 'Window loaded - populating tenant combo' 'INFO'
+            Start-UpdateCheck
             Update-TenantCombo
             $tenants = @(Get-SavedTenants)
             Write-Log "Saved tenants: $($tenants.Count)" 'DEBUG'
