@@ -10,6 +10,15 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.19.0'
+        Date    = '2026-09-02'
+        Changes = @(
+            'Year Group Passwords now generates shorter passwords in the form cat.dog.pat11! — three three-letter words, a two-digit number, then an exclamation mark'
+            'New "Force password change on next sign-in" checkbox in the Year Group Passwords sidebar — students are prompted to set their own password at their next login'
+            'Dry run and log lines state whether a sign-in prompt will be required'
+        )
+    }
+    @{
         Version = '0.18.0'
         Date    = '2026-07-03'
         Changes = @(

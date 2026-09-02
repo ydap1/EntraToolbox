@@ -4,32 +4,27 @@
     Exposes Initialize-PasswordResetTool.
 #>
 
-# ── Word lists ─────────────────────────────────────────────────────────────────
-$Script:PwAnimals  = 'Tiger','Shark','Eagle','Panda','Cobra','Raven','Bison','Otter',
-                     'Crane','Gecko','Moose','Viper','Lynx','Finch','Drake','Hyena',
-                     'Lemur','Tapir','Dingo','Stoat','Quail','Trout','Macaw','Skunk',
-                     'Heron','Puma','Dove','Swift','Wren','Kite'
-$Script:PwWords2   = 'cloud','storm','flame','river','stone','frost','shadow','spark',
-                     'blaze','cedar','maple','birch','coral','amber','jade','slate',
-                     'pearl','onyx','flint','drift','vale','brook','cliff','crest',
-                     'grove','ridge','marsh','haven','dusk','dawn'
-$Script:PwWords3   = 'desk','chair','lamp','clock','book','door','bell','gate',
-                     'path','road','bridge','tower','field','hall','yard','pen',
-                     'kit','pad','bag','box','map','note','page','file',
-                     'chip','key','lock','cup','jug','jar'
-$Script:PwSpecials = '!','@','#','$','%','&','*','?'
+# ── Word lists (three letters each) ────────────────────────────────────────────
+$Script:PwWords1 = 'cat','dog','bat','cow','fox','owl','pig','ram','hen','ant',
+                   'bee','elk','ape','eel','jay','koi','yak','doe','cub','pup',
+                   'kid','emu','gnu','boa','hog','sow'
+$Script:PwWords2 = 'sun','sky','sea','ice','oak','elm','fig','bud','log','mud',
+                   'dew','fog','ray','bay','sap','ash','ivy','pod','nut','gem',
+                   'ore','tor','fen','bog','hay','wax'
+$Script:PwWords3 = 'cup','jar','pen','bag','box','map','key','pad','hat','cap',
+                   'mug','bin','net','rug','tin','pot','pan','rod','saw','bow',
+                   'oar','jug','van','bus','cab','tag'
 
 function New-Password {
     $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
     $buf = [byte[]]::new(4)
     function Rnd([int]$n) { $rng.GetBytes($buf); [System.BitConverter]::ToUInt32($buf, 0) % $n }
-    $a = $Script:PwAnimals[ (Rnd $Script:PwAnimals.Count) ]
-    $b = $Script:PwWords2[  (Rnd $Script:PwWords2.Count)  ]
-    $c = $Script:PwWords3[  (Rnd $Script:PwWords3.Count)  ]
+    $a = $Script:PwWords1[ (Rnd $Script:PwWords1.Count) ]
+    $b = $Script:PwWords2[ (Rnd $Script:PwWords2.Count) ]
+    $c = $Script:PwWords3[ (Rnd $Script:PwWords3.Count) ]
     $n = 10 + (Rnd 90)
-    $s = $Script:PwSpecials[ (Rnd $Script:PwSpecials.Count) ]
     $rng.Dispose()
-    "$a.$b.$c$n$s"
+    "$a.$b.$c$n!"
 }
 
 function Get-DeptGroup([string]$d) {
@@ -244,6 +239,11 @@ $Script:PwResetXaml = @'
       <Setter Property="Margin"      Value="0,4,0,0"/>
     </Style>
 
+    <Style TargetType="CheckBox">
+      <Setter Property="Foreground" Value="#E2E2F0"/>
+      <Setter Property="Cursor"     Value="Hand"/>
+    </Style>
+
     <Style TargetType="DataGrid">
       <Setter Property="Background"              Value="#12121C"/>
       <Setter Property="Foreground"              Value="#E2E2F0"/>
@@ -391,6 +391,14 @@ $Script:PwResetXaml = @'
 
         <Border Background="#3C3C5A" Height="1" Margin="0,14"/>
 
+        <TextBlock Text="SIGN-IN PROMPT AFTER RESET" Style="{StaticResource SectionLbl}"/>
+        <CheckBox x:Name="PwChkForce" Margin="0,4,0,0"
+                  Content="Force password change on next sign-in"/>
+        <TextBlock Text="When checked, each student must set a new password on their next login."
+                   Foreground="#50507A" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"/>
+
+        <Border Background="#3C3C5A" Height="1" Margin="0,14"/>
+
         <TextBlock Text="ACTIONS" Style="{StaticResource SectionLbl}"/>
         <Button x:Name="PwBtnRun" Content="Generate Passwords" IsEnabled="False"
                 Style="{StaticResource PrimaryBtn}" Background="#6366F1" Padding="0,10"/>
@@ -522,6 +530,7 @@ function Initialize-PasswordResetTool {
         RbDry          = $content.FindName('PwRbDry')
         RbLive         = $content.FindName('PwRbLive')
         PnlWarn        = $content.FindName('PwPnlWarn')
+        ChkForce       = $content.FindName('PwChkForce')
         BtnRun         = $content.FindName('PwBtnRun')
         BtnExport      = $content.FindName('PwBtnExport')
         Grid           = $content.FindName('PwGrid')
@@ -625,8 +634,9 @@ function Initialize-PasswordResetTool {
             if ($selected.Count -eq 0) { return }
 
             $isLive = $Script:PwReset_UI.RbLive.IsChecked -and -not $Script:DryMode
+            $force  = [bool]$Script:PwReset_UI.ChkForce.IsChecked
             $mode   = if ($isLive) { 'Live' } elseif ($Script:DryMode) { 'Dry (global)' } else { 'Dry' }
-            Write-Log "PwReset: starting $mode run for $($selected.Count) selected rows" 'INFO'
+            Write-Log "PwReset: starting $mode run for $($selected.Count) selected rows (forceChange=$force)" 'INFO'
 
             if ($isLive) {
                 $confirm = [System.Windows.MessageBox]::Show(
@@ -647,7 +657,8 @@ function Initialize-PasswordResetTool {
                 # Dry run — instant, no network calls
                 foreach ($row in $selected) { $row.Status = 'OK' }
                 $Script:PwReset_UI.Grid.Items.Refresh()
-                foreach ($item in $work) { Write-PwLog "[DRY RUN] $($item.DisplayName)  ->  $($item.Password)" 'TextDim' }
+                $forceLabel = if ($force) { 'will prompt on next sign-in' } else { 'no prompt required' }
+                foreach ($item in $work) { Write-PwLog "[DRY RUN] $($item.DisplayName)  ->  $($item.Password)  ($forceLabel)" 'TextDim' }
                 $Script:PwReset_UI.BtnExport.IsEnabled     = $true
                 $Script:PwReset_UI.PnlStats.Visibility     = 'Visible'
                 $Script:PwReset_UI.LblTotal.Text           = "Total  $($selected.Count)"
@@ -701,9 +712,10 @@ function Initialize-PasswordResetTool {
             if ($Script:PwResetTimer) { $Script:PwResetTimer.Stop() }
             $Script:PwResetTimer = Start-AsyncWork `
                 -RefSeed @{ Ok = 0; Fail = 0; Queue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new() } `
-                -Vars @{ Work = $work } `
+                -Vars @{ Work = $work; Force = $force } `
                 -IntervalMs 300 `
                 -Script {
+                    $forceJson = if ($Force) { 'true' } else { 'false' }
                     foreach ($item in $Work) {
                         $r = @{ Id = $item.Id; Name = $item.DisplayName; Upn = $item.Upn; Ok = $false; Err = '' }
                         try {
@@ -712,7 +724,7 @@ function Initialize-PasswordResetTool {
                                 -Uri "https://graph.microsoft.com/v1.0/users/$($item.Id)" `
                                 -Headers @{ Authorization = "Bearer $Token"; 'Content-Type' = 'application/json' } `
                                 -Method PATCH `
-                                -Body "{`"passwordProfile`":{`"password`":`"$escaped`",`"forceChangePasswordNextSignIn`":false}}" `
+                                -Body "{`"passwordProfile`":{`"password`":`"$escaped`",`"forceChangePasswordNextSignIn`":$forceJson}}" `
                                 -ErrorAction Stop
                             $r.Ok = $true
                             $Ref['Ok']++

@@ -8,7 +8,7 @@ WPF PowerShell GUI for Entra ID (Azure AD) tenant management. Requires Windows a
 
 | Tool | Category | Description |
 |------|----------|-------------|
-| **Year Group Passwords** | Users | Bulk password reset by department. Memorable password generation, dry-run preview, CSV export. |
+| **Year Group Passwords** | Users | Bulk password reset by department. Memorable password generation (`cat.dog.pat11!`), optional forced sign-in prompt, dry-run preview, CSV export. |
 | **User Password Reset** | Users | Single-account password reset with live `forceChangePasswordNextSignIn` toggle and group membership view. |
 | **Leaver Workflow** | Users | Disable account, revoke sign-in sessions, and remove from all groups in one click. Each step is individually togglable. Dry-run aware. |
 | **Licence Assignment** | Users | View a user's assigned Microsoft 365 licences. Assign or remove individual SKUs. Shows available seats remaining per SKU. |
@@ -57,7 +57,7 @@ Uses the Microsoft Intune PowerShell public client ID — no app registration re
 
 ## Screenshots
 
-**Year Group Passwords** — bulk password reset for an entire year group with dry-run preview and CSV export.
+**Year Group Passwords** — bulk password reset for an entire year group with dry-run preview, CSV export, and an optional forced password change on next sign-in.
 
 ![Year Group Passwords](assets/screenshot1.png)
 
