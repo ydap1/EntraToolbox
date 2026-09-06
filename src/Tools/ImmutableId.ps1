@@ -104,7 +104,9 @@ $Script:IID_Xaml = @'
       <Setter Property="BorderThickness" Value="0,0,1,1"/>
     </Style>
 
-    <Style TargetType="DataGridRow">
+    <Style x:Key="DgRow" TargetType="DataGridRow">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Foreground" Value="#E2E2F0"/>
       <Setter Property="Cursor" Value="Hand"/>
       <Style.Triggers>
         <Trigger Property="IsMouseOver" Value="True">
@@ -116,7 +118,9 @@ $Script:IID_Xaml = @'
       </Style.Triggers>
     </Style>
 
-    <Style TargetType="DataGridCell">
+    <Style x:Key="DgCell" TargetType="DataGridCell">
+      <Setter Property="Background"        Value="Transparent"/>
+      <Setter Property="Foreground"        Value="#E2E2F0"/>
       <Setter Property="Padding"           Value="10,6"/>
       <Setter Property="BorderThickness"   Value="0"/>
       <Setter Property="VerticalAlignment" Value="Center"/>
@@ -202,7 +206,9 @@ $Script:IID_Xaml = @'
   </Border>
 
   <!-- ── DataGrid ───────────────────────────────────────────────────────── -->
-  <DataGrid x:Name="IidGrid" Grid.Row="3" Margin="12,10">
+  <DataGrid x:Name="IidGrid" Grid.Row="3" Margin="12,10"
+            RowStyle="{StaticResource DgRow}"
+            CellStyle="{StaticResource DgCell}">
     <DataGrid.Columns>
 
       <!-- col 0: Include checkbox. IsHitTestVisible=False so clicks bubble up -->

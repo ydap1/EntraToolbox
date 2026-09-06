@@ -542,7 +542,7 @@ $Script:BucXaml = @'
       <Setter Property="Cursor"          Value="Hand"/>
     </Style>
 
-    <Style TargetType="DataGridRow">
+    <Style x:Key="DgRow" TargetType="DataGridRow">
       <Setter Property="Background" Value="Transparent"/>
       <Style.Triggers>
         <Trigger Property="IsSelected"  Value="True">
@@ -554,7 +554,9 @@ $Script:BucXaml = @'
       </Style.Triggers>
     </Style>
 
-    <Style TargetType="DataGridCell">
+    <Style x:Key="DgCell" TargetType="DataGridCell">
+      <Setter Property="Background"      Value="Transparent"/>
+      <Setter Property="Foreground"      Value="#E2E2F0"/>
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="Padding"         Value="12,0"/>
       <Setter Property="Template">
@@ -676,7 +678,10 @@ $Script:BucXaml = @'
     </Border>
 
     <!-- Preview grid -->
-    <DataGrid x:Name="BucPreviewGrid" Grid.Row="1" Margin="0">
+    <DataGrid x:Name="BucPreviewGrid" Grid.Row="1" Margin="0"
+              HeadersVisibility="Column"
+              RowStyle="{StaticResource DgRow}"
+              CellStyle="{StaticResource DgCell}">
       <DataGrid.Columns>
         <DataGridTextColumn Header="Display Name" Binding="{Binding Name}"   Width="180"/>
         <DataGridTextColumn Header="Current UPN"  Binding="{Binding OldUpn}" Width="*"/>

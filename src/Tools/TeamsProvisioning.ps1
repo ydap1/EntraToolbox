@@ -214,7 +214,7 @@ $Script:TpXaml = @'
       <Setter Property="Cursor"          Value="Hand"/>
     </Style>
 
-    <Style TargetType="DataGridRow">
+    <Style x:Key="DgRow" TargetType="DataGridRow">
       <Setter Property="Background" Value="Transparent"/>
       <Style.Triggers>
         <Trigger Property="IsSelected"  Value="True">
@@ -226,7 +226,9 @@ $Script:TpXaml = @'
       </Style.Triggers>
     </Style>
 
-    <Style TargetType="DataGridCell">
+    <Style x:Key="DgCell" TargetType="DataGridCell">
+      <Setter Property="Background"      Value="Transparent"/>
+      <Setter Property="Foreground"      Value="#E2E2F0"/>
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="Padding"         Value="12,0"/>
       <Setter Property="Template">
@@ -399,6 +401,9 @@ $Script:TpXaml = @'
 
     <TabItem Header="Members">
       <DataGrid x:Name="TpGrid"
+                HeadersVisibility="Column"
+                RowStyle="{StaticResource DgRow}"
+                CellStyle="{StaticResource DgCell}"
                 VirtualizingPanel.IsVirtualizing="True"
                 VirtualizingPanel.VirtualizationMode="Recycling">
         <DataGrid.Columns>

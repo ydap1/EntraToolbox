@@ -327,7 +327,9 @@ $Script:DcXaml = @'
       <Setter Property="FontSize"        Value="11"/>
     </Style>
 
-    <Style TargetType="DataGridCell">
+    <Style x:Key="DgCell" TargetType="DataGridCell">
+      <Setter Property="Background"      Value="Transparent"/>
+      <Setter Property="Foreground"      Value="#E2E2F0"/>
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="Padding"         Value="12,0"/>
       <Setter Property="Template">
@@ -417,6 +419,8 @@ $Script:DcXaml = @'
                HorizontalAlignment="Center" VerticalAlignment="Center"
                Visibility="Visible"/>
     <DataGrid x:Name="DcGrid" CanUserSortColumns="True"
+              HeadersVisibility="Column"
+              CellStyle="{StaticResource DgCell}"
               VirtualizingPanel.IsVirtualizing="True"
               VirtualizingPanel.VirtualizationMode="Recycling">
       <DataGrid.RowStyle>

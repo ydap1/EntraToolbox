@@ -10,6 +10,15 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.20.2'
+        Date    = '2026-09-06'
+        Changes = @(
+            'Result tables keep the dark theme as soon as rows load, instead of flashing a white background until a row is clicked'
+            'Selected rows use the toolbox highlight colour rather than the Windows default blue'
+            'Hide the unused row-header strip down the left edge of every table'
+        )
+    }
+    @{
         Version = '0.20.1'
         Date    = '2026-09-06'
         Changes = @(
