@@ -22,7 +22,7 @@ WPF PowerShell GUI for Entra ID (Azure AD) tenant management. Requires Windows a
 | **Secure Score** | Security | Microsoft Secure Score percentage headline with per-control breakdown table. |
 | **Appearance** | App | Theme presets (Slate & Amber, Indigo Night, Ocean, Forest, Rose) and UI font picker with per-font preview. |
 
-Multi-tenant. Profiles saved locally, token cache persisted across sessions — no re-authentication unless the refresh token expires. Access tokens are refreshed silently in the background during long sessions, and all Graph calls retry automatically on throttling and transient server errors.
+Multi-tenant. Profiles saved locally, token cache persisted across sessions — no re-authentication unless the refresh token expires. Access tokens are refreshed silently in the background during long sessions, and Graph requests honor throttling delays. Read requests retry transient server errors; writes are not replayed after ambiguous server failures. Switching tenants cancels outstanding work and discards stale results.
 
 ## Usage
 
@@ -76,3 +76,7 @@ Uses the Microsoft Intune PowerShell public client ID — no app registration re
 ## License
 
 MIT
+
+## Development checks
+
+Run `pwsh -NoProfile -File tests/Review.Tests.ps1` for offline parser, worker lifecycle and HTTP regression checks. These run on Windows or Linux without tenant credentials. The WPF interface still requires a Windows smoke test using Demo mode.

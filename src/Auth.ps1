@@ -179,33 +179,8 @@ function New-BackgroundRunspace {
 # (honouring Retry-After) and transient 502/503/504 with exponential backoff.
 # Non-retryable errors are rethrown untouched, so existing per-tool catch blocks
 # (401/403 classification etc.) keep working exactly as before.
-$Script:EtbWorkerPreamble = @'
-function Invoke-RestMethod {
-    $attempt = 0
-    while ($true) {
-        try {
-            return Microsoft.PowerShell.Utility\Invoke-RestMethod @args
-        } catch {
-            $status = 0
-            $resp   = $_.Exception.Response
-            if ($resp) { try { $status = [int]$resp.StatusCode } catch {} }
-            if (($status -notin 429, 502, 503, 504) -or $attempt -ge 4) { throw }
-            $delay = 0
-            try {
-                $ra = $resp.Headers.RetryAfter
-                if ($ra) {
-                    if ($ra.Delta.HasValue)    { $delay = [int][math]::Ceiling($ra.Delta.Value.TotalSeconds) }
-                    elseif ($ra.Date.HasValue) { $delay = [int][math]::Ceiling(($ra.Date.Value.UtcDateTime - [datetime]::UtcNow).TotalSeconds) }
-                }
-            } catch {}
-            if ($delay -lt 1)  { $delay = [math]::Min(30, [math]::Pow(2, $attempt + 1)) }
-            if ($delay -gt 60) { $delay = 60 }
-            Start-Sleep -Seconds $delay
-            $attempt++
-        }
-    }
-}
-'@
+$Script:EtbWorkerPreamble = Get-Content (Join-Path $PSScriptRoot 'Graph.ps1') -Raw
+. (Join-Path $PSScriptRoot 'Graph.ps1')
 
 # ── WPF-safe async runspace + completion timer ────────────────────────────────
 # Runs $Script in a background Runspace with $Ref (synchronized hashtable), $Token
@@ -216,6 +191,69 @@ function Invoke-RestMethod {
 # check — useful for draining streaming progress queues that the worker fills as it runs.
 # 401 responses are caught centrally and reported as $Ref['Error']='401'.
 # Returns the DispatcherTimer so callers can Stop() a prior in-flight invocation.
+$Script:SessionGeneration = 0
+$Script:AsyncJobs = [System.Collections.Generic.List[object]]::new()
+$Script:WorkerCleanupTimer = $null
+
+function Complete-EtbAsyncWork {
+    param($Timer)
+    $state = $Timer.Tag
+    if (-not $state -or -not $state.Async.IsCompleted) { return }
+    if ($state.StopAsync -and -not $state.StopAsync.IsCompleted) { return }
+    $Timer.Stop()
+    try {
+        if ($state.StopAsync) { $state.PS.EndStop($state.StopAsync) }
+        $state.PS.EndInvoke($state.Async) | Out-Null
+    } catch { } finally {
+        $state.PS.Dispose()
+        $state.RS.Dispose()
+        $Timer.Tag = $null
+        [void]$Script:AsyncJobs.Remove($Timer)
+    }
+}
+
+function Stop-EtbAsyncWork {
+    param($Timer)
+    if (-not $Timer) { return }
+    $Timer.Stop()
+    $state = $Timer.Tag
+    if (-not $state -or -not $state.PS) { return }
+    $state.Ref['Cancelled'] = $true
+    if (-not $state.Async.IsCompleted -and -not $state.StopAsync) {
+        $state.StopAsync = $state.PS.BeginStop($null, $null)
+    }
+    Complete-EtbAsyncWork $Timer
+}
+
+function Start-EtbWorkerCleanup {
+    if (-not $Script:WorkerCleanupTimer) {
+        $Script:WorkerCleanupTimer = New-EtbDispatcherTimer
+        $Script:WorkerCleanupTimer.Add_Tick({
+            Invoke-EtbScript {
+                foreach ($job in $Script:AsyncJobs.ToArray()) {
+                    # Existing tools stop their timer when a selection changes.
+                    # Cancel and reap its pipeline too, without blocking WPF.
+                    if (-not $job.IsEnabled) { Stop-EtbAsyncWork $job }
+                }
+                if ($Script:AsyncJobs.Count -eq 0) { $Script:WorkerCleanupTimer.Stop() }
+            }
+        })
+    }
+    $Script:WorkerCleanupTimer.Start()
+}
+
+function Reset-EtbSessionWork {
+    $Script:SessionGeneration++
+    foreach ($job in $Script:AsyncJobs.ToArray()) {
+        if (-not $job.Tag.Independent) { Stop-EtbAsyncWork $job }
+    }
+    $Script:TokenRefreshBusy = $false
+    $Script:AuthRef = $null
+    $Script:CurrentTenantId = $null
+    $Script:TokenExpiresOn = $null
+    $Script:AccessToken = $null
+}
+
 function Start-AsyncWork {
     param(
         [Parameter(Mandatory)][scriptblock]$Script,
@@ -224,14 +262,16 @@ function Start-AsyncWork {
         [hashtable]$Vars     = @{},
         [hashtable]$RefSeed  = @{},
         [int]$IntervalMs     = 300,
-        [switch]$NoToken
+        [switch]$NoToken,
+        [switch]$SessionIndependent
     )
-    $seed = @{ Done = $false; Error = $null }
+    $seed = @{ Done = $false; Error = $null; Cancelled = $false }
     foreach ($k in $RefSeed.Keys) { $seed[$k] = $RefSeed[$k] }
     $ref = [hashtable]::Synchronized($seed)
 
     $rs = New-BackgroundRunspace
     $rs.SessionStateProxy.SetVariable('Ref', $ref)
+    $rs.SessionStateProxy.SetVariable('DryMode', $Script:DryMode)
     if (-not $NoToken) { $rs.SessionStateProxy.SetVariable('Token', $Script:AccessToken) }
     foreach ($k in $Vars.Keys) { $rs.SessionStateProxy.SetVariable($k, $Vars[$k]) }
     # Compile worker source inside the background runspace so Invoke-RestMethod etc.
@@ -263,6 +303,9 @@ function Start-AsyncWork {
     # like $OnComplete by closure, but $this gives them the timer at tick time.
     $timer.Tag = @{
         Ref        = $ref
+        Generation = $Script:SessionGeneration
+        Independent = [bool]$SessionIndependent
+        StopAsync  = $null
         PS         = $ps
         RS         = $rs
         Async      = $async
@@ -270,19 +313,23 @@ function Start-AsyncWork {
         OnProgress = $OnProgress
     }
     $timer.Add_Tick({
+        if (-not $this.Tag.Independent -and $this.Tag.Generation -ne $Script:SessionGeneration) {
+            Stop-EtbAsyncWork $this
+            return
+        }
         if ($this.Tag.OnProgress) {
             try { Invoke-EtbScript $this.Tag.OnProgress @($this.Tag.Ref) }
             catch { Invoke-EtbScript { Write-Log "Async OnProgress error: $_" 'ERROR' } }
         }
-        if (-not $this.Tag.Ref['Done']) { return }
+        if (-not $this.Tag.Async.IsCompleted) { return }
         $this.Stop()
-        try { $this.Tag.PS.EndInvoke($this.Tag.Async) | Out-Null } catch {}
-        $this.Tag.PS.Dispose()
-        $this.Tag.RS.Close()
-        $this.Tag.RS.Dispose()
-        try { Invoke-EtbScript $this.Tag.OnComplete @($this.Tag.Ref) }
-        catch { Invoke-EtbScript { Write-Log "Async OnComplete error: $_" 'ERROR' } }
+        $state = $this.Tag
+        Complete-EtbAsyncWork $this
+        try { Invoke-EtbScript $state.OnComplete @($state.Ref) }
+        catch { Write-Log "Async OnComplete error: $_" 'ERROR' }
     })
+    $Script:AsyncJobs.Add($timer)
+    Start-EtbWorkerCleanup
     $timer.Start()
     return $timer
 }
@@ -562,20 +609,6 @@ $Script:AuthAsync   = $null
 $Script:AuthSuccess = $null
 $Script:AuthFailure = $null
 
-function Complete-AuthWorker {
-    if ($Script:AuthPS) {
-        try { $Script:AuthPS.EndInvoke($Script:AuthAsync) | Out-Null } catch {}
-        $Script:AuthPS.Dispose()
-        $Script:AuthPS = $null
-    }
-    if ($Script:AuthRS) {
-        $Script:AuthRS.Close()
-        $Script:AuthRS.Dispose()
-        $Script:AuthRS = $null
-    }
-    $Script:AuthAsync = $null
-}
-
 # ── Token cache persistence helper ───────────────────────────────────────────────
 # MSAL.NET v4 removed the parameterless TokenCache.Serialize/DeserializeMsalV3 — they
 # may only be called on the cache handed to a before/after-access notification. We can't
@@ -735,6 +768,8 @@ function Start-TenantConnectAsync {
         [Parameter(Mandatory)][scriptblock]$OnFailure
     )
 
+    Invoke-ResetTools
+    $Script:DemoMode = $false
     Write-Log "Auth: starting token acquisition for '$TenantId'" 'DEBUG'
     Initialize-TokenCacheHelper
     # $TenantId may be a GUID, a verified domain, or an admin UPN. Non-GUID input
@@ -792,8 +827,8 @@ function Start-TenantConnectAsync {
                 $domain = if ($TenantId -like '*@*') { ($TenantId -split '@')[-1] } else { $TenantId }
                 try {
                     $oidc = Invoke-RestMethod `
-                        -Uri "https://login.microsoftonline.com/$domain/v2.0/.well-known/openid-configuration" `
-                        -Method GET -ErrorAction Stop
+                        -Uri "https://login.microsoftonline.com/$([uri]::EscapeDataString($domain))/v2.0/.well-known/openid-configuration" `
+                        -Method GET -TimeoutSec 30 -MaximumRedirection 0 -ErrorAction Stop
                 } catch {
                     throw "No tenant found for '$domain'. Check the domain / UPN and try again."
                 }
@@ -896,10 +931,20 @@ function Start-TenantConnectAsync {
 
     if ($Script:AuthTimer) { $Script:AuthTimer.Stop() }
     $Script:AuthTimer = New-EtbDispatcherTimer -IntervalMs 500
+    $Script:AuthTimer.Tag = @{
+        Ref = $Script:AuthRef; PS = $ps; RS = $rs; Async = $Script:AuthAsync
+        Generation = $Script:SessionGeneration; Independent = $false; StopAsync = $null
+    }
+    $Script:AsyncJobs.Add($Script:AuthTimer)
+    Start-EtbWorkerCleanup
     $Script:AuthTimer.Add_Tick({
-        if (-not $Script:AuthRef['Done']) { return }
+        if ($this.Tag.Generation -ne $Script:SessionGeneration) { Stop-EtbAsyncWork $this; return }
+        if (-not $this.Tag.Async.IsCompleted) { return }
         $Script:AuthTimer.Stop()
-        Complete-AuthWorker
+        Complete-EtbAsyncWork $this
+        $Script:AuthPS = $null
+        $Script:AuthRS = $null
+        $Script:AuthAsync = $null
         try {
             Invoke-EtbScript {
                 if ($Script:AuthRef['Error']) {
@@ -1023,30 +1068,7 @@ function Invoke-EtbGraphRequest {
         $params.Headers['Content-Type'] = 'application/json'
         $params.Body = $Body | ConvertTo-Json -Depth 10
     }
-    $attempt = 0
-    while ($true) {
-        try {
-            return Invoke-RestMethod @params
-        } catch {
-            $status = 0
-            $resp   = $_.Exception.Response
-            if ($resp) { try { $status = [int]$resp.StatusCode } catch {} }
-            if (($status -notin 429, 502, 503, 504) -or $attempt -ge 4) { throw }
-            $delay = 0
-            try {
-                $ra = $resp.Headers.RetryAfter
-                if ($ra) {
-                    if ($ra.Delta.HasValue)    { $delay = [int][math]::Ceiling($ra.Delta.Value.TotalSeconds) }
-                    elseif ($ra.Date.HasValue) { $delay = [int][math]::Ceiling(($ra.Date.Value.UtcDateTime - [datetime]::UtcNow).TotalSeconds) }
-                }
-            } catch {}
-            if ($delay -lt 1)  { $delay = [math]::Min(30, [math]::Pow(2, $attempt + 1)) }
-            if ($delay -gt 60) { $delay = 60 }
-            Write-Log "Graph $status on $Uri — retrying in ${delay}s (attempt $($attempt + 1)/4)" 'WARN'
-            Start-Sleep -Seconds $delay
-            $attempt++
-        }
-    }
+    Invoke-RestMethod @params
 }
 
 function Invoke-GraphGet {

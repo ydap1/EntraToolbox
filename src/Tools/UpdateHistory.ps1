@@ -10,6 +10,15 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.19.1'
+        Date    = '2026-09-06'
+        Changes = @(
+            'Cancel and release background work on selection changes, tenant switches and shutdown; ignore stale authentication and token refresh results'
+            'Restrict authenticated requests to Microsoft Graph, enforce dry run in workers and bound request timeouts'
+            'Honor Retry-After and avoid replaying writes after ambiguous server failures'
+        )
+    }
+    @{
         Version = '0.19.0'
         Date    = '2026-09-02'
         Changes = @(

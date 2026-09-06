@@ -535,9 +535,9 @@ function Start-TpCreateTeam {
                 )
             } | ConvertTo-Json -Depth 10
 
-            $resp     = Invoke-WebRequest -Uri 'https://graph.microsoft.com/v1.0/teams' `
-                            -Headers $headers -Method POST -Body $body -ErrorAction Stop
-            $location = @($resp.Headers['Location'])[0]
+            $null     = Invoke-RestMethod -Uri 'https://graph.microsoft.com/v1.0/teams' `
+                            -Headers $headers -Method POST -Body $body -ResponseHeadersVariable createHeaders -ErrorAction Stop
+            $location = @($createHeaders['Location'])[0]
             if (-not $location) { throw 'No Location header in 202 response' }
             if ($location -notmatch '^https?://') {
                 if ($location -notmatch '^/v\d') { $location = "/v1.0$location" }

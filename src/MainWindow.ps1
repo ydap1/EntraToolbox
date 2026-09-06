@@ -904,7 +904,7 @@ function Hide-HelpOverlay {
 $Script:UpdateCheckTimer = $null
 function Start-UpdateCheck {
     if ($Script:UpdateCheckTimer) { return }
-    $Script:UpdateCheckTimer = Start-AsyncWork -NoToken -RefSeed @{ Remote = '' } -Script {
+    $Script:UpdateCheckTimer = Start-AsyncWork -NoToken -SessionIndependent -RefSeed @{ Remote = '' } -Script {
         try {
             $Ref['Remote'] = ([string](Invoke-RestMethod `
                 -Uri 'https://raw.githubusercontent.com/ydap1/EntraToolbox/main/version.txt' `
@@ -940,8 +940,11 @@ function Invoke-LogPaneToggle {
 }
 
 function Invoke-ResetTools {
+    Reset-EtbSessionWork
     Clear-EtbUserCache
-    foreach ($cb in $Script:ResetCallbacks) { & $cb }
+    foreach ($cb in $Script:ResetCallbacks) {
+        try { & $cb } catch { Write-Log "Tool reset failed: $_" 'ERROR' }
+    }
     $Script:MainUI.TenantBadge.Visibility  = 'Collapsed'
     $Script:MainUI.TenantName.Text         = ''
     $Script:AccessToken                    = $null
@@ -1319,5 +1322,15 @@ function Show-MainWindow {
         }
     })
 
+    $window.Add_Closed({
+        Reset-EtbSessionWork
+        foreach ($job in $Script:AsyncJobs.ToArray()) { Stop-EtbAsyncWork $job }
+        if ($Script:TokenRefreshTimer) { $Script:TokenRefreshTimer.Stop() }
+    })
     [void]$window.ShowDialog()
+    # The dispatcher no longer runs after close; finish releasing canceled workers.
+    foreach ($job in $Script:AsyncJobs.ToArray()) {
+        if ($job.Tag.StopAsync) { $job.Tag.StopAsync.AsyncWaitHandle.WaitOne() | Out-Null }
+        Complete-EtbAsyncWork $job
+    }
 }
