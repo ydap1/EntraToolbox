@@ -68,36 +68,28 @@ function Complete-GcUserLoad {
 
 function Update-GcSrcFilter {
     $filter = $Script:GC_UI.SrcSearch.Text.Trim()
-    $Script:GC_UI.SrcList.Items.Clear()
+    Clear-EtbList $Script:GC_UI.SrcList
     $list = if ([string]::IsNullOrWhiteSpace($filter)) { $Script:GC_AllUsers } else {
         $Script:GC_AllUsers | Where-Object {
             $_.displayName -like "*$filter*" -or $_.userPrincipalName -like "*$filter*"
         }
     }
-    foreach ($u in $list) {
-        $lbi         = [System.Windows.Controls.ListBoxItem]::new()
-        $lbi.Content = $u.displayName
-        $lbi.Tag     = $u
-        $lbi.ToolTip = $u.userPrincipalName
-        [void]$Script:GC_UI.SrcList.Items.Add($lbi)
-    }
+    Set-EtbListItems -List $Script:GC_UI.SrcList -Items @(foreach ($u in $list) {
+        [pscustomobject]@{ Content = $u.displayName; Tag = $u; ToolTip = $u.userPrincipalName }
+    })
 }
 
 function Update-GcTgtFilter {
     $filter = $Script:GC_UI.TgtSearch.Text.Trim()
-    $Script:GC_UI.TgtList.Items.Clear()
+    Clear-EtbList $Script:GC_UI.TgtList
     $list = if ([string]::IsNullOrWhiteSpace($filter)) { $Script:GC_AllUsers } else {
         $Script:GC_AllUsers | Where-Object {
             $_.displayName -like "*$filter*" -or $_.userPrincipalName -like "*$filter*"
         }
     }
-    foreach ($u in $list) {
-        $lbi         = [System.Windows.Controls.ListBoxItem]::new()
-        $lbi.Content = $u.displayName
-        $lbi.Tag     = $u
-        $lbi.ToolTip = $u.userPrincipalName
-        [void]$Script:GC_UI.TgtList.Items.Add($lbi)
-    }
+    Set-EtbListItems -List $Script:GC_UI.TgtList -Items @(foreach ($u in $list) {
+        [pscustomobject]@{ Content = $u.displayName; Tag = $u; ToolTip = $u.userPrincipalName }
+    })
 }
 
 # ── Load source user's direct group memberships ────────────────────────────────
@@ -119,7 +111,7 @@ function Start-GcSourceGroupLoad {
         -RefSeed @{ Groups = $null } `
         -Script {
             $groups = [System.Collections.Generic.List[object]]::new()
-            $url = "https://graph.microsoft.com/v1.0/users/$UserId/memberOf?`$select=id,displayName,groupTypes&`$top=999"
+            $url = "https://graph.microsoft.com/v1.0/users/$UserId/memberOf?`$select=id,displayName,groupTypes,isAssignableToRole&`$top=999"
             do {
                 $resp = Invoke-RestMethod -Uri $url `
                     -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
@@ -162,6 +154,10 @@ function Start-GcSourceGroupLoad {
                     [void]$Script:GC_UI.GrpList.Items.Add($lbi)
                 }
                 $Script:GC_UI.GrpList.Visibility = 'Visible'
+                $Script:GC_UI.SrcList.IsEnabled = $true
+                $Script:GC_UI.TgtList.IsEnabled = $true
+                $Script:GC_UI.SrcSearch.IsEnabled = $true
+                $Script:GC_UI.TgtSearch.IsEnabled = $true
                 Update-GcCopyButton
             } catch {
                 Write-Log "GC src-grp timer error: $_" 'ERROR'
@@ -195,6 +191,10 @@ function Start-GcCopy {
     $srcGroups = $Script:GC_SourceGroups
 
     $Script:GC_UI.BtnCopy.IsEnabled = $false
+    $Script:GC_UI.SrcList.IsEnabled = $false
+    $Script:GC_UI.TgtList.IsEnabled = $false
+    $Script:GC_UI.SrcSearch.IsEnabled = $false
+    $Script:GC_UI.TgtSearch.IsEnabled = $false
     Set-MainStatus "Copying groups to $($tgtUser.displayName)..." 'TextDim'
     Write-GcLog "Starting: '$($srcUser.displayName)' -> '$($tgtUser.displayName)'" 'TextDim'
 
@@ -218,6 +218,10 @@ function Start-GcCopy {
             } while ($url)
 
             foreach ($grp in $SrcGroups) {
+                if ($grp.groupTypes -contains 'DynamicMembership' -or $grp.isAssignableToRole) {
+                    $Ref['Skipped'].Add("$($grp.displayName) (managed or privileged membership)")
+                    continue
+                }
                 if ($tgtGroupIds.Contains($grp.id)) {
                     $Ref['Skipped'].Add($grp.displayName)
                     continue
@@ -246,15 +250,19 @@ function Start-GcCopy {
                     $failed  = $ref['Failed']
 
                     foreach ($g in $added)   { Write-GcLog "Added:   $g" 'Success' }
-                    foreach ($g in $skipped) { Write-GcLog "Skipped: $g (already a member)" 'TextDim' }
+                    foreach ($g in $skipped) { Write-GcLog "Skipped: $g" 'TextDim' }
                     foreach ($g in $failed)  { Write-GcLog "Failed:  $g" 'Danger' }
 
                     $summary = "Done — added: $($added.Count)  skipped: $($skipped.Count)  failed: $($failed.Count)"
                     Write-GcLog $summary 'Text'
-                    Set-MainStatus $summary 'Success'
+                    Set-MainStatus $summary $(if ($failed.Count) { 'Warning' } else { 'Success' })
                     Write-Log "GC: $summary" 'INFO'
                 }
 
+                $Script:GC_UI.SrcList.IsEnabled = $true
+                $Script:GC_UI.TgtList.IsEnabled = $true
+                $Script:GC_UI.SrcSearch.IsEnabled = $true
+                $Script:GC_UI.TgtSearch.IsEnabled = $true
                 Update-GcCopyButton
             } catch {
                 Write-Log "GC copy-timer error: $_" 'ERROR'
@@ -609,8 +617,8 @@ function Initialize-GroupCopyTool {
         $Script:GC_TargetUser   = $null
         $Script:GC_SourceGroups = @()
 
-        $Script:GC_UI.SrcList.Items.Clear()
-        $Script:GC_UI.TgtList.Items.Clear()
+        Clear-EtbList $Script:GC_UI.SrcList
+        Clear-EtbList $Script:GC_UI.TgtList
         $Script:GC_UI.SrcSearch.Text      = ''
         $Script:GC_UI.TgtSearch.Text      = ''
         $Script:GC_UI.SrcSearch.IsEnabled = $false

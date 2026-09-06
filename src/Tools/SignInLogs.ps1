@@ -22,7 +22,7 @@ function Start-SlUserLoad {
     if ($Script:DemoMode) { Start-SlUserLoadDemo; return }
     $Script:SL_UI.UserSearch.IsEnabled = $false
     $Script:SL_UI.UserList.IsEnabled   = $false
-    $Script:SL_UI.UserList.Items.Clear()
+    Clear-EtbList $Script:SL_UI.UserList
     Set-MainStatus 'Loading users...' 'TextDim'
     Write-SlLog 'Fetching users from Entra ID...' 'TextDim'
 
@@ -60,7 +60,7 @@ function Complete-SlUserLoad {
 
 function Update-SlUserFilter {
     $filter = $Script:SL_UI.UserSearch.Text.Trim()
-    $Script:SL_UI.UserList.Items.Clear()
+    Clear-EtbList $Script:SL_UI.UserList
     $list = if ([string]::IsNullOrWhiteSpace($filter)) {
         $Script:SL_AllUsers
     } else {
@@ -69,13 +69,9 @@ function Update-SlUserFilter {
             $_.userPrincipalName -like "*$filter*"
         }
     }
-    foreach ($u in $list) {
-        $lbi         = [System.Windows.Controls.ListBoxItem]::new()
-        $lbi.Content = $u.displayName
-        $lbi.Tag     = $u
-        $lbi.ToolTip = $u.userPrincipalName
-        [void]$Script:SL_UI.UserList.Items.Add($lbi)
-    }
+    Set-EtbListItems -List $Script:SL_UI.UserList -Items @(foreach ($u in $list) {
+        [pscustomobject]@{ Content = $u.displayName; Tag = $u; ToolTip = $u.userPrincipalName }
+    })
 }
 
 # ── Async sign-in log load ─────────────────────────────────────────────────────
@@ -460,7 +456,7 @@ function Initialize-SignInLogsTool {
     Register-ConnectCallback 'Start-SlUserLoad'
     $Script:ResetCallbacks.Add({
         $Script:SL_AllUsers = @()
-        $Script:SL_UI.UserList.Items.Clear()
+        Clear-EtbList $Script:SL_UI.UserList
         $Script:SL_UI.UserSearch.Text      = ''
         $Script:SL_UI.UserSearch.IsEnabled = $false
         $Script:SL_UI.UserList.IsEnabled   = $false

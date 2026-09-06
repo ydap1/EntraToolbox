@@ -10,6 +10,16 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.19.2'
+        Date    = '2026-09-06'
+        Changes = @(
+            'Single-user password resets run in the background; dry runs accurately report that no changes were made'
+            'Keep classroom passwords with unbiased secure random selection; remove passwords from activity logs and protect CSV exports against spreadsheet formulas'
+            'Reuse the Last Device inventory across user selections and recycle visible directory list rows'
+            'Keep demo actions offline, skip managed/privileged group memberships, and report partial operation failures accurately'
+        )
+    }
+    @{
         Version = '0.19.1'
         Date    = '2026-09-06'
         Changes = @(

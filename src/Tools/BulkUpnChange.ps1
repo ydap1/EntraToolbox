@@ -250,8 +250,7 @@ function Start-BucApply {
         foreach ($r in $Pending) {
             $res = @{ Id = $r.Id; OldUpn = $r.OldUpn; NewUpn = $r.NewUpn; Ok = $false; Err = '' }
             try {
-                $escaped = $r.NewUpn -replace '\\','\\' -replace '"','\"'
-                $body    = "{`"userPrincipalName`":`"$escaped`"}"
+                $body = @{ userPrincipalName = $r.NewUpn } | ConvertTo-Json
                 Invoke-RestMethod `
                     -Uri "https://graph.microsoft.com/v1.0/users/$($r.Id)" `
                     -Headers @{ Authorization = "Bearer $Token"; 'Content-Type' = 'application/json' } `
@@ -266,6 +265,12 @@ function Start-BucApply {
     } -OnComplete {
         param($ref)
         try {
+            if ($ref.Error) {
+                Write-BucLog "UPN change failed: $($ref.Error)" 'Danger'
+                Set-MainStatus 'UPN change failed.' 'Danger'
+                Update-BucButtons
+                return
+            }
             $ok = 0; $fail = 0
             foreach ($res in $ref['Results']) {
                 $row = $Script:BUC_Rows | Where-Object { $_.Id -eq $res['Id'] } | Select-Object -First 1
@@ -282,7 +287,7 @@ function Start-BucApply {
             $Script:BUC_UI.PreviewGrid.Items.Refresh()
             $summary = "Done — changed: $ok  failed: $fail"
             Write-BucLog $summary 'Text'
-            Set-MainStatus $summary (if ($fail -gt 0) { 'Warning' } else { 'Success' })
+            Set-MainStatus $summary $(if ($fail -gt 0) { 'Warning' } else { 'Success' })
             Update-BucButtons
         } catch {
             Write-Log "BUC apply-timer error: $_" 'ERROR'

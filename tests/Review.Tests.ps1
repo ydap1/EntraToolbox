@@ -23,6 +23,39 @@ try {
     Assert ($parseErrors.Count -eq 0) "all application scripts parse ($($parseErrors -join '; '))"
     . "$root/src/Auth.ps1"
 
+    . "$root/src/Tools/PasswordReset.ps1"
+    $passwords = @(1..1000 | ForEach-Object { New-Password })
+    Assert (@($passwords | Where-Object { $_ -notmatch '^[a-z]{3}\.[a-z]{3}\.[a-z]{3}[1-9][0-9]!$' }).Count -eq 0) 'classroom password format is preserved'
+    $csv = [pscustomobject]@{ Name = '=HYPERLINK("bad")'; Upn = 'student@school.test'; Password = 'cat.sun.cup42!'; Count = -2 } | ConvertTo-EtbCsvRow
+    Assert ($csv.Name.StartsWith("'=") -and $csv.Upn -eq 'student@school.test' -and $csv.Password -eq 'cat.sun.cup42!' -and $csv.Count -eq -2) 'CSV formula protection preserves ordinary values and passwords'
+    foreach ($file in Get-ChildItem "$root/src/Tools" -Filter *.ps1) { . $file.FullName }
+    . "$root/src/Demo.ps1"
+    $missing = @()
+    $xamlCount = 0
+    foreach ($file in Get-ChildItem "$root/src" -Recurse -Filter *.ps1) {
+        $ast = [Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$null)
+        foreach ($command in $ast.FindAll({ param($a) $a -is [Management.Automation.Language.CommandAst] }, $true)) {
+            $name = $command.GetCommandName()
+            if ($name -eq 'if') { throw "Invalid conditional argument: $($command.Extent)" }
+            if ($name -like 'Start-*Demo' -and -not (Get-Command $name -ErrorAction SilentlyContinue)) { $missing += $name }
+        }
+        foreach ($node in $ast.FindAll({ param($a) $a -is [Management.Automation.Language.StringConstantExpressionAst] -and $a.Value -match '^<(Grid|Window)\s+xmlns=' }, $true)) {
+            $null = [xml](Invoke-ThemeXaml $node.Value)
+            $xamlCount++
+        }
+    }
+    Assert ($missing.Count -eq 0) "all referenced demo loaders exist ($($missing -join ', '))"
+    Assert ($xamlCount -gt 10) "all $xamlCount application XAML documents are well-formed after theme substitution"
+    # Dry run must not launch a worker, claim success, or change prompt status.
+    $Script:DryMode = $true
+    $Script:DemoMode = $false
+    $Script:UPR_UI = @{ InlineStatus = [pscustomobject]@{ Text=''; Foreground=''; Visibility='' }; PromptStatus = [pscustomobject]@{ Text='unchanged' } }
+    function Set-MainStatus { param($Text, $Color) }
+    function Write-UprLog { param($Msg, $Color) }
+    Start-UprPasswordReset -User ([pscustomobject]@{ id='test'; displayName='Test User' }) -Password 'cat.sun.cup42!' -Force $true
+    Assert ($Script:UPR_UI.InlineStatus.Text -like '*No changes made*' -and $Script:UPR_UI.PromptStatus.Text -eq 'unchanged' -and $Script:AsyncJobs.Count -eq 0) 'dry-run password reset leaves actual account state untouched'
+    $Script:DryMode = $false
+
     # Substitute only the dispatcher for Linux. Pipelines/runspaces are real.
     function New-EtbDispatcherTimer {
         param([int]$IntervalMs)

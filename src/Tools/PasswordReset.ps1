@@ -16,14 +16,10 @@ $Script:PwWords3 = 'cup','jar','pen','bag','box','map','key','pad','hat','cap',
                    'oar','jug','van','bus','cab','tag'
 
 function New-Password {
-    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    $buf = [byte[]]::new(4)
-    function Rnd([int]$n) { $rng.GetBytes($buf); [System.BitConverter]::ToUInt32($buf, 0) % $n }
-    $a = $Script:PwWords1[ (Rnd $Script:PwWords1.Count) ]
-    $b = $Script:PwWords2[ (Rnd $Script:PwWords2.Count) ]
-    $c = $Script:PwWords3[ (Rnd $Script:PwWords3.Count) ]
-    $n = 10 + (Rnd 90)
-    $rng.Dispose()
+    $a = $Script:PwWords1[[System.Security.Cryptography.RandomNumberGenerator]::GetInt32($Script:PwWords1.Count)]
+    $b = $Script:PwWords2[[System.Security.Cryptography.RandomNumberGenerator]::GetInt32($Script:PwWords2.Count)]
+    $c = $Script:PwWords3[[System.Security.Cryptography.RandomNumberGenerator]::GetInt32($Script:PwWords3.Count)]
+    $n = [System.Security.Cryptography.RandomNumberGenerator]::GetInt32(10, 100)
     "$a.$b.$c$n!"
 }
 
@@ -658,7 +654,7 @@ function Initialize-PasswordResetTool {
                 foreach ($row in $selected) { $row.Status = 'OK' }
                 $Script:PwReset_UI.Grid.Items.Refresh()
                 $forceLabel = if ($force) { 'will prompt on next sign-in' } else { 'no prompt required' }
-                foreach ($item in $work) { Write-PwLog "[DRY RUN] $($item.DisplayName)  ->  $($item.Password)  ($forceLabel)" 'TextDim' }
+                foreach ($item in $work) { Write-PwLog "[DRY RUN] $($item.DisplayName) — password generated ($forceLabel)" 'TextDim' }
                 $Script:PwReset_UI.BtnExport.IsEnabled     = $true
                 $Script:PwReset_UI.PnlStats.Visibility     = 'Visible'
                 $Script:PwReset_UI.LblTotal.Text           = "Total  $($selected.Count)"
@@ -715,16 +711,15 @@ function Initialize-PasswordResetTool {
                 -Vars @{ Work = $work; Force = $force } `
                 -IntervalMs 300 `
                 -Script {
-                    $forceJson = if ($Force) { 'true' } else { 'false' }
                     foreach ($item in $Work) {
                         $r = @{ Id = $item.Id; Name = $item.DisplayName; Upn = $item.Upn; Ok = $false; Err = '' }
                         try {
-                            $escaped = $item.Password -replace '\\', '\\' -replace '"', '\"'
+                            $body = @{ passwordProfile = @{ password = $item.Password; forceChangePasswordNextSignIn = $Force } } | ConvertTo-Json
                             Invoke-RestMethod `
                                 -Uri "https://graph.microsoft.com/v1.0/users/$($item.Id)" `
                                 -Headers @{ Authorization = "Bearer $Token"; 'Content-Type' = 'application/json' } `
                                 -Method PATCH `
-                                -Body "{`"passwordProfile`":{`"password`":`"$escaped`",`"forceChangePasswordNextSignIn`":$forceJson}}" `
+                                -Body $body `
                                 -ErrorAction Stop
                             $r.Ok = $true
                             $Ref['Ok']++
@@ -742,7 +737,7 @@ function Initialize-PasswordResetTool {
                         $row = $Script:PwReset_Rows | Where-Object { $_.Id -eq $item.Id } | Select-Object -First 1
                         if ($row) { $row.Status = if ($item.Ok) { 'OK' } else { 'Failed' } }
                         $logMsg = if ($item.Ok) { "OK: $($item.Name)  ($($item.Upn))" } else { "FAILED: $($item.Name) — $($item.Err)" }
-                        Write-AppLog $logMsg (if ($item.Ok) { 'Success' } else { 'Danger' })
+                        Write-AppLog $logMsg $(if ($item.Ok) { 'Success' } else { 'Danger' })
                     }
                     $Script:PwReset_UI.Grid.Items.Refresh()
                     $Script:PwReset_UI.Progress.Value = $ref['Ok'] + $ref['Fail']
@@ -756,7 +751,7 @@ function Initialize-PasswordResetTool {
                             $row = $Script:PwReset_Rows | Where-Object { $_.Id -eq $item.Id } | Select-Object -First 1
                             if ($row) { $row.Status = if ($item.Ok) { 'OK' } else { 'Failed' } }
                             $logMsg = if ($item.Ok) { "OK: $($item.Name)  ($($item.Upn))" } else { "FAILED: $($item.Name) — $($item.Err)" }
-                            Write-AppLog $logMsg (if ($item.Ok) { 'Success' } else { 'Danger' })
+                            Write-AppLog $logMsg $(if ($item.Ok) { 'Success' } else { 'Danger' })
                         }
                         $Script:PwReset_UI.Grid.Items.Refresh()
                         $ok   = $ref['Ok']
@@ -795,7 +790,7 @@ function Initialize-PasswordResetTool {
             if (-not $dlg.ShowDialog()) { return }
             Write-Log "PwReset: exporting CSV to $($dlg.FileName)" 'INFO'
             $Script:PwReset_Rows | Select-Object DisplayName, UPN, Department, Password, Status |
-                Export-Csv -Path $dlg.FileName -NoTypeInformation -Encoding UTF8
+                ConvertTo-EtbCsvRow | Export-Csv -Path $dlg.FileName -NoTypeInformation -Encoding UTF8
             Write-PwLog "CSV exported: $($dlg.FileName)" 'Success'
             Set-MainStatus "Saved: $($dlg.FileName)" 'Success'
             [System.Windows.MessageBox]::Show("Saved to:`n$($dlg.FileName)", 'Export Complete', 'OK', 'Information') | Out-Null

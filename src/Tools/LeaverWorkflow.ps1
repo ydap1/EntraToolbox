@@ -54,19 +54,15 @@ function Complete-LwUserLoad {
 
 function Update-LwUserFilter {
     $filter = $Script:LW_UI.UserSearch.Text.Trim()
-    $Script:LW_UI.UserList.Items.Clear()
+    Clear-EtbList $Script:LW_UI.UserList
     $list = if ([string]::IsNullOrWhiteSpace($filter)) { $Script:LW_AllUsers } else {
         $Script:LW_AllUsers | Where-Object {
             $_.displayName -like "*$filter*" -or $_.userPrincipalName -like "*$filter*"
         }
     }
-    foreach ($u in $list) {
-        $lbi         = [System.Windows.Controls.ListBoxItem]::new()
-        $lbi.Content = $u.displayName
-        $lbi.Tag     = $u
-        $lbi.ToolTip = $u.userPrincipalName
-        [void]$Script:LW_UI.UserList.Items.Add($lbi)
-    }
+    Set-EtbListItems -List $Script:LW_UI.UserList -Items @(foreach ($u in $list) {
+        [pscustomobject]@{ Content = $u.displayName; Tag = $u; ToolTip = $u.userPrincipalName }
+    })
 }
 
 function Set-LwUserSelected {
@@ -99,7 +95,7 @@ function Start-LwRun {
         return
     }
 
-    if ($Script:DryMode) {
+    if ($Script:DryMode -or $Script:DemoMode) {
         Write-LwLog "[DRY] Leaver workflow for: $($user.displayName) ($($user.userPrincipalName))" 'Warning'
         if ($doDisable) { Write-LwLog '[DRY] Would disable account (accountEnabled = false)' 'Warning' }
         if ($doRevoke)  { Write-LwLog '[DRY] Would revoke all sign-in sessions' 'Warning' }
@@ -207,8 +203,15 @@ function Start-LwRun {
                     }
                     $displayName = if ($Script:LW_SelectedUser) { $Script:LW_SelectedUser.displayName } else { 'user' }
                     $summary = "Leaver workflow complete for $displayName"
-                    Write-LwLog $summary 'Success'
-                    Set-MainStatus $summary 'Success'
+                    $failed = $ref.DisableErr -or $ref.RevokeErr -or $ref.GroupsFailed.Count -gt 0
+                    if ($failed) { $summary += ' — some actions failed; check the activity log.' }
+                    $color = if ($failed) { 'Warning' } else { 'Success' }
+                    Write-LwLog $summary $color
+                    Set-MainStatus $summary $color
+                    if ($ref.DisableDone -and $Script:LW_SelectedUser) {
+                        $Script:LW_SelectedUser.accountEnabled = $false
+                        Set-LwUserSelected $Script:LW_SelectedUser
+                    }
                     Write-Log "LW: $summary" 'INFO'
                 }
                 $Script:LW_UI.BtnRun.IsEnabled    = $true
@@ -482,7 +485,7 @@ function Initialize-LeaverWorkflowTool {
         $Script:LW_AllUsers     = @()
         $Script:LW_SelectedUser = $null
         if ($Script:LW_RunTimer)  { $Script:LW_RunTimer.Stop() }
-        $Script:LW_UI.UserList.Items.Clear()
+        Clear-EtbList $Script:LW_UI.UserList
         $Script:LW_UI.UserSearch.Text      = ''
         $Script:LW_UI.UserSearch.IsEnabled = $false
         $Script:LW_UI.UserList.IsEnabled   = $false

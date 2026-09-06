@@ -96,7 +96,7 @@ function Complete-LaUserLoad {
 }
 
 function Start-LaSkuLoad {
-    if ($Script:DemoMode) { Start-LaSkuLoadDemo; return }
+    if ($Script:DemoMode) { return } # Start-LaUserLoadDemo supplies the demo SKUs.
 
     if ($Script:LA_SkuTimer) { $Script:LA_SkuTimer.Stop() }
     $Script:LA_SkuTimer = Start-AsyncWork -RefSeed @{ Skus = $null } -Script {
@@ -121,19 +121,15 @@ function Start-LaSkuLoad {
 
 function Update-LaUserFilter {
     $filter = $Script:LA_UI.UserSearch.Text.Trim()
-    $Script:LA_UI.UserList.Items.Clear()
+    Clear-EtbList $Script:LA_UI.UserList
     $list = if ([string]::IsNullOrWhiteSpace($filter)) { $Script:LA_AllUsers } else {
         $Script:LA_AllUsers | Where-Object {
             $_.displayName -like "*$filter*" -or $_.userPrincipalName -like "*$filter*"
         }
     }
-    foreach ($u in $list) {
-        $lbi         = [System.Windows.Controls.ListBoxItem]::new()
-        $lbi.Content = $u.displayName
-        $lbi.Tag     = $u
-        $lbi.ToolTip = $u.userPrincipalName
-        [void]$Script:LA_UI.UserList.Items.Add($lbi)
-    }
+    Set-EtbListItems -List $Script:LA_UI.UserList -Items @(foreach ($u in $list) {
+        [pscustomobject]@{ Content = $u.displayName; Tag = $u; ToolTip = $u.userPrincipalName }
+    })
 }
 
 function Set-LaUserSelected {
@@ -234,7 +230,7 @@ function Start-LaRemove {
     if (-not $user -or -not $sel) { return }
     $lic  = $sel.Tag
 
-    if ($Script:DryMode) {
+    if ($Script:DryMode -or $Script:DemoMode) {
         Write-LaLog "[DRY] Would remove $($sel.Content) from $($user.displayName)" 'Warning'
         return
     }
@@ -246,7 +242,7 @@ function Start-LaRemove {
     if ($Script:LA_ActionTimer) { $Script:LA_ActionTimer.Stop() }
     $Script:LA_ActionTimer = Start-AsyncWork `
         -Vars    @{ UserId = $user.id; SkuId = $lic.skuId } `
-        -RefSeed @{} `
+        -RefSeed @{ Name = $user.displayName } `
         -Script {
             $body = "{`"addLicenses`":[],`"removeLicenses`":[`"$SkuId`"]}"
             Invoke-RestMethod `
@@ -260,7 +256,7 @@ function Start-LaRemove {
                     Write-LaLog "Remove failed: $($ref['Error'])" 'Danger'
                     Set-MainStatus 'Remove licence failed.' 'Danger'
                 } else {
-                    $displayName = if ($Script:LA_SelectedUser) { $Script:LA_SelectedUser.displayName } else { 'user' }
+                    $displayName = $ref.Name
                     Write-LaLog "Licence removed from $displayName." 'Success'
                     Set-MainStatus 'Licence removed.' 'Success'
                     if ($Script:LA_SelectedUser) { Start-LaLicenceLoad -UserId $Script:LA_SelectedUser.id }
@@ -277,8 +273,12 @@ function Start-LaAssign {
     $sel  = $Script:LA_UI.AvailableList.SelectedItem
     if (-not $user -or -not $sel) { return }
     $sku  = $sel.Tag
+    if ($sku.prepaidUnits.enabled - $sku.consumedUnits -le 0) {
+        Write-LaLog 'No available seats remain for this licence.' 'Warning'
+        return
+    }
 
-    if ($Script:DryMode) {
+    if ($Script:DryMode -or $Script:DemoMode) {
         Write-LaLog "[DRY] Would assign $($sel.Content) to $($user.displayName)" 'Warning'
         return
     }
@@ -290,7 +290,7 @@ function Start-LaAssign {
     if ($Script:LA_ActionTimer) { $Script:LA_ActionTimer.Stop() }
     $Script:LA_ActionTimer = Start-AsyncWork `
         -Vars    @{ UserId = $user.id; SkuId = $sku.skuId } `
-        -RefSeed @{} `
+        -RefSeed @{ Name = $user.displayName } `
         -Script {
             $body = "{`"addLicenses`":[{`"skuId`":`"$SkuId`"}],`"removeLicenses`":[]}"
             Invoke-RestMethod `
@@ -304,7 +304,7 @@ function Start-LaAssign {
                     Write-LaLog "Assign failed: $($ref['Error'])" 'Danger'
                     Set-MainStatus 'Assign licence failed.' 'Danger'
                 } else {
-                    $displayName = if ($Script:LA_SelectedUser) { $Script:LA_SelectedUser.displayName } else { 'user' }
+                    $displayName = $ref.Name
                     Write-LaLog "Licence assigned to $displayName." 'Success'
                     Set-MainStatus 'Licence assigned.' 'Success'
                     if ($Script:LA_SelectedUser) { Start-LaLicenceLoad -UserId $Script:LA_SelectedUser.id }
@@ -641,7 +641,7 @@ function Initialize-LicenceAssignmentTool {
         if ($Script:LA_SkuTimer)    { $Script:LA_SkuTimer.Stop() }
         if ($Script:LA_LicTimer)    { $Script:LA_LicTimer.Stop() }
         if ($Script:LA_ActionTimer) { $Script:LA_ActionTimer.Stop() }
-        $Script:LA_UI.UserList.Items.Clear()
+        Clear-EtbList $Script:LA_UI.UserList
         $Script:LA_UI.UserSearch.Text      = ''
         $Script:LA_UI.UserSearch.IsEnabled = $false
         $Script:LA_UI.UserList.IsEnabled   = $false

@@ -9,15 +9,15 @@ WPF PowerShell GUI for Entra ID (Azure AD) tenant management. Requires Windows a
 | Tool | Category | Description |
 |------|----------|-------------|
 | **Year Group Passwords** | Users | Bulk password reset by department. Memorable password generation (`cat.dog.pat11!`), optional forced sign-in prompt, dry-run preview, CSV export. |
-| **User Password Reset** | Users | Single-account password reset with live `forceChangePasswordNextSignIn` toggle and group membership view. |
+| **User Password Reset** | Users | Single-account password reset without blocking the UI, with live `forceChangePasswordNextSignIn` toggle and group membership view. |
 | **Leaver Workflow** | Users | Disable account, revoke sign-in sessions, and remove from all groups in one click. Each step is individually togglable. Dry-run aware. |
 | **Licence Assignment** | Users | View a user's assigned Microsoft 365 licences. Assign or remove individual SKUs. Shows available seats remaining per SKU. |
 | **Bulk UPN Change** | Users | Move cloud-only users to a different verified domain. Import by department, office location, or individual search. |
 | **Immutable ID** | Users | Assign or remove `onPremisesImmutableId` on cloud-only accounts. Per-row checkboxes, confirm-by-typing-YES safety gate. |
-| **Last Device** | Devices | Intune device lookup by user or by device name. Stale device filter (7 / 30 / 60 / 90 days). Time Logs sub-tab. Export CSV reports (per device/user sign-in, or one row per device) of the users that signed into each device in the past 3 months. |
+| **Last Device** | Devices | Intune device lookup by user or by device name, sharing one inventory download per connection. Stale device filter (7 / 30 / 60 / 90 days). Time Logs sub-tab. Export CSV reports (per device/user sign-in, or one row per device) of the users that signed into each device in the past 3 months. |
 | **Device Compliance** | Devices | Overview of all Intune-managed device compliance states. Selecting a non-compliant device shows which policies are failing and how many settings are out of compliance. |
 | **Sign-In Logs** | Audit | Last 50 sign-ins for any user — app, result, IP, location, device. |
-| **Group Copy** | Groups & Teams | Copy all group memberships from one user to another. Skips groups the target already belongs to. |
+| **Group Copy** | Groups & Teams | Copy all group memberships from one user to another. Skips existing memberships, dynamic groups, and role-assignable groups. |
 | **Teams Provisioning** | Groups & Teams | Create a Class or Standard team, populate members from a year group or direct user search, assign per-person Owner roles. |
 | **Secure Score** | Security | Microsoft Secure Score percentage headline with per-control breakdown table. |
 | **Appearance** | App | Theme presets (Slate & Amber, Indigo Night, Ocean, Forest, Rose) and UI font picker with per-font preview. |
@@ -34,7 +34,7 @@ Downloads `MSAL.PS` automatically on first run. No admin rights required.
 
 Add a tenant with the **+** button — enter a Tenant ID, a verified domain, or a global admin UPN (domains and UPNs are resolved to the tenant automatically), sign in interactively, done. Subsequent launches connect silently.
 
-Use **Dry Run** in the tenant bar to preview destructive actions (password resets, UPN changes, ID assignments) without executing them.
+Use **Dry Run** in the tenant bar to preview destructive actions (password resets, UPN changes, ID assignments) without executing them. It applies to new actions; a request already submitted to Graph cannot be undone. Passwords remain visible in the results and explicit CSV exports, but are excluded from the activity log. CSV exports neutralize spreadsheet formula prefixes.
 
 Press **Ctrl+K** (or the **Search** button in the tenant bar) for global user search — type a name or UPN and jump straight to Password Reset, Devices, Sign-Ins, Licences, or Leaver for that user. Press **F1** for the keyboard shortcut guide. All tools share one cached user list per tenant, so switching tools is instant. The sidebar shows a notice when a newer version is available on GitHub.
 
@@ -45,7 +45,7 @@ Uses the Microsoft Intune PowerShell public client ID — no app registration re
 | Scope | Purpose |
 |-------|---------|
 | `User.ReadWrite.All` | Read users, reset passwords, change UPNs, set ImmutableId |
-| `DeviceManagementManagedDevices.Read.All` | Last Device tab |
+| `DeviceManagementManagedDevices.ReadWrite.All` | Last Device lookup and device sync |
 | `AuditLog.Read.All` | Sign-In Logs tab |
 | `GroupMember.ReadWrite.All` | Group membership view and Group Copy tab |
 | `Team.Create` | Create new Teams |

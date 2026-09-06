@@ -24,7 +24,7 @@ function Write-LdLog {
 # ── Async user load ────────────────────────────────────────────────────────────
 function Start-LdUserLoad {
     if ($Script:DemoMode) { Start-LdUserLoadDemo; return }
-    $Script:LD_UI.UserList.Items.Clear()
+    Clear-EtbList $Script:LD_UI.UserList
     $Script:LD_UI.UserSearch.Text      = ''
     $Script:LD_UI.UserSearch.IsEnabled = $false
     $Script:LD_UI.UserList.IsEnabled   = $false
@@ -69,7 +69,7 @@ function Complete-LdUserLoad {
 
 function Update-LdUserFilter {
     $filter = $Script:LD_UI.UserSearch.Text.Trim()
-    $Script:LD_UI.UserList.Items.Clear()
+    Clear-EtbList $Script:LD_UI.UserList
     $list = if ([string]::IsNullOrWhiteSpace($filter)) {
         $Script:LD_AllUsers
     } else {
@@ -78,13 +78,9 @@ function Update-LdUserFilter {
             $_.userPrincipalName -like "*$filter*"
         }
     }
-    foreach ($u in $list) {
-        $lbi         = [System.Windows.Controls.ListBoxItem]::new()
-        $lbi.Content = $u.displayName
-        $lbi.Tag     = $u
-        $lbi.ToolTip = $u.userPrincipalName
-        [void]$Script:LD_UI.UserList.Items.Add($lbi)
-    }
+    Set-EtbListItems -List $Script:LD_UI.UserList -Items @(foreach ($u in $list) {
+        [pscustomobject]@{ Content = $u.displayName; Tag = $u; ToolTip = $u.userPrincipalName }
+    })
 }
 
 # ── Async device load ──────────────────────────────────────────────────────────
@@ -99,26 +95,17 @@ function Start-LdDeviceLoad {
     $Script:LD_UI.BtnCopy.IsEnabled         = $false
     Set-MainStatus 'Searching devices...' 'TextDim'
 
+    if (-not $Script:LD_AllDevicesReady) {
+        $Script:LD_UI.DevPlaceholder.Text = 'Loading the tenant device inventory...'
+        if (-not $Script:LD_AllDevTimer -or -not $Script:LD_AllDevTimer.IsEnabled) { Start-LdAllDevicesLoad }
+        return
+    }
     if ($Script:LD_DevTimer) { $Script:LD_DevTimer.Stop() }
     $Script:LD_DevTimer = Start-AsyncWork `
-        -Vars    @{ UserId  = $UserId } `
+        -Vars @{ UserId = $UserId; Devices = $Script:LD_AllDevices } `
         -RefSeed @{ Devices = $null } `
         -Script {
-            # Intune OData does not support lambda filters on usersLoggedOn, so we page
-            # all devices and match client-side.
-            $found = [System.Collections.Generic.List[object]]::new()
-            $url = 'https://graph.microsoft.com/beta/deviceManagement/managedDevices?$select=id,deviceName,model,serialNumber,osVersion,complianceState,lastSyncDateTime,usersLoggedOn&$top=999'
-            do {
-                $resp = Invoke-RestMethod -Uri $url `
-                    -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-                foreach ($d in $resp.value) {
-                    if ($d.usersLoggedOn | Where-Object { $_.userId -eq $UserId }) {
-                        [void]$found.Add($d)
-                    }
-                }
-                $url = $resp.'@odata.nextLink'
-            } while ($url)
-            $Ref['Devices'] = $found.ToArray()
+            $Ref['Devices'] = @($Devices | Where-Object { $_.usersLoggedOn.userId -contains $UserId })
         } -OnComplete {
             param($ref)
             try {
@@ -197,16 +184,17 @@ function Start-LdDeviceLoad {
 
 # ── Async all-devices load (for "By Device" tab) ──────────────────────────────
 function Start-LdAllDevicesLoad {
+    $Script:LD_AllDevicesReady = $false
     if ($Script:DemoMode) { Start-LdAllDevicesLoadDemo; return }
     $Script:LD_UI.DevBrowserSearch.IsEnabled = $false
     $Script:LD_UI.DevBrowserList.IsEnabled   = $false
-    $Script:LD_UI.DevBrowserList.Items.Clear()
+    Clear-EtbList $Script:LD_UI.DevBrowserList
     Write-LdLog 'By Device: fetching all Intune devices...' 'TextDim'
 
     if ($Script:LD_AllDevTimer) { $Script:LD_AllDevTimer.Stop() }
     $Script:LD_AllDevTimer = Start-AsyncWork -RefSeed @{ Devices = $null } -Script {
         $devices = [System.Collections.Generic.List[object]]::new()
-        $url = 'https://graph.microsoft.com/beta/deviceManagement/managedDevices?$select=id,deviceName,model,serialNumber,usersLoggedOn,lastSyncDateTime&$top=999'
+        $url = 'https://graph.microsoft.com/beta/deviceManagement/managedDevices?$select=id,deviceName,model,serialNumber,osVersion,complianceState,usersLoggedOn,lastSyncDateTime&$top=999'
         do {
             $resp = Invoke-RestMethod -Uri $url `
                 -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
@@ -229,6 +217,10 @@ function Start-LdAllDevicesLoad {
             }
 
             $Script:LD_AllDevices = @($ref['Devices'] | Sort-Object { $_.deviceName })
+            $Script:LD_AllDevicesReady = $true
+            if ($Script:LD_UI.UserList.SelectedItem) {
+                Start-LdDeviceLoad -UserId $Script:LD_UI.UserList.SelectedItem.Tag.id
+            }
             Write-Log "LastDevice/ByDevice: loaded $($Script:LD_AllDevices.Count) devices" 'INFO'
             Write-LdLog "By Device: loaded $($Script:LD_AllDevices.Count) devices." 'Success'
             Update-LdDevBrowserFilter
@@ -243,18 +235,15 @@ function Start-LdAllDevicesLoad {
 
 function Update-LdDevBrowserFilter {
     $filter = $Script:LD_UI.DevBrowserSearch.Text.Trim()
-    $Script:LD_UI.DevBrowserList.Items.Clear()
+    Clear-EtbList $Script:LD_UI.DevBrowserList
     $list = if ([string]::IsNullOrWhiteSpace($filter)) {
         $Script:LD_AllDevices
     } else {
         $Script:LD_AllDevices | Where-Object { $_.deviceName -like "*$filter*" }
     }
-    foreach ($d in $list) {
-        $lbi         = [System.Windows.Controls.ListBoxItem]::new()
-        $lbi.Content = $d.deviceName
-        $lbi.Tag     = $d
-        [void]$Script:LD_UI.DevBrowserList.Items.Add($lbi)
-    }
+    Set-EtbListItems -List $Script:LD_UI.DevBrowserList -Items @(foreach ($d in $list) {
+        [pscustomobject]@{ Content = $d.deviceName; Tag = $d; ToolTip = '' }
+    })
 }
 
 function Update-LdStaleFilter {
@@ -384,7 +373,7 @@ function Save-LdReportCsv {
     $dlg.Filter   = 'CSV files (*.csv)|*.csv'
     $dlg.FileName = "${BaseName}_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
     if (-not $dlg.ShowDialog()) { return $false }
-    $Rows | Export-Csv -Path $dlg.FileName -NoTypeInformation -Encoding UTF8
+    $Rows | ConvertTo-EtbCsvRow | Export-Csv -Path $dlg.FileName -NoTypeInformation -Encoding UTF8
     Write-Log "LastDevice: exported $($Rows.Count) rows to $($dlg.FileName)" 'INFO'
     Write-LdLog "Report exported: $($dlg.FileName) ($($Rows.Count) rows)" 'Success'
     Set-MainStatus "Saved: $($dlg.FileName)" 'Success'
@@ -1068,7 +1057,12 @@ function Initialize-LastDeviceTool {
                 return
             }
             $Script:LD_UI.BtnSync.IsEnabled = $false
-            Start-AsyncWork `
+            if ($Script:DemoMode) {
+                Write-LdLog "[DEMO] Would request Intune sync for $deviceName" 'TextDim'
+                $Script:LD_UI.BtnSync.IsEnabled = $true
+                return
+            }
+            $null = Start-AsyncWork `
                 -Vars    @{ DeviceId = $deviceId } `
                 -RefSeed @{ Ok = $false; DeviceName = $deviceName } `
                 -Script {
@@ -1157,10 +1151,11 @@ function Initialize-LastDeviceTool {
     Register-ConnectCallback 'Start-LdUserLoad'
     Register-ConnectCallback 'Start-LdAllDevicesLoad'
     $Script:ResetCallbacks.Add({
+        $Script:LD_AllDevicesReady = $false
         $Script:LD_AllUsers   = @()
         $Script:LD_AllDevices = @()
 
-        $Script:LD_UI.UserList.Items.Clear()
+        Clear-EtbList $Script:LD_UI.UserList
         $Script:LD_UI.UserSearch.Text      = ''
         $Script:LD_UI.UserSearch.IsEnabled = $false
         $Script:LD_UI.UserList.IsEnabled   = $false
@@ -1173,7 +1168,7 @@ function Initialize-LastDeviceTool {
 
         $Script:LD_UI.DevBrowserSearch.Text      = ''
         $Script:LD_UI.DevBrowserSearch.IsEnabled = $false
-        $Script:LD_UI.DevBrowserList.Items.Clear()
+        Clear-EtbList $Script:LD_UI.DevBrowserList
         $Script:LD_UI.DevBrowserList.IsEnabled   = $false
         $Script:LD_UI.DevUserList.Items.Clear()
         $Script:LD_UI.DevUserList.Visibility         = 'Collapsed'

@@ -18,6 +18,7 @@ function Invoke-RestMethod {
         [ValidateRange(1, 300)][int]$TimeoutSec = 60,
         [string]$ResponseHeadersVariable
     )
+    if ($Headers['Authorization'] -eq 'Bearer DEMO') { throw 'Demo mode cannot send authenticated requests.' }
     if ($Headers['Authorization'] -and
         ($Uri.Scheme -ne 'https' -or $Uri.Host -ne 'graph.microsoft.com' -or
          $Uri.Port -ne 443 -or $Uri.UserInfo)) {

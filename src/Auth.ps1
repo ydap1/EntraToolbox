@@ -181,6 +181,7 @@ function New-BackgroundRunspace {
 # (401/403 classification etc.) keep working exactly as before.
 $Script:EtbWorkerPreamble = Get-Content (Join-Path $PSScriptRoot 'Graph.ps1') -Raw
 . (Join-Path $PSScriptRoot 'Graph.ps1')
+. (Join-Path $PSScriptRoot 'Data.ps1')
 
 # ── WPF-safe async runspace + completion timer ────────────────────────────────
 # Runs $Script in a background Runspace with $Ref (synchronized hashtable), $Token
@@ -530,6 +531,13 @@ $Script:ThemeScrollBarStyle = @"
 # their user lists during Graph loads. This template keeps the themed
 # background and just dims the list instead.
 $Script:ThemeListBoxTemplate = @'
+<Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
+<Setter Property="VirtualizingPanel.IsVirtualizing" Value="True"/>
+<Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling"/>
+<Setter Property="VirtualizingPanel.ScrollUnit" Value="Pixel"/>
+<Setter Property="ItemsPanel">
+  <Setter.Value><ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate></Setter.Value>
+</Setter>
 <Setter Property="Template">
   <Setter.Value>
     <ControlTemplate TargetType="ListBox">
@@ -537,7 +545,7 @@ $Script:ThemeListBoxTemplate = @'
               BorderBrush="{TemplateBinding BorderBrush}"
               BorderThickness="{TemplateBinding BorderThickness}"
               Padding="{TemplateBinding Padding}">
-        <ScrollViewer Focusable="False">
+        <ScrollViewer Focusable="False" CanContentScroll="True">
           <ItemsPresenter/>
         </ScrollViewer>
       </Border>

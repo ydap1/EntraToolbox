@@ -26,7 +26,7 @@ function Start-UprUserLoad {
     if ($Script:DemoMode) { Start-UprUserLoadDemo; return }
     $Script:UPR_UI.UserSearch.IsEnabled = $false
     $Script:UPR_UI.UserList.IsEnabled   = $false
-    $Script:UPR_UI.UserList.Items.Clear()
+    Clear-EtbList $Script:UPR_UI.UserList
     Set-MainStatus 'Loading users...' 'TextDim'
     Write-UprLog 'Fetching users from Entra ID...' 'TextDim'
 
@@ -64,7 +64,7 @@ function Complete-UprUserLoad {
 
 function Update-UprUserFilter {
     $filter = $Script:UPR_UI.UserSearch.Text.Trim()
-    $Script:UPR_UI.UserList.Items.Clear()
+    Clear-EtbList $Script:UPR_UI.UserList
     $list = if ([string]::IsNullOrWhiteSpace($filter)) {
         $Script:UPR_AllUsers
     } else {
@@ -73,13 +73,9 @@ function Update-UprUserFilter {
             $_.userPrincipalName -like "*$filter*"
         }
     }
-    foreach ($u in $list) {
-        $lbi         = [System.Windows.Controls.ListBoxItem]::new()
-        $lbi.Content = $u.displayName
-        $lbi.Tag     = $u
-        $lbi.ToolTip = $u.userPrincipalName
-        [void]$Script:UPR_UI.UserList.Items.Add($lbi)
-    }
+    Set-EtbListItems -List $Script:UPR_UI.UserList -Items @(foreach ($u in $list) {
+        [pscustomobject]@{ Content = $u.displayName; Tag = $u; ToolTip = $u.userPrincipalName }
+    })
 }
 
 # ── Async passwordProfile fetch ────────────────────────────────────────────────
@@ -543,6 +539,56 @@ $Script:UprXaml = @'
 '@
 
 # ── Initialize ─────────────────────────────────────────────────────────────────
+function Start-UprPasswordReset {
+    param($User, [string]$Password, [bool]$Force)
+    $forceLabel = if ($Force) { 'will prompt on next sign-in' } else { 'no prompt required' }
+    if ($Script:DryMode -or $Script:DemoMode) {
+        $mode = if ($Script:DemoMode) { 'DEMO' } else { 'DRY' }
+        $message = "[$mode] Would reset password for $($User.displayName) ($forceLabel). No changes made."
+        Write-UprLog $message 'Warning'
+        Set-MainStatus $message 'Warning'
+        $Script:UPR_UI.InlineStatus.Text = $message
+        $Script:UPR_UI.InlineStatus.Foreground = Get-ThemeHex 'Warning'
+        $Script:UPR_UI.InlineStatus.Visibility = 'Visible'
+        return
+    }
+    $Script:UPR_UI.BtnReset.IsEnabled = $false
+    $Script:UPR_UI.BtnRegen.IsEnabled = $false
+    $Script:UPR_UI.UserList.IsEnabled = $false
+    $Script:UPR_UI.UserSearch.IsEnabled = $false
+    $Script:UPR_UI.InlineStatus.Visibility = 'Collapsed'
+    Set-MainStatus "Resetting password for $($User.displayName)..." 'TextDim'
+    $Script:UPR_ResetTimer = Start-AsyncWork `
+        -Vars @{ UserId = $User.id; Password = $Password; Force = $Force } `
+        -RefSeed @{ UserId = $User.id; Name = $User.displayName; Force = $Force; ForceLabel = $forceLabel } `
+        -Script {
+            $body = @{ passwordProfile = @{ password = $Password; forceChangePasswordNextSignIn = $Force } } | ConvertTo-Json
+            Invoke-RestMethod -Uri "https://graph.microsoft.com/v1.0/users/$UserId" `
+                -Headers @{ Authorization = "Bearer $Token" } -ContentType 'application/json' -Method PATCH -Body $body | Out-Null
+        } -OnComplete {
+            param($ref)
+            $Script:UPR_UI.BtnReset.IsEnabled = $true
+            $Script:UPR_UI.BtnRegen.IsEnabled = $true
+            $Script:UPR_UI.UserList.IsEnabled = $true
+            $Script:UPR_UI.UserSearch.IsEnabled = $true
+            $message = if ($ref.Error) { "Reset failed for $($ref.Name): $($ref.Error)" }
+                       else { "Password reset for $($ref.Name). ($($ref.ForceLabel))" }
+            $color = if ($ref.Error) { 'Danger' } else { 'Success' }
+            Write-UprLog $message $color
+            Set-MainStatus $message $color
+            if ($Script:UPR_UI.UserList.SelectedItem.Tag.id -ne $ref.UserId) { return }
+            $Script:UPR_UI.InlineStatus.Text = $message
+            $Script:UPR_UI.InlineStatus.Foreground = Get-ThemeHex $color
+            $Script:UPR_UI.InlineStatus.Visibility = 'Visible'
+            if (-not $ref.Error) {
+                # A preceding profile read must not overwrite the successful reset.
+                Stop-EtbAsyncWork $Script:UPR_ProfTimer
+                $Script:UPR_UI.PromptStatus.Text = "Currently: $($ref.ForceLabel)"
+                $Script:UPR_UI.PromptStatus.Foreground = Get-ThemeHex $(if ($ref.Force) { 'Warning' } else { 'Success' })
+            }
+        }
+}
+
 function Initialize-UserPasswordResetTool {
     $reader  = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new((Invoke-ThemeXaml $Script:UprXaml)))
     $content = [System.Windows.Markup.XamlReader]::Load($reader)
@@ -649,9 +695,9 @@ function Initialize-UserPasswordResetTool {
             if (-not $sel) { return }
             $user  = $sel.Tag
             $pw    = if ($Script:UPR_UI.PasswordMasked.Visibility -eq 'Visible') {
-                $Script:UPR_UI.PasswordMasked.Password.Trim()
+                $Script:UPR_UI.PasswordMasked.Password
             } else {
-                $Script:UPR_UI.PasswordBox.Text.Trim()
+                $Script:UPR_UI.PasswordBox.Text
             }
             $force = [bool]$Script:UPR_UI.ChkForce.IsChecked
 
@@ -662,55 +708,8 @@ function Initialize-UserPasswordResetTool {
                 return
             }
 
-            Write-Log "UPR: resetting password for $($user.userPrincipalName) (forceChange=$force)" 'INFO'
-            $Script:UPR_UI.BtnReset.IsEnabled      = $false
-            $Script:UPR_UI.BtnRegen.IsEnabled      = $false
-            $Script:UPR_UI.InlineStatus.Visibility = 'Collapsed'
-            Set-MainStatus "Resetting password for $($user.displayName)..." 'TextDim'
+            Start-UprPasswordReset -User $user -Password $pw -Force $force
 
-            try {
-                if ($Script:DryMode) {
-                    $forceLabel = if ($force) { 'will prompt on next sign-in' } else { 'no prompt required' }
-                    Write-UprLog "[DRY] Would reset password for $($user.displayName) ($forceLabel)" 'Warning'
-                    Write-Log "UPR: dry run - would reset password for $($user.userPrincipalName)" 'INFO'
-                } elseif (-not $Script:DemoMode) {
-                    Invoke-GraphPatch -Path "/v1.0/users/$($user.id)" -Body @{
-                        passwordProfile = @{
-                            password                      = $pw
-                            forceChangePasswordNextSignIn = $force
-                        }
-                    }
-                }
-
-                $forceLabel = if ($force) { 'will prompt on next sign-in' } else { 'no prompt required' }
-                Write-Log "UPR: password reset OK for $($user.userPrincipalName)" 'INFO'
-                Write-UprLog "OK: $($user.displayName) ($($user.userPrincipalName)) - $forceLabel" 'Success'
-                Set-MainStatus "Password reset for $($user.displayName)." 'Success'
-
-                $Script:UPR_UI.InlineStatus.Text       = "Password reset successfully. ($forceLabel)"
-                $Script:UPR_UI.InlineStatus.Foreground = (Get-ThemeHex 'Success')
-                $Script:UPR_UI.InlineStatus.Visibility = 'Visible'
-
-                # Update the prompt status display to reflect the new state
-                if ($force) {
-                    $Script:UPR_UI.PromptStatus.Text       = 'Currently: will prompt on next sign-in'
-                    $Script:UPR_UI.PromptStatus.Foreground = (Get-ThemeHex 'Warning')
-                } else {
-                    $Script:UPR_UI.PromptStatus.Text       = 'Currently: no prompt required'
-                    $Script:UPR_UI.PromptStatus.Foreground = (Get-ThemeHex 'Success')
-                }
-
-            } catch {
-                Write-Log "UPR: password reset FAILED for $($user.userPrincipalName) - $_" 'ERROR'
-                Write-UprLog "FAILED: $($user.displayName) - $_" 'Danger'
-                Set-MainStatus "Reset failed for $($user.displayName)." 'Danger'
-                $Script:UPR_UI.InlineStatus.Text       = "Reset failed: $_"
-                $Script:UPR_UI.InlineStatus.Foreground = (Get-ThemeHex 'Danger')
-                $Script:UPR_UI.InlineStatus.Visibility = 'Visible'
-            }
-
-            $Script:UPR_UI.BtnReset.IsEnabled = $true
-            $Script:UPR_UI.BtnRegen.IsEnabled = $true
         } catch {
             Write-Log "UPR BtnReset click error: $_" 'ERROR'
         }
@@ -720,7 +719,11 @@ function Initialize-UserPasswordResetTool {
     Register-ConnectCallback 'Start-UprUserLoad'
     $Script:ResetCallbacks.Add({
         $Script:UPR_AllUsers = @()
-        $Script:UPR_UI.UserList.Items.Clear()
+        $Script:UPR_UI.PasswordMasked.Password = ''
+        $Script:UPR_UI.PasswordBox.Text = ''
+        $Script:UPR_UI.BtnReset.IsEnabled = $true
+        $Script:UPR_UI.BtnRegen.IsEnabled = $true
+        Clear-EtbList $Script:UPR_UI.UserList
         $Script:UPR_UI.UserSearch.Text      = ''
         $Script:UPR_UI.UserSearch.IsEnabled = $false
         $Script:UPR_UI.UserList.IsEnabled   = $false
