@@ -103,11 +103,12 @@ function Start-LdDeviceLoad {
     if ($Script:LD_DevTimer) { $Script:LD_DevTimer.Stop() }
     $Script:LD_DevTimer = Start-AsyncWork `
         -Vars @{ UserId = $UserId; Devices = $Script:LD_AllDevices } `
-        -RefSeed @{ Devices = $null } `
+        -RefSeed @{ RequestedId = $UserId; Devices = $null } `
         -Script {
             $Ref['Devices'] = @($Devices | Where-Object { $_.usersLoggedOn.userId -contains $UserId })
         } -OnComplete {
             param($ref)
+            if ($Script:LD_UI.UserList.SelectedItem.Tag.id -ne $ref.RequestedId) { return }
             try {
                 if ($ref['Error'] -eq '401') {
                     Write-Log 'LastDevice: device load 401 - session expired' 'ERROR'

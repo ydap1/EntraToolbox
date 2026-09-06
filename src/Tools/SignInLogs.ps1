@@ -87,7 +87,7 @@ function Start-SlLogsLoad {
     if ($Script:SL_LogsTimer) { $Script:SL_LogsTimer.Stop() }
     $Script:SL_LogsTimer = Start-AsyncWork `
         -Vars    @{ UserId = $UserId } `
-        -RefSeed @{ Logs   = $null } `
+        -RefSeed @{ RequestedId = $UserId; Logs   = $null } `
         -Script {
             # 403 (missing AuditLog.Read.All consent) is handled inline because the
             # shared helper only auto-classifies 401. Anything else falls through to
@@ -107,6 +107,7 @@ function Start-SlLogsLoad {
             }
         } -OnComplete {
             param($ref)
+            if ($Script:SL_UI.UserList.SelectedItem.Tag.id -ne $ref.RequestedId) { return }
             try {
                 if ($ref['Error'] -eq '403') {
                     Write-Log 'SignInLogs: 403 - AuditLog.Read.All not consented' 'ERROR'

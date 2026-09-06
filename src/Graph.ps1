@@ -1,4 +1,17 @@
 # Shared by the UI session and background workers. Keep this file WPF-free.
+function Get-EtbGraphCollection {
+    param([Parameter(Mandatory)][string]$Uri, [System.Collections.IDictionary]$Headers = @{})
+    $items = [System.Collections.Generic.List[object]]::new()
+    $visited = [System.Collections.Generic.HashSet[string]]::new()
+    do {
+        if (-not $visited.Add($Uri)) { throw 'Graph returned a repeated pagination link.' }
+        $page = Invoke-RestMethod -Uri $Uri -Headers $Headers -Method GET
+        foreach ($item in $page.value) { if ($null -ne $item) { $items.Add($item) } }
+        $Uri = $page.'@odata.nextLink'
+    } while ($Uri)
+    $items.ToArray()
+}
+
 function Get-EtbRetryDelay {
     param($Response, [int]$Attempt)
     $retry = $Response.Headers.RetryAfter

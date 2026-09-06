@@ -19,13 +19,15 @@ $Global:AppVersion = if (Test-Path $vf) { (Get-Content $vf -Raw).Trim() } else {
 
 $modulesPath = Join-Path $PSScriptRoot 'Modules'
 $msalPath    = Join-Path $modulesPath 'MSAL.PS'
+$msalVersion = '4.37.0.0'
+$msalManifest = Join-Path $msalPath "$msalVersion/MSAL.PS.psd1"
 
-if (-not (Test-Path $msalPath)) {
+if (-not (Test-Path $msalManifest)) {
     Write-Host ''
     Write-Host 'First run — downloading MSAL.PS module...' -ForegroundColor Yellow
     if (-not (Test-Path $modulesPath)) { New-Item -ItemType Directory -Path $modulesPath | Out-Null }
     try {
-        Save-Module -Name MSAL.PS -Path $modulesPath -Repository PSGallery -Force
+        Save-Module -Name MSAL.PS -RequiredVersion $msalVersion -Path $modulesPath -Repository PSGallery -Force
         Write-Host 'MSAL.PS installed.' -ForegroundColor Green
         Write-Host ''
     } catch {
@@ -38,9 +40,9 @@ if (-not (Test-Path $msalPath)) {
 
 $env:PSModulePath = $modulesPath + [System.IO.Path]::PathSeparator + $env:PSModulePath
 
-if (-not (Get-Module MSAL.PS -ErrorAction SilentlyContinue)) {
+if (-not (Get-Module MSAL.PS -ErrorAction SilentlyContinue | Where-Object Version -eq $msalVersion)) {
     Write-Host '[startup] Importing MSAL.PS...' -ForegroundColor DarkGray
-    Import-Module MSAL.PS -ErrorAction Stop
+    Import-Module $msalManifest -ErrorAction Stop
 }
 
 . (Join-Path $PSScriptRoot 'src\Auth.ps1')

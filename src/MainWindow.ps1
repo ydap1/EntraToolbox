@@ -80,24 +80,24 @@ function New-NavItem {
     $titleTb.TextTrimming = 'CharacterEllipsis'
     $button.Content = $titleTb
     $button.Add_Click({
-        param($sender, $event)
-        try { Set-NavSelection -Name $sender.Tag }
+        param($navSender, $navEvent)
+        try { Set-NavSelection -Name $navSender.Tag }
         catch { Write-Log "Navigation failed: $_" 'ERROR' }
     })
     $button.Add_PreviewKeyDown({
-        param($sender, $event)
+        param($navSender, $navEvent)
         $index = -1
         for ($i = 0; $i -lt $Script:NavItems.Count; $i++) {
-            if ($Script:NavItems[$i].Name -eq $sender.Tag) { $index = $i; break }
+            if ($Script:NavItems[$i].Name -eq $navSender.Tag) { $index = $i; break }
         }
-        if ($event.Key -eq 'Down') { $index = [math]::Min($index + 1, $Script:NavItems.Count - 1) }
-        elseif ($event.Key -eq 'Up') { $index = [math]::Max($index - 1, 0) }
-        elseif ($event.Key -eq 'Home') { $index = 0 }
-        elseif ($event.Key -eq 'End') { $index = $Script:NavItems.Count - 1 }
+        if ($navEvent.Key -eq 'Down') { $index = [math]::Min($index + 1, $Script:NavItems.Count - 1) }
+        elseif ($navEvent.Key -eq 'Up') { $index = [math]::Max($index - 1, 0) }
+        elseif ($navEvent.Key -eq 'Home') { $index = 0 }
+        elseif ($navEvent.Key -eq 'End') { $index = $Script:NavItems.Count - 1 }
         else { return }
         [void]$Script:NavItems[$index].Border.Focus()
         $Script:NavItems[$index].Border.BringIntoView()
-        $event.Handled = $true
+        $navEvent.Handled = $true
     })
     return @{ Name = $Name; Border = $button; TitleTb = $titleTb; Title = $Title; Subtitle = $Subtitle }
 }

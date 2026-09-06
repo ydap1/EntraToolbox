@@ -59,6 +59,7 @@ function Start-DcLoad {
     } -OnComplete {
         param($ref)
         try {
+            $Script:DC_UI.RefreshBtn.IsEnabled = $true
             if ($ref['Error'] -eq '401') {
                 Write-DcLog 'Session expired — reconnect.' 'Danger'
                 Set-MainStatus 'Session expired.' 'Danger'
@@ -142,14 +143,14 @@ function Start-DcLoadPolicyStates {
     if ($Script:DC_DetailTimer) { $Script:DC_DetailTimer.Stop() }
     $Script:DC_DetailTimer = Start-AsyncWork `
         -Vars    @{ DeviceId = $DeviceId } `
-        -RefSeed @{ Policies = $null } `
+        -RefSeed @{ RequestedId = $DeviceId; Policies = $null } `
         -Script {
-            $resp = Invoke-RestMethod `
+            $Ref['Policies'] = @(Get-EtbGraphCollection `
                 -Uri "https://graph.microsoft.com/beta/deviceManagement/managedDevices/$DeviceId/deviceCompliancePolicyStates?`$select=displayName,state,settingCount" `
-                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-            $Ref['Policies'] = $resp.value
+                -Headers @{ Authorization = "Bearer $Token" })
         } -OnComplete {
             param($ref)
+            if ($Script:DC_UI.Grid.SelectedItem.DeviceId -ne $ref.RequestedId) { return }
             try {
                 if ($ref['Error']) {
                     $Script:DC_UI.DetailHeader.Text = "Could not load compliance details: $($ref['Error'])"

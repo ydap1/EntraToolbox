@@ -100,10 +100,9 @@ function Start-LaSkuLoad {
 
     if ($Script:LA_SkuTimer) { $Script:LA_SkuTimer.Stop() }
     $Script:LA_SkuTimer = Start-AsyncWork -RefSeed @{ Skus = $null } -Script {
-        $resp = Invoke-RestMethod `
+        $Ref['Skus'] = @(Get-EtbGraphCollection `
             -Uri 'https://graph.microsoft.com/v1.0/subscribedSkus?$select=skuId,skuPartNumber,consumedUnits,prepaidUnits,capabilityStatus' `
-            -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-        $Ref['Skus'] = $resp.value
+            -Headers @{ Authorization = "Bearer $Token" })
     } -OnComplete {
         param($ref)
         try {
@@ -167,14 +166,14 @@ function Start-LaLicenceLoad {
     if ($Script:LA_LicTimer) { $Script:LA_LicTimer.Stop() }
     $Script:LA_LicTimer = Start-AsyncWork `
         -Vars    @{ UserId = $UserId } `
-        -RefSeed @{ Licences = $null } `
+        -RefSeed @{ RequestedId = $UserId; Licences = $null } `
         -Script {
-            $resp = Invoke-RestMethod `
+            $Ref['Licences'] = @(Get-EtbGraphCollection `
                 -Uri "https://graph.microsoft.com/v1.0/users/$UserId/licenseDetails?`$select=skuId,skuPartNumber" `
-                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-            $Ref['Licences'] = $resp.value
+                -Headers @{ Authorization = "Bearer $Token" })
         } -OnComplete {
             param($ref)
+            if ($Script:LA_SelectedUser.id -ne $ref.RequestedId) { return }
             try {
                 if ($ref['Error']) {
                     $Script:LA_UI.AssignedHeader.Text = 'ASSIGNED LICENCES'

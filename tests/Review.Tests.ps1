@@ -52,9 +52,27 @@ try {
     $Script:UPR_UI = @{ InlineStatus = [pscustomobject]@{ Text=''; Foreground=''; Visibility='' }; PromptStatus = [pscustomobject]@{ Text='unchanged' } }
     function Set-MainStatus { param($Text, $Color) }
     function Write-UprLog { param($Msg, $Color) }
-    Start-UprPasswordReset -User ([pscustomobject]@{ id='test'; displayName='Test User' }) -Password 'cat.sun.cup42!' -Force $true
+    Start-UprPasswordReset -User ([pscustomobject]@{ id='test'; displayName='Test User' }) -Password (ConvertTo-SecureString 'cat.sun.cup42!' -AsPlainText -Force) -Force $true
     Assert ($Script:UPR_UI.InlineStatus.Text -like '*No changes made*' -and $Script:UPR_UI.PromptStatus.Text -eq 'unchanged' -and $Script:AsyncJobs.Count -eq 0) 'dry-run password reset leaves actual account state untouched'
     $Script:DryMode = $false
+    & {
+        function Start-AsyncWork {
+            param($Script, $OnComplete, $Vars, $RefSeed)
+            $Script:CapturedCompletion = $OnComplete
+            $Script:CapturedRef = $RefSeed
+        }
+        $Script:UPR_ProfTimer = $null
+        $Script:UPR_UI = @{
+            PromptStatus = [pscustomobject]@{ Text=''; Foreground='' }
+            BtnReset = [pscustomobject]@{ IsEnabled=$true }
+            UserList = [pscustomobject]@{ SelectedItem = [pscustomobject]@{ Tag = [pscustomobject]@{ id='old-user' } } }
+        }
+        Start-UprProfileLoad -UserId 'old-user'
+        $Script:UPR_UI.UserList.SelectedItem.Tag.id = 'new-user'
+        $Script:UPR_UI.PromptStatus.Text = 'New user status'
+        & $Script:CapturedCompletion $Script:CapturedRef
+        Assert ($Script:UPR_UI.PromptStatus.Text -eq 'New user status') 'late profile reads cannot overwrite a different selected user'
+    }
 
     $Script:AppFont = 'Font & "quoted"'
     $fontXaml = Invoke-ThemeXaml '<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"><TextBlock FontFamily="Segoe UI"/></Grid>'
@@ -98,6 +116,15 @@ try {
     Wait-JobCleanup $job
     Assert ($Script:AccessToken -eq 'NEW TENANT') 'late refresh cannot overwrite a different tenant token'
     Assert ($Script:AsyncJobs.Count -eq 0) 'worker registry returns to zero'
+    $job = Start-AsyncWork -Script { Get-Item '/etb-missing-path-974397' } -OnComplete { param($ref) $Script:WorkerError = $ref.Error }
+    Wait-JobCleanup $job
+    Assert ([bool]$Script:WorkerError) 'worker cmdlet failures cannot be reported as success'
+    $Script:DryMode = $true
+    $job = Start-AsyncWork -Script { Invoke-RestMethod -Uri 'http://localhost:1/' -Method POST } -OnComplete { param($ref) $Script:ReadOnlyError = $ref.Error }
+    $Script:DryMode = $false
+    Wait-JobCleanup $job
+    Assert ($Script:ReadOnlyError -like '*Dry run is active*') 'background workers retain the dry-run policy captured at launch'
+    Assert ($Script:GraphScopes -contains 'https://graph.microsoft.com/DeviceManagementManagedDevices.PrivilegedOperations.All' -and $Script:GraphScopes -contains 'https://graph.microsoft.com/User-PasswordProfile.ReadWrite.All') 'device sync and password resets request documented scopes'
 
     $headers = @{ Authorization = 'Bearer test' }
     foreach ($uri in 'http://graph.microsoft.com/v1.0/users', 'https://example.com/users', 'https://graph.microsoft.com.evil.test/users', 'https://graph.microsoft.com:444/users') {
@@ -136,7 +163,12 @@ try {
                 $status = if ($path -eq '/write') { 503 } elseif ($path -eq '/retry' -and $counts[$path] -eq 1) { 429 } else { 200 }
                 $ctx.Response.StatusCode = $status
                 $ctx.Response.Headers.Add('Retry-After', '1')
-                $bytes = [Text.Encoding]::UTF8.GetBytes('{"ok":true}')
+                $payload = if ($path -eq '/pages') {
+                    '{"value":[{"id":1}],"@odata.nextLink":"' + $ctx.Request.Url.GetLeftPart([UriPartial]::Authority) + '/page2"}'
+                } elseif ($path -eq '/page2') { '{"value":[{"id":2}]}' }
+                elseif ($path -eq '/cycle') { '{"value":[],"@odata.nextLink":"' + $ctx.Request.Url.AbsoluteUri + '"}' }
+                else { '{"ok":true}' }
+                $bytes = [Text.Encoding]::UTF8.GetBytes($payload)
                 $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length)
                 $ctx.Response.Close()
             }
@@ -149,6 +181,9 @@ try {
         Assert ($returnedHeaders.Location -contains '/created') 'response headers reach the caller (Teams provisioning)'
         Assert-Throws { Invoke-RestMethod -Uri "http://localhost:$port/write" -Method POST } '503'
         Assert ($counts['/write'] -eq 1) 'ambiguous writes are never replayed'
+        $pages = @(Get-EtbGraphCollection -Uri "http://localhost:$port/pages")
+        Assert ($pages.Count -eq 2 -and $pages[1].id -eq 2) 'collection reads include subsequent pages'
+        Assert-Throws { Get-EtbGraphCollection -Uri "http://localhost:$port/cycle" } 'repeated pagination link'
     } finally {
         $listener.Stop(); $listener.Close()
         $server.EndInvoke($serverAsync) | Out-Null

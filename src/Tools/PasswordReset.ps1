@@ -654,7 +654,7 @@ function Initialize-PasswordResetTool {
                 foreach ($row in $selected) { $row.Status = 'OK' }
                 $Script:PwReset_UI.Grid.Items.Refresh()
                 $forceLabel = if ($force) { 'will prompt on next sign-in' } else { 'no prompt required' }
-                foreach ($item in $work) { Write-PwLog "[DRY RUN] $($item.DisplayName) — password generated ($forceLabel)" 'TextDim' }
+                Write-PwLog "[DRY RUN] Generated passwords for $($work.Count) selected users ($forceLabel)." 'TextDim'
                 $Script:PwReset_UI.BtnExport.IsEnabled     = $true
                 $Script:PwReset_UI.PnlStats.Visibility     = 'Visible'
                 $Script:PwReset_UI.LblTotal.Text           = "Total  $($selected.Count)"

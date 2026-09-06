@@ -284,6 +284,7 @@ function Start-AsyncWork {
     $ps = [System.Management.Automation.PowerShell]::Create()
     $ps.Runspace = $rs
     [void]$ps.AddScript({
+        $ErrorActionPreference = 'Stop'
         try {
             $body = [scriptblock]::Create($WorkerText)
             & $body
@@ -611,8 +612,10 @@ $Script:GraphClientId = '14d82eec-204b-4c2f-b7e8-296a70dab67e'
 # Combined scopes for all tools
 $Script:GraphScopes = @(
     'https://graph.microsoft.com/User.ReadWrite.All',
+    'https://graph.microsoft.com/User-PasswordProfile.ReadWrite.All',
     'https://graph.microsoft.com/User.RevokeSessions.All',
-    'https://graph.microsoft.com/DeviceManagementManagedDevices.ReadWrite.All',
+    'https://graph.microsoft.com/DeviceManagementManagedDevices.Read.All',
+    'https://graph.microsoft.com/DeviceManagementManagedDevices.PrivilegedOperations.All',
     'https://graph.microsoft.com/DeviceManagementConfiguration.Read.All',
     'https://graph.microsoft.com/AuditLog.Read.All',
     'https://graph.microsoft.com/GroupMember.ReadWrite.All',
@@ -849,8 +852,9 @@ function Start-TenantConnectAsync {
     $ps = [System.Management.Automation.PowerShell]::Create()
     $ps.Runspace = $rs
     [void]$ps.AddScript({
+        $ErrorActionPreference = 'Stop'
         try {
-            Import-Module MSAL.PS -ErrorAction Stop
+            Import-Module MSAL.PS -RequiredVersion '4.37.0.0' -ErrorAction Stop
 
             # Resolve domain / UPN input to the tenant GUID via the public OpenID
             # discovery endpoint. GUID input passes straight through.
@@ -1056,7 +1060,7 @@ function Invoke-TokenRefreshCheck {
         } `
         -RefSeed @{ Token = $null; ExpiresOn = $null } `
         -Script {
-            Import-Module MSAL.PS -ErrorAction Stop
+            Import-Module MSAL.PS -RequiredVersion '4.37.0.0' -ErrorAction Stop
             $p = @{
                 PublicClientApplication = $App
                 Scopes                  = $Scopes

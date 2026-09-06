@@ -108,7 +108,7 @@ function Start-GcSourceGroupLoad {
     if ($Script:GC_SrcGrpTimer) { $Script:GC_SrcGrpTimer.Stop() }
     $Script:GC_SrcGrpTimer = Start-AsyncWork `
         -Vars    @{ UserId = $UserId } `
-        -RefSeed @{ Groups = $null } `
+        -RefSeed @{ RequestedId = $UserId; Groups = $null } `
         -Script {
             $groups = [System.Collections.Generic.List[object]]::new()
             $url = "https://graph.microsoft.com/v1.0/users/$UserId/memberOf?`$select=id,displayName,groupTypes,isAssignableToRole&`$top=999"
@@ -123,6 +123,7 @@ function Start-GcSourceGroupLoad {
             $Ref['Groups'] = $groups.ToArray()
         } -OnComplete {
             param($ref)
+            if ($Script:GC_SourceUser.id -ne $ref.RequestedId) { return }
             try {
                 if ($ref['Error'] -eq '401') {
                     $Script:GC_UI.GrpPlaceholder.Text = 'Session expired - reconnect.'
@@ -572,7 +573,12 @@ function Initialize-GroupCopyTool {
     $Script:GC_UI.SrcList.Add_SelectionChanged({
         try {
             $sel = $Script:GC_UI.SrcList.SelectedItem
-            if (-not $sel) { return }
+            if (-not $sel) {
+                $Script:GC_SourceUser = $null
+                $Script:GC_UI.SrcLabel.Visibility = 'Collapsed'
+                Update-GcCopyButton
+                return
+            }
             $Script:GC_SourceUser = $sel.Tag
             Write-Log "GC: source user '$($Script:GC_SourceUser.displayName)'" 'DEBUG'
             $Script:GC_UI.SrcLabel.Text       = "Source: $($Script:GC_SourceUser.displayName)  ($($Script:GC_SourceUser.userPrincipalName))"
@@ -586,7 +592,12 @@ function Initialize-GroupCopyTool {
     $Script:GC_UI.TgtList.Add_SelectionChanged({
         try {
             $sel = $Script:GC_UI.TgtList.SelectedItem
-            if (-not $sel) { return }
+            if (-not $sel) {
+                $Script:GC_TargetUser = $null
+                $Script:GC_UI.TgtLabel.Visibility = 'Collapsed'
+                Update-GcCopyButton
+                return
+            }
             $Script:GC_TargetUser = $sel.Tag
             Write-Log "GC: target user '$($Script:GC_TargetUser.displayName)'" 'DEBUG'
             $Script:GC_UI.TgtLabel.Text       = "Target: $($Script:GC_TargetUser.displayName)  ($($Script:GC_TargetUser.userPrincipalName))"

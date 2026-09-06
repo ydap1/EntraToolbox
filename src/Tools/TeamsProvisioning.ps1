@@ -35,12 +35,12 @@ function Update-TpSearchFilter {
     $existingIds = [System.Collections.Generic.HashSet[string]]::new()
     foreach ($r in $Script:TP_Rows) { [void]$existingIds.Add($r.Id) }
 
-    $matches = @($Script:TP_AllUsers |
+    $searchMatches = @($Script:TP_AllUsers |
         Where-Object { $_.displayName -like "*$q*" -or $_.userPrincipalName -like "*$q*" } |
         Where-Object { -not $existingIds.Contains($_.id) } |
         Select-Object -First 30)
 
-    foreach ($u in $matches) {
+    foreach ($u in $searchMatches) {
         $lbi         = [System.Windows.Controls.ListBoxItem]::new()
         $lbi.Content = "$($u.displayName)  ($($u.userPrincipalName))"
         $lbi.Tag     = $u

@@ -90,7 +90,7 @@ function Start-UprProfileLoad {
     if ($Script:UPR_ProfTimer) { $Script:UPR_ProfTimer.Stop() }
     $Script:UPR_ProfTimer = Start-AsyncWork `
         -Vars    @{ UserId = $UserId } `
-        -RefSeed @{ Force  = $null } `
+        -RefSeed @{ RequestedId = $UserId; Force  = $null } `
         -Script {
             $resp = Invoke-RestMethod `
                 -Uri "https://graph.microsoft.com/v1.0/users/$UserId`?`$select=passwordProfile" `
@@ -98,6 +98,7 @@ function Start-UprProfileLoad {
             $Ref['Force'] = $resp.passwordProfile.forceChangePasswordNextSignIn
         } -OnComplete {
             param($ref)
+            if ($Script:UPR_UI.UserList.SelectedItem.Tag.id -ne $ref.RequestedId) { return }
             try {
                 $Script:UPR_UI.BtnReset.IsEnabled = $true
 
@@ -158,7 +159,7 @@ function Start-UprGroupLoad {
     if ($Script:UPR_GrpTimer) { $Script:UPR_GrpTimer.Stop() }
     $Script:UPR_GrpTimer = Start-AsyncWork `
         -Vars    @{ UserId = $UserId } `
-        -RefSeed @{ Groups = $null } `
+        -RefSeed @{ RequestedId = $UserId; Groups = $null } `
         -Script {
             $groups = [System.Collections.Generic.List[object]]::new()
             $url = "https://graph.microsoft.com/v1.0/users/$UserId/transitiveMemberOf?`$select=displayName,groupTypes&`$top=999"
@@ -171,6 +172,7 @@ function Start-UprGroupLoad {
             $Ref['Groups'] = $groups.ToArray()
         } -OnComplete {
             param($ref)
+            if ($Script:UPR_UI.UserList.SelectedItem.Tag.id -ne $ref.RequestedId) { return }
             try {
                 if ($ref['Error'] -eq '401') {
                     $Script:UPR_UI.GrpPlaceholder.Text = 'Session expired - reconnect.'
@@ -540,7 +542,7 @@ $Script:UprXaml = @'
 
 # ── Initialize ─────────────────────────────────────────────────────────────────
 function Start-UprPasswordReset {
-    param($User, [string]$Password, [bool]$Force)
+    param($User, [securestring]$Password, [bool]$Force)
     $forceLabel = if ($Force) { 'will prompt on next sign-in' } else { 'no prompt required' }
     if ($Script:DryMode -or $Script:DemoMode) {
         $mode = if ($Script:DemoMode) { 'DEMO' } else { 'DRY' }
@@ -554,6 +556,9 @@ function Start-UprPasswordReset {
     }
     $Script:UPR_UI.BtnReset.IsEnabled = $false
     $Script:UPR_UI.BtnRegen.IsEnabled = $false
+    $Script:UPR_UI.PasswordMasked.IsEnabled = $false
+    $Script:UPR_UI.PasswordBox.IsEnabled = $false
+    $Script:UPR_UI.ChkForce.IsEnabled = $false
     $Script:UPR_UI.UserList.IsEnabled = $false
     $Script:UPR_UI.UserSearch.IsEnabled = $false
     $Script:UPR_UI.InlineStatus.Visibility = 'Collapsed'
@@ -562,13 +567,16 @@ function Start-UprPasswordReset {
         -Vars @{ UserId = $User.id; Password = $Password; Force = $Force } `
         -RefSeed @{ UserId = $User.id; Name = $User.displayName; Force = $Force; ForceLabel = $forceLabel } `
         -Script {
-            $body = @{ passwordProfile = @{ password = $Password; forceChangePasswordNextSignIn = $Force } } | ConvertTo-Json
+            $body = @{ passwordProfile = @{ password = [Net.NetworkCredential]::new('', $Password).Password; forceChangePasswordNextSignIn = $Force } } | ConvertTo-Json
             Invoke-RestMethod -Uri "https://graph.microsoft.com/v1.0/users/$UserId" `
                 -Headers @{ Authorization = "Bearer $Token" } -ContentType 'application/json' -Method PATCH -Body $body | Out-Null
         } -OnComplete {
             param($ref)
             $Script:UPR_UI.BtnReset.IsEnabled = $true
             $Script:UPR_UI.BtnRegen.IsEnabled = $true
+            $Script:UPR_UI.PasswordMasked.IsEnabled = $true
+            $Script:UPR_UI.PasswordBox.IsEnabled = $true
+            $Script:UPR_UI.ChkForce.IsEnabled = $true
             $Script:UPR_UI.UserList.IsEnabled = $true
             $Script:UPR_UI.UserSearch.IsEnabled = $true
             $message = if ($ref.Error) { "Reset failed for $($ref.Name): $($ref.Error)" }
@@ -708,7 +716,10 @@ function Initialize-UserPasswordResetTool {
                 return
             }
 
-            Start-UprPasswordReset -User $user -Password $pw -Force $force
+            if ($Script:UPR_UI.PasswordBox.Visibility -eq 'Visible') {
+                $Script:UPR_UI.PasswordMasked.Password = $pw
+            }
+            Start-UprPasswordReset -User $user -Password $Script:UPR_UI.PasswordMasked.SecurePassword -Force $force
 
         } catch {
             Write-Log "UPR BtnReset click error: $_" 'ERROR'
@@ -723,6 +734,9 @@ function Initialize-UserPasswordResetTool {
         $Script:UPR_UI.PasswordBox.Text = ''
         $Script:UPR_UI.BtnReset.IsEnabled = $true
         $Script:UPR_UI.BtnRegen.IsEnabled = $true
+        $Script:UPR_UI.PasswordMasked.IsEnabled = $true
+        $Script:UPR_UI.PasswordBox.IsEnabled = $true
+        $Script:UPR_UI.ChkForce.IsEnabled = $true
         Clear-EtbList $Script:UPR_UI.UserList
         $Script:UPR_UI.UserSearch.Text      = ''
         $Script:UPR_UI.UserSearch.IsEnabled = $false

@@ -14,7 +14,7 @@ WPF PowerShell GUI for Entra ID (Azure AD) tenant management. Requires Windows a
 | **Licence Assignment** | Users | View a user's assigned Microsoft 365 licences. Assign or remove individual SKUs. Shows available seats remaining per SKU. |
 | **Bulk UPN Change** | Users | Move cloud-only users to a different verified domain. Import by department, office location, or individual search. |
 | **Immutable ID** | Users | Assign or remove `onPremisesImmutableId` on cloud-only accounts. Per-row checkboxes, confirm-by-typing-YES safety gate. |
-| **Last Device** | Devices | Intune device lookup by user or by device name, sharing one inventory download per connection. Stale device filter (7 / 30 / 60 / 90 days). Time Logs sub-tab. Export CSV reports (per device/user sign-in, or one row per device) of the users that signed into each device in the past 3 months. |
+| **Last Device** | Devices | Intune device lookup by user or by device name, sharing one inventory download per connection. Stale device filter (7 / 30 / 60 / 90 days). Time Logs sub-tab. Export CSV reports (per device/user sign-in, or one row per device) of the latest recorded user/device sign-ins within the past 3 months; this is not a complete sign-in audit trail. |
 | **Device Compliance** | Devices | Overview of all Intune-managed device compliance states. Selecting a non-compliant device shows which policies are failing and how many settings are out of compliance. |
 | **Sign-In Logs** | Audit | Last 50 sign-ins for any user — app, result, IP, location, device. |
 | **Group Copy** | Groups & Teams | Copy all group memberships from one user to another. Skips existing memberships, dynamic groups, and role-assignable groups. |
@@ -30,7 +30,7 @@ Multi-tenant. Profiles saved locally, token cache persisted across sessions — 
 Launch.cmd
 ```
 
-Downloads `MSAL.PS` automatically on first run. No admin rights required.
+Downloads the pinned `MSAL.PS` version `4.37.0.0` automatically on first run. No admin rights required.
 
 Add a tenant with the **+** button — enter a Tenant ID, a verified domain, or a global admin UPN (domains and UPNs are resolved to the tenant automatically), sign in interactively, done. Subsequent launches connect silently.
 
@@ -44,8 +44,10 @@ Uses the Microsoft Intune PowerShell public client ID — no app registration re
 
 | Scope | Purpose |
 |-------|---------|
-| `User.ReadWrite.All` | Read users, reset passwords, change UPNs, set ImmutableId |
-| `DeviceManagementManagedDevices.ReadWrite.All` | Last Device lookup and device sync |
+| `User.ReadWrite.All` | Read/update users, change UPNs, set ImmutableId |
+| `User-PasswordProfile.ReadWrite.All` | Reset passwords and update sign-in prompt settings |
+| `DeviceManagementManagedDevices.Read.All` | Last Device and compliance inventory |
+| `DeviceManagementManagedDevices.PrivilegedOperations.All` | Request Intune device sync |
 | `AuditLog.Read.All` | Sign-In Logs tab |
 | `GroupMember.ReadWrite.All` | Group membership view and Group Copy tab |
 | `Team.Create` | Create new Teams |
@@ -54,6 +56,8 @@ Uses the Microsoft Intune PowerShell public client ID — no app registration re
 | `User.RevokeSessions.All` | Leaver Workflow — invalidate active sessions |
 | `DeviceManagementConfiguration.Read.All` | Device Compliance — fetch failing policy details |
 | `LicenseAssignment.ReadWrite.All` | Licence Assignment — read tenant SKUs, assign/remove licences |
+
+The corrected password-profile and device-sync scopes may require renewed admin consent after upgrading. The signed-in account also needs the appropriate Entra/Intune role.
 
 ## Screenshots
 
@@ -80,3 +84,5 @@ MIT
 ## Development checks
 
 Run `pwsh -NoProfile -File tests/Review.Tests.ps1` for offline parser, worker lifecycle and HTTP regression checks. These run on Windows or Linux without tenant credentials. On Windows, run `pwsh -NoProfile -STA -File tests/Windows.Smoke.ps1` to construct all themed XAML and initialize every tool with demo data. Interactive testing of resizing, scrolling, focus and live Graph operations is still required.
+
+See [REVIEW.md](REVIEW.md) for the code review, validation results and remaining limitations.

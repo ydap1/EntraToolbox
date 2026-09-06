@@ -10,6 +10,16 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.20.1'
+        Date    = '2026-09-06'
+        Changes = @(
+            'Correct Graph scopes for password-profile updates and device sync; new permissions may require fresh consent'
+            'Read every page of licences, subscribed SKUs and device compliance details'
+            'Ignore detail responses for previously selected users/devices and prevent worker errors from appearing successful'
+            'Pin the existing MSAL.PS dependency and detect incomplete module installations'
+        )
+    }
+    @{
         Version = '0.20.0'
         Date    = '2026-09-06'
         Changes = @(
