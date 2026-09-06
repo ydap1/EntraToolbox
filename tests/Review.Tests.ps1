@@ -56,6 +56,15 @@ try {
     Assert ($Script:UPR_UI.InlineStatus.Text -like '*No changes made*' -and $Script:UPR_UI.PromptStatus.Text -eq 'unchanged' -and $Script:AsyncJobs.Count -eq 0) 'dry-run password reset leaves actual account state untouched'
     $Script:DryMode = $false
 
+    $Script:AppFont = 'Font & "quoted"'
+    $fontXaml = Invoke-ThemeXaml '<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"><TextBlock FontFamily="Segoe UI"/></Grid>'
+    $null = [xml]$fontXaml
+    Assert ($fontXaml -like '*&amp;*' -and $fontXaml -like '*&quot;*') 'saved font names are safely escaped in XAML'
+    $Script:AppFont = 'Segoe UI'
+    $Script:Theme.Accent = '#F59E0B'
+    $accentXaml = Invoke-ThemeXaml '<Button Background="#6366F1" Foreground="White"/>'
+    Assert ($accentXaml -like '*Foreground="#000000"*') 'amber action buttons use contrasting dark text'
+
     # Substitute only the dispatcher for Linux. Pipelines/runspaces are real.
     function New-EtbDispatcherTimer {
         param([int]$IntervalMs)

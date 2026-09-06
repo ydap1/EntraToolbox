@@ -36,7 +36,7 @@ Add a tenant with the **+** button — enter a Tenant ID, a verified domain, or 
 
 Use **Dry Run** in the tenant bar to preview destructive actions (password resets, UPN changes, ID assignments) without executing them. It applies to new actions; a request already submitted to Graph cannot be undone. Passwords remain visible in the results and explicit CSV exports, but are excluded from the activity log. CSV exports neutralize spreadsheet formula prefixes.
 
-Press **Ctrl+K** (or the **Search** button in the tenant bar) for global user search — type a name or UPN and jump straight to Password Reset, Devices, Sign-Ins, Licences, or Leaver for that user. Press **F1** for the keyboard shortcut guide. All tools share one cached user list per tenant, so switching tools is instant. The sidebar shows a notice when a newer version is available on GitHub.
+Press **Ctrl+K** (or the **Search** button in the tenant bar) for global user search — type a name or UPN and jump straight to Password Reset, Devices, Sign-Ins, Licences, or Leaver for that user. Press **F1** for the keyboard shortcut guide. All tools share one cached user list per tenant, so switching tools is instant. The sidebar shows a notice when a newer version is available on GitHub. Navigate tools with Tab, arrow keys, and Enter/Space. The status bar always identifies live, dry-run, or offline demo mode; the tenant toolbar wraps on narrower windows. New installations use Segoe UI, and saved font preferences are preserved. Panel transitions respect Windows animation preferences.
 
 ## Permissions
 
@@ -79,4 +79,4 @@ MIT
 
 ## Development checks
 
-Run `pwsh -NoProfile -File tests/Review.Tests.ps1` for offline parser, worker lifecycle and HTTP regression checks. These run on Windows or Linux without tenant credentials. The WPF interface still requires a Windows smoke test using Demo mode.
+Run `pwsh -NoProfile -File tests/Review.Tests.ps1` for offline parser, worker lifecycle and HTTP regression checks. These run on Windows or Linux without tenant credentials. On Windows, run `pwsh -NoProfile -STA -File tests/Windows.Smoke.ps1` to construct all themed XAML and initialize every tool with demo data. Interactive testing of resizing, scrolling, focus and live Graph operations is still required.

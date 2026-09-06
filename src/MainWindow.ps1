@@ -44,6 +44,18 @@ function Set-MainStatus {
     $Script:MainUI.Status.Foreground = New-SolidBrush $Color
 }
 
+function Update-EtbModeStatus {
+    if (-not $Script:MainUI.ModeStatus) { return }
+    $label = 'NOT CONNECTED'; $color = 'TextDim'
+    if ($Script:AccessToken) {
+        if ($Script:DemoMode) { $label = 'DEMO / OFFLINE'; $color = 'Accent' }
+        elseif ($Script:DryMode) { $label = 'DRY RUN / PREVIEW'; $color = 'Warning' }
+        else { $label = 'LIVE / CHANGES ENABLED'; $color = 'Danger' }
+    }
+    $Script:MainUI.ModeStatus.Text = $label
+    $Script:MainUI.ModeStatus.Foreground = New-SolidBrush $color
+}
+
 # ── Nav builders ───────────────────────────────────────────────────────────────
 function New-NavCategory {
     param([string]$Label)
@@ -52,79 +64,42 @@ function New-NavCategory {
     $tb.Foreground = New-SolidBrush 'Muted'
     $tb.FontSize   = 10
     $tb.FontWeight = [System.Windows.FontWeights]::Bold
-    $tb.Margin     = [System.Windows.Thickness]::new(17, 20, 12, 4)
+    $tb.Margin     = [System.Windows.Thickness]::new(20, 16, 12, 6)
     return $tb
 }
 
 function New-NavItem {
     param([string]$Name, [string]$Title, [string]$Subtitle)
-
-    $border                 = [System.Windows.Controls.Border]::new()
-    $border.Cursor          = [System.Windows.Input.Cursors]::Hand
-    $border.Padding         = [System.Windows.Thickness]::new(17, 9, 12, 9)
-    $border.Background      = [System.Windows.Media.Brushes]::Transparent
-    $border.BorderThickness = [System.Windows.Thickness]::new(3, 0, 0, 0)
-    $border.BorderBrush     = [System.Windows.Media.Brushes]::Transparent
-
-    $titleTb             = [System.Windows.Controls.TextBlock]::new()
-    $titleTb.Text        = $Title
-    $titleTb.Foreground  = New-SolidBrush 'TextDim'
-    $titleTb.FontSize    = 13
-    $titleTb.FontWeight  = [System.Windows.FontWeights]::SemiBold
-    $titleTb.TextWrapping = [System.Windows.TextWrapping]::Wrap
-
-    $subtitleTb              = [System.Windows.Controls.TextBlock]::new()
-    $subtitleTb.Text         = $Subtitle
-    $subtitleTb.Foreground   = New-SolidBrush 'Muted'
-    $subtitleTb.FontSize     = 11
-    $subtitleTb.Margin       = [System.Windows.Thickness]::new(0, 3, 0, 0)
-    $subtitleTb.TextWrapping = [System.Windows.TextWrapping]::Wrap
-
-    $sp = [System.Windows.Controls.StackPanel]::new()
-    [void]$sp.Children.Add($titleTb)
-    [void]$sp.Children.Add($subtitleTb)
-    $border.Child = $sp
-
-    $item = @{ Name = $Name; Border = $border; TitleTb = $titleTb }
-
-    $border.Tag = $Name   # stash name so event handlers can read it via $this
-
-    # MouseEnter / MouseLeave: $this is the sender Border, $this.Tag = item name.
-    # The brush must be resolved INSIDE the handler — locals like a captured
-    # $hoverBrush are gone by invocation time (event scriptblocks don't close
-    # over function locals), which set Background to $null. A null-background
-    # Border is not hit-testable, so the mouse instantly "left" again and the
-    # enter/leave loop made the cursor flicker.
-    $border.Add_MouseEnter({
-        try {
-            if ($Script:CurrentNavItem -ne $this.Tag) { $this.Background = New-SolidBrush 'SubHeader' }
-        } catch {}
+    $button = [System.Windows.Controls.Button]::new()
+    $button.Style = $Script:MainUI.Window.FindResource('NavButton')
+    $button.Tag = $Name
+    $button.ToolTip = $Subtitle
+    [System.Windows.Automation.AutomationProperties]::SetName($button, $Title)
+    $titleTb = [System.Windows.Controls.TextBlock]::new()
+    $titleTb.Text = $Title
+    $titleTb.TextTrimming = 'CharacterEllipsis'
+    $button.Content = $titleTb
+    $button.Add_Click({
+        param($sender, $event)
+        try { Set-NavSelection -Name $sender.Tag }
+        catch { Write-Log "Navigation failed: $_" 'ERROR' }
     })
-    $border.Add_MouseLeave({
-        try {
-            if ($Script:CurrentNavItem -ne $this.Tag) { $this.Background = [System.Windows.Media.Brushes]::Transparent }
-        } catch {}
-    })
-
-    # Click: typed-delegate creation breaks PowerShell closure capture in some
-    # hosts (all closure variables resolve to empty string).  Read the item
-    # name from $s.Tag (sender's Tag) instead of a closure variable.
-    $clickHandler = [System.Windows.Input.MouseButtonEventHandler]{
-        param($s, $e)
-        $n = $s.Tag
-        try { Set-NavSelection -Name $n }
-        catch {
-            Write-Host "[ERROR] NavItem '$n' click: $_" -ForegroundColor Red
-            try { Write-Log "NavItem '$n' click error: $_" 'ERROR' } catch {}
+    $button.Add_PreviewKeyDown({
+        param($sender, $event)
+        $index = -1
+        for ($i = 0; $i -lt $Script:NavItems.Count; $i++) {
+            if ($Script:NavItems[$i].Name -eq $sender.Tag) { $index = $i; break }
         }
-    }
-    $border.AddHandler(
-        [System.Windows.UIElement]::MouseLeftButtonDownEvent,
-        $clickHandler,
-        $true
-    )
-
-    return $item
+        if ($event.Key -eq 'Down') { $index = [math]::Min($index + 1, $Script:NavItems.Count - 1) }
+        elseif ($event.Key -eq 'Up') { $index = [math]::Max($index - 1, 0) }
+        elseif ($event.Key -eq 'Home') { $index = 0 }
+        elseif ($event.Key -eq 'End') { $index = $Script:NavItems.Count - 1 }
+        else { return }
+        [void]$Script:NavItems[$index].Border.Focus()
+        $Script:NavItems[$index].Border.BringIntoView()
+        $event.Handled = $true
+    })
+    return @{ Name = $Name; Border = $button; TitleTb = $titleTb; Title = $Title; Subtitle = $Subtitle }
 }
 
 function Set-NavSelection {
@@ -170,6 +145,8 @@ function Set-NavSelection {
             $item.Border.Background  = $selBrush
             $item.Border.BorderBrush = $accentBrush
             $item.TitleTb.Foreground = $textBrush
+            $Script:MainUI.ToolTitle.Text = $item.Title
+            $Script:MainUI.ToolDescription.Text = $item.Subtitle
         } else {
             $item.Border.Background  = [System.Windows.Media.Brushes]::Transparent
             $item.Border.BorderBrush = [System.Windows.Media.Brushes]::Transparent
@@ -181,10 +158,13 @@ function Set-NavSelection {
     $Script:CurrentNavItem = $Name
 
     # Quick fade-in so panel switches feel fluid instead of snapping.
-    $fade = [System.Windows.Media.Animation.DoubleAnimation]::new(
-        0.0, 1.0, [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(160)))
-    $fade.EasingFunction = [System.Windows.Media.Animation.QuadraticEase]::new()
-    $Script:MainUI.ContentArea.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fade)
+    $Script:MainUI.ContentArea.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $null)
+    if ([System.Windows.SystemParameters]::ClientAreaAnimation) {
+        $fade = [System.Windows.Media.Animation.DoubleAnimation]::new(
+            0.88, 1.0, [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(120)))
+        $fade.FillBehavior = [System.Windows.Media.Animation.FillBehavior]::Stop
+        $Script:MainUI.ContentArea.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fade)
+    }
 }
 
 # ── Main window XAML ───────────────────────────────────────────────────────────
@@ -198,6 +178,47 @@ $Script:MainXaml = @'
         TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType"
         WindowStartupLocation="CenterScreen">
   <Window.Resources>
+
+    <Style x:Key="{x:Static SystemParameters.FocusVisualStyleKey}" TargetType="Control">
+      <Setter Property="Template">
+        <Setter.Value><ControlTemplate>
+          <Rectangle Margin="2" Stroke="#6366F1" StrokeThickness="2" StrokeDashArray="2,1"/>
+        </ControlTemplate></Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="NavButton" TargetType="Button">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="3,0,0,0"/>
+      <Setter Property="Foreground" Value="#7878A0"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="FontWeight" Value="Medium"/>
+      <Setter Property="Margin" Value="8,1"/>
+      <Setter Property="Padding" Value="12,9"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="HorizontalContentAlignment" Value="Left"/>
+      <Setter Property="Template">
+        <Setter.Value><ControlTemplate TargetType="Button">
+          <Border x:Name="NavSurface" Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                  CornerRadius="5" Padding="{TemplateBinding Padding}">
+            <ContentPresenter VerticalAlignment="Center"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="NavSurface" Property="Background" Value="#2E2E48"/>
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="NavSurface" Property="BorderBrush" Value="#6366F1"/>
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+              <Setter TargetName="NavSurface" Property="Opacity" Value="0.75"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate></Setter.Value>
+      </Setter>
+    </Style>
 
     <Style x:Key="FlatBtn" TargetType="Button">
       <Setter Property="Foreground"      Value="White"/>
@@ -346,7 +367,7 @@ $Script:MainXaml = @'
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="60"/>
-      <RowDefinition Height="50"/>
+      <RowDefinition Height="Auto"/>
       <RowDefinition Height="*"/>
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="4"/>
@@ -355,9 +376,6 @@ $Script:MainXaml = @'
 
     <!-- ── Header ──────────────────────────────────────────────────────────── -->
     <Border Grid.Row="0" x:Name="MainHeaderBorder" Background="#1C1C2A">
-      <Border.Effect>
-        <DropShadowEffect BlurRadius="10" ShadowDepth="2" Opacity="0.35" Color="Black"/>
-      </Border.Effect>
       <Grid Margin="20,0">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*"/>
@@ -387,9 +405,9 @@ $Script:MainXaml = @'
     <!-- ── Tenant bar ──────────────────────────────────────────────────────── -->
     <Border Grid.Row="1" x:Name="MainTenantBar" Background="#1C1C2A"
             BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
-      <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0">
+      <WrapPanel VerticalAlignment="Center" Margin="16,8">
         <TextBlock Text="Tenant:" Foreground="#7878A0" VerticalAlignment="Center" Margin="0,0,10,0"/>
-        <ComboBox x:Name="TenantCombo" Width="280" IsEnabled="False"/>
+        <ComboBox x:Name="TenantCombo" Width="240" IsEnabled="False"/>
         <Button x:Name="BtnAddTenant" Content="+" Style="{StaticResource FlatBtn}"
                 Background="#6366F1" Padding="10,6" Margin="8,0,0,0"
                 FontSize="16" ToolTip="Add a new tenant" Width="34"/>
@@ -408,16 +426,16 @@ $Script:MainXaml = @'
         <Button x:Name="BtnDemo" Content="Demo" Style="{StaticResource FlatBtn}"
                 Background="#7C3AED" Padding="10,6" Margin="12,0,0,0"
                 ToolTip="Run in demo mode with fake Contoso Academy data"/>
-        <Button x:Name="BtnSearch" Content="🔍 Search" Style="{StaticResource FlatBtn}"
+        <Button x:Name="BtnSearch" Content="Search   Ctrl+K" Style="{StaticResource FlatBtn}"
                 Background="#3C3C5A" Padding="10,6" Margin="12,0,0,0"
                 ToolTip="Global user search — find a user and jump to any tool (Ctrl+K)"/>
-      </StackPanel>
+      </WrapPanel>
     </Border>
 
     <!-- ── Navigation sidebar + content area ──────────────────────────────── -->
     <Grid Grid.Row="2">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="230" MinWidth="160"/>
+        <ColumnDefinition Width="216" MinWidth="190"/>
         <ColumnDefinition Width="4"/>
         <ColumnDefinition Width="*"/>
       </Grid.ColumnDefinitions>
@@ -449,7 +467,16 @@ $Script:MainXaml = @'
                     Background="#3C3C5A" Cursor="SizeWE" ResizeBehavior="PreviousAndNext"/>
 
       <!-- Tool content -->
-      <ContentControl x:Name="MainContentArea" Grid.Column="2" Focusable="False"/>
+      <Grid Grid.Column="2">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <Border Background="#12121C" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1" Padding="20,14">
+          <StackPanel>
+            <TextBlock x:Name="ToolTitle" Foreground="#E2E2F0" FontSize="21" FontWeight="SemiBold"/>
+            <TextBlock x:Name="ToolDescription" Foreground="#7878A0" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap"/>
+          </StackPanel>
+        </Border>
+        <ContentControl x:Name="MainContentArea" Grid.Row="1" Focusable="False"/>
+      </Grid>
     </Grid>
 
     <!-- ── Log pane (slide-up) ──────────────────────────────────────────────── -->
@@ -483,13 +510,17 @@ $Script:MainXaml = @'
     <Border Grid.Row="5" x:Name="MainStatusBar" Background="#1C1C2A"
             BorderBrush="#3C3C5A" BorderThickness="0,1,0,0">
       <Grid Margin="14,0">
-        <TextBlock x:Name="MainStatus" Text="Ready — select a tenant to begin"
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <TextBlock x:Name="ModeStatus" Grid.Column="1" Text="NOT CONNECTED" FontFamily="Consolas"
+                   Foreground="#7878A0" FontSize="11" VerticalAlignment="Center" Margin="16,0,0,0"/>
+        <TextBlock x:Name="MainStatus" TextTrimming="CharacterEllipsis" Text="Ready — select a tenant to begin"
                    Foreground="#50507A" FontSize="11" VerticalAlignment="Center"/>
       </Grid>
     </Border>
 
     <!-- ── Global user search overlay (Ctrl+K) ─────────────────────────────── -->
-    <Grid x:Name="CmdOverlay" Grid.Row="0" Grid.RowSpan="6" Visibility="Collapsed">
+    <Grid x:Name="CmdOverlay" Grid.Row="0" Grid.RowSpan="6" Visibility="Collapsed"
+          KeyboardNavigation.TabNavigation="Cycle">
       <Border x:Name="CmdBackdrop" Background="#000000" Opacity="0.55"/>
       <Border Width="580" VerticalAlignment="Top" Margin="0,100,0,0"
               Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="1" CornerRadius="10">
@@ -504,7 +535,7 @@ $Script:MainXaml = @'
           <ListBox x:Name="CmdResults" MaxHeight="280" Margin="0,10,0,0"
                    VirtualizingPanel.IsVirtualizing="True"
                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
-          <StackPanel x:Name="CmdActions" Orientation="Horizontal" Margin="0,12,0,0" Visibility="Collapsed">
+          <WrapPanel x:Name="CmdActions" Margin="0,12,0,0" Visibility="Collapsed">
             <TextBlock Text="Open in:" Foreground="#7878A0" FontSize="12"
                        VerticalAlignment="Center" Margin="2,0,10,0"/>
             <Button x:Name="CmdActReset"    Content="Password Reset" Style="{StaticResource FlatBtn}"
@@ -517,7 +548,7 @@ $Script:MainXaml = @'
                     Background="#3C3C5A" Padding="12,7" Margin="0,0,8,0" FontSize="12"/>
             <Button x:Name="CmdActLeaver"   Content="Leaver"   Style="{StaticResource FlatBtn}"
                     Background="#3C3C5A" Padding="12,7" FontSize="12"/>
-          </StackPanel>
+          </WrapPanel>
           <TextBlock Text="Type a name or UPN  •  ↑↓ select  •  Enter opens Password Reset  •  Esc closes"
                      Foreground="#50507A" FontSize="11" Margin="2,10,0,0"/>
         </StackPanel>
@@ -545,6 +576,7 @@ $Script:MainXaml = @'
         <Style x:Key="KeyDesc" TargetType="TextBlock">
           <Setter Property="Foreground" Value="#7878A0"/>
           <Setter Property="FontSize"   Value="12"/>
+          <Setter Property="TextWrapping" Value="Wrap"/>
           <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
       </Grid.Resources>
@@ -711,6 +743,7 @@ function Update-TenantCombo {
 }
 
 function Show-AddTenantDialog {
+    if ($Script:DlgWin -and $Script:DlgWin.IsVisible) { [void]$Script:DlgWin.Activate(); return }
     $reader            = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new((Invoke-ThemeXaml $Script:AddTenantXaml)))
     $Script:DlgWin     = [System.Windows.Markup.XamlReader]::Load($reader)
     $Script:DlgWin.Owner = $Script:MainUI.Window
@@ -784,11 +817,18 @@ function Show-AddTenantDialog {
                     $Script:DlgName.IsEnabled   = $true
                     Set-MainStatus 'Authentication failed.' 'Danger'
                 }
+            $Script:DlgWin.Tag = $Script:SessionGeneration
         } catch {
             Write-Log "DlgConnect click error: $_" 'ERROR'
         }
     })
 
+    $Script:DlgWin.Add_Closed({
+        if ($Script:AuthPS -and $Script:AuthTimer.IsEnabled -and $this.Tag -eq $Script:SessionGeneration) {
+            Invoke-ResetTools
+            Set-MainStatus 'Sign-in canceled.' 'TextDim'
+        }
+    })
     $Script:DlgWin.Show()
     $Script:DlgTid.Focus() | Out-Null
 }
@@ -820,7 +860,8 @@ function Invoke-PostConnect {
         }
     }
 
-    $Script:MainUI.BtnDisconnect.IsEnabled = $true
+    Update-EtbModeStatus
+    $Script:MainUI.BtnDisconnect.IsEnabled = -not $Script:DemoMode
     if (-not $Script:DemoMode -and $Script:CurrentTenantId) {
         try { Set-AppSetting -Name 'LastTenantId' -Value $Script:CurrentTenantId } catch {}
     }
@@ -833,6 +874,8 @@ function Show-CmdPalette {
         Set-MainStatus 'Connect a tenant to use global user search.' 'TextDim'
         return
     }
+    if ($Script:MainUI.CmdOverlay.Visibility -eq 'Visible') { return }
+    $Script:CmdPreviousFocus = [System.Windows.Input.Keyboard]::FocusedElement
     $Script:MainUI.CmdOverlay.Visibility = 'Visible'
     $Script:MainUI.CmdSearch.Text        = ''
     $Script:MainUI.CmdResults.Items.Clear()
@@ -843,6 +886,8 @@ function Show-CmdPalette {
 
 function Hide-CmdPalette {
     $Script:MainUI.CmdOverlay.Visibility = 'Collapsed'
+    if ($Script:CmdPreviousFocus) { [void][System.Windows.Input.Keyboard]::Focus($Script:CmdPreviousFocus) }
+    $Script:CmdPreviousFocus = $null
 }
 
 function Update-CmdResults {
@@ -851,8 +896,9 @@ function Update-CmdResults {
     $Script:MainUI.CmdResults.Items.Clear()
     $Script:MainUI.CmdActions.Visibility = 'Collapsed'
     if ([string]::IsNullOrWhiteSpace($q)) { return }
-    if (-not $Script:UserCache.Users) { return }
-    $hits = @($Script:UserCache.Users | Where-Object {
+    $users = if ($Script:DemoMode) { $Script:Demo_Users } else { $Script:UserCache.Users }
+    if (-not $users) { return }
+    $hits = @($users | Where-Object {
         $_.displayName -like "*$q*" -or $_.userPrincipalName -like "*$q*"
     } | Sort-Object { $_.displayName } | Select-Object -First 30)
     foreach ($u in $hits) {
@@ -949,11 +995,15 @@ function Invoke-ResetTools {
     $Script:MainUI.TenantName.Text         = ''
     $Script:AccessToken                    = $null
     $Script:MainUI.BtnDisconnect.IsEnabled = $false
+    $Script:MainUI.BtnAddTenant.IsEnabled = $true
+    $Script:MainUI.TenantCombo.IsEnabled = $Script:MainUI.TenantCombo.Items.Count -gt 0
+    $Script:MainUI.BtnRemove.IsEnabled = $Script:MainUI.TenantCombo.Items.Count -gt 0
+    Update-EtbModeStatus
 }
 
 # ── Show-MainWindow ────────────────────────────────────────────────────────────
 function Show-MainWindow {
-    param([string]$AppVersion = '')
+    param([string]$AppVersion = '', [switch]$InitializeOnly)
 
     Write-Log 'MainWindow: loading WPF assemblies' 'DEBUG'
     Add-Type -AssemblyName PresentationFramework
@@ -966,6 +1016,9 @@ function Show-MainWindow {
 
     $Script:MainUI = @{
         Window          = $window
+        ToolTitle       = $window.FindName('ToolTitle')
+        ToolDescription = $window.FindName('ToolDescription')
+        ModeStatus      = $window.FindName('ModeStatus')
         TenantCombo     = $window.FindName('TenantCombo')
         BtnAddTenant    = $window.FindName('BtnAddTenant')
         BtnRemove       = $window.FindName('BtnRemoveTenant')
@@ -1106,8 +1159,8 @@ function Show-MainWindow {
                 $Script:MainUI.BtnDryRun.Background = New-SolidBrush 'Warning'
                 $Script:MainUI.BtnDryRun.Content     = 'Dry Run ON'
                 $Script:MainUI.HeaderBorder.Background = New-SolidBrush 'DangerBg'
-                Write-AppLog 'Dry mode ENABLED — actions will be simulated, not executed.' 'Warning'
-                Set-MainStatus 'DRY RUN ACTIVE — no changes will be made.' 'Warning'
+                Write-AppLog 'Dry run enabled for new actions. Already submitted changes cannot be undone.' 'Warning'
+                Set-MainStatus 'Dry run active for new actions.' 'Warning'
             } else {
                 $Script:MainUI.BtnDryRun.Background = New-SolidBrush 'Border'
                 $Script:MainUI.BtnDryRun.Content     = 'Dry Run'
@@ -1115,6 +1168,7 @@ function Show-MainWindow {
                 Write-AppLog 'Dry mode DISABLED — actions will execute normally.' 'Success'
                 Set-MainStatus 'Ready.' 'TextDim'
             }
+            Update-EtbModeStatus
         } catch {
             Write-Log "BtnDryRun click error: $_" 'ERROR'
         }
@@ -1327,6 +1381,7 @@ function Show-MainWindow {
         foreach ($job in $Script:AsyncJobs.ToArray()) { Stop-EtbAsyncWork $job }
         if ($Script:TokenRefreshTimer) { $Script:TokenRefreshTimer.Stop() }
     })
+    if ($InitializeOnly) { return $window }
     [void]$window.ShowDialog()
     # The dispatcher no longer runs after close; finish releasing canceled workers.
     foreach ($job in $Script:AsyncJobs.ToArray()) {

@@ -374,8 +374,8 @@ function Set-AppSetting {
 # a change takes effect on the next launch (Appearance offers Apply & Restart).
 $Script:ThemeBase = @{
     Text      = '#E6E9EF'
-    TextDim   = '#8A93A3'
-    Muted     = '#5B6472'
+    TextDim   = '#A3ADBC'
+    Muted     = '#8994A5'
     Accent    = '#F59E0B'
     Success   = '#22C55E'
     Danger    = '#EF4444'
@@ -399,17 +399,17 @@ $Script:ThemePresets = [ordered]@{
     'Slate & Amber' = @{}
     'Indigo Night'  = @{
         Accent='#6366F1'; Bg='#12121C'; Surface='#1C1C2A'; Card='#242436'; Border='#3C3C5A'
-        Text='#E2E2F0'; TextDim='#7878A0'; Muted='#50507A'
+        Text='#E2E2F0'; TextDim='#A0A0C0'; Muted='#9191AD'
         Hover='#1E1E38'; Selected='#2A2A50'; GridLine='#1E1E32'; AltRow='#181826'; SubHeader='#1A1A2C'
     }
     'Ocean' = @{
         Accent='#38BDF8'; Bg='#0D1420'; Surface='#131C2B'; Card='#1A2537'; Border='#2C3A52'
-        Text='#E4EAF4'; TextDim='#8C98AC'; Muted='#5C6A80'
+        Text='#E4EAF4'; TextDim='#8C98AC'; Muted='#8C98AC'
         Hover='#182338'; Selected='#243450'; GridLine='#182338'; AltRow='#111927'; SubHeader='#141E30'
     }
     'Forest' = @{
         Accent='#34D399'; Bg='#0E1512'; Surface='#14201B'; Card='#1B2A23'; Border='#2E4438'
-        Text='#E4EFE9'; TextDim='#8CA396'; Muted='#5C7264'
+        Text='#E4EFE9'; TextDim='#8CA396'; Muted='#8CA396'
         Hover='#1A2921'; Selected='#273B31'; GridLine='#1A2921'; AltRow='#111B16'; SubHeader='#15221C'
     }
     'Rose' = @{
@@ -433,7 +433,7 @@ foreach ($k in $Script:ThemePresets[$Script:ThemeName].Keys) {
 }
 
 # UI font (first choice; Segoe UI stays as the fallback in the font stack).
-$Script:AppFont = 'Fredoka'
+$Script:AppFont = 'Segoe UI'
 try {
     $savedFont = Get-AppSetting -Name 'FontName'
     if ($savedFont) { $Script:AppFont = [string]$savedFont }
@@ -564,13 +564,35 @@ function Get-ThemeHex([string]$Semantic) {
     return $Semantic
 }
 
+function Get-EtbAccentForeground {
+    $rgb = for ($i = 1; $i -le 5; $i += 2) {
+        $c = [Convert]::ToInt32($Script:Theme.Accent.Substring($i, 2), 16) / 255.0
+        if ($c -le 0.04045) { $c / 12.92 } else { [math]::Pow(($c + 0.055) / 1.055, 2.4) }
+    }
+    $luminance = 0.2126 * $rgb[0] + 0.7152 * $rgb[1] + 0.0722 * $rgb[2]
+    if ($luminance -gt 0.179) { return '#000000' }
+    return '#FFFFFF'
+}
+
 # Re-skin a XAML here-string by swapping every legacy hex literal for its themed value.
 function Invoke-ThemeXaml([string]$Xaml) {
     foreach ($old in $Script:ThemeMap.Keys) {
         $Xaml = $Xaml.Replace($old, $Script:ThemeMap[$old])
     }
+    # Pick readable text on each preset's accent-filled action buttons.
+    $accentForeground = Get-EtbAccentForeground
+    $accentButton = '<Button\b[^>]*\bBackground="' + [regex]::Escape($Script:Theme.Accent) + '"[^>]*>'
+    $Xaml = [regex]::Replace($Xaml, $accentButton, {
+        param($match)
+        $tag = $match.Value
+        if ($tag -match '\bForeground="[^"]*"') {
+            return [regex]::Replace($tag, '\bForeground="[^"]*"', "Foreground=`"$accentForeground`"")
+        }
+        return $tag.Replace('<Button ', "<Button Foreground=`"$accentForeground`" ")
+    })
     if ($Script:AppFont -and $Script:AppFont -ne 'Segoe UI') {
-        $Xaml = $Xaml.Replace('FontFamily="Segoe UI"', "FontFamily=`"$Script:AppFont, Segoe UI`"")
+        $font = [System.Security.SecurityElement]::Escape("$Script:AppFont, Segoe UI")
+        $Xaml = $Xaml.Replace('FontFamily="Segoe UI"', "FontFamily=`"$font`"")
     }
     $Xaml = $Xaml.Replace('</Grid.Resources>',   "$Script:ThemeScrollBarStyle</Grid.Resources>")
     $Xaml = $Xaml.Replace('</Window.Resources>', "$Script:ThemeScrollBarStyle</Window.Resources>")
@@ -777,6 +799,9 @@ function Start-TenantConnectAsync {
     )
 
     Invoke-ResetTools
+    $Script:MainUI.TenantCombo.IsEnabled = $false
+    $Script:MainUI.BtnAddTenant.IsEnabled = $false
+    $Script:MainUI.BtnRemove.IsEnabled = $false
     $Script:DemoMode = $false
     Write-Log "Auth: starting token acquisition for '$TenantId'" 'DEBUG'
     Initialize-TokenCacheHelper
@@ -955,6 +980,9 @@ function Start-TenantConnectAsync {
         $Script:AuthAsync = $null
         try {
             Invoke-EtbScript {
+                $Script:MainUI.BtnAddTenant.IsEnabled = $true
+                $Script:MainUI.TenantCombo.IsEnabled = $Script:MainUI.TenantCombo.Items.Count -gt 0
+                $Script:MainUI.BtnRemove.IsEnabled = $Script:MainUI.TenantCombo.Items.Count -gt 0
                 if ($Script:AuthRef['Error']) {
                     Write-Log "Auth failed: $($Script:AuthRef['Error'])" 'ERROR'
                     Invoke-EtbScript $Script:AuthFailure @($Script:AuthRef['Error'])

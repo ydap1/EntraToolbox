@@ -49,7 +49,7 @@ function Save-ApSettings {
     if ($Restart) {
         Write-AppLog 'Restarting to apply appearance changes...' 'Accent'
         Start-Process 'pwsh.exe' `
-            -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$Global:AppRoot\Start.ps1`"" `
+            -ArgumentList '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', "`"$Global:AppRoot\Start.ps1`"" `
             -WorkingDirectory $Global:AppRoot
         $Script:MainUI.Window.Close()
     } else {

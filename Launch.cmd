@@ -14,6 +14,6 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
-pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\Start.ps1" %*
+pwsh.exe -NoProfile -STA -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\Start.ps1" %*
 
 endlocal

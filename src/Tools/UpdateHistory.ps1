@@ -10,6 +10,17 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.20.0'
+        Date    = '2026-09-06'
+        Changes = @(
+            'Compact keyboard-accessible navigation with tool headings, clearer typography and more readable theme contrast'
+            'Responsive tenant toolbar and persistent live / dry-run / offline mode indicator'
+            'Subtle panel transitions respect Windows animation preferences; search restores keyboard focus when dismissed'
+            'Demo global search works offline; closing an in-progress sign-in cancels its pending work'
+            'Segoe UI is the default for new installations; saved font preferences are preserved'
+        )
+    }
+    @{
         Version = '0.19.2'
         Date    = '2026-09-06'
         Changes = @(

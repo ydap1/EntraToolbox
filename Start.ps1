@@ -5,6 +5,8 @@
 #>
 $ErrorActionPreference = 'Stop'
 
+if (-not $IsWindows) { throw 'Entra Toolbox requires Windows for its WPF interface. Offline tests can run on Linux.' }
+
 if ([string]::IsNullOrWhiteSpace($PSScriptRoot)) {
     Write-Error 'PSScriptRoot not set. Use Launch.cmd'
     exit 1
