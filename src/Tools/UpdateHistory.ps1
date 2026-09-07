@@ -10,6 +10,20 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.21.0'
+        Date    = '2026-09-07'
+        Changes = @(
+            'Changes that alter the directory are recorded to config\audit\ with the operator, target and result'
+            'Leaver Workflow saves the group memberships it removes; Restore Groups puts them back'
+            'A live year-group run can be stopped, finishing the account in progress and reporting how far it got'
+            'Long batches survive their access token expiring instead of failing the remainder'
+            'Select users by pasting a list or importing a CSV in Year Group Passwords and Bulk UPN Change'
+            'Print Slips produces a cut-up sheet of usernames and passwords for the classroom'
+            'Filter boxes on Device Compliance and Stale Devices'
+            'The app reopens on the tool, and year group, last used'
+        )
+    }
+    @{
         Version = '0.20.2'
         Date    = '2026-09-06'
         Changes = @(
