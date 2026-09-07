@@ -10,6 +10,13 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.21.1'
+        Date    = '2026-09-07'
+        Changes = @(
+            'Fix interactive sign-in retries failing with a duplicate prompt parameter after an MFA challenge'
+        )
+    }
+    @{
         Version = '0.21.0'
         Date    = '2026-09-07'
         Changes = @(

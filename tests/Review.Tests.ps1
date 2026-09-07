@@ -21,6 +21,8 @@ try {
         $parseErrors += $e
     }
     Assert ($parseErrors.Count -eq 0) "all application scripts parse ($($parseErrors -join '; '))"
+    $authSource = Get-Content "$root/src/Auth.ps1" -Raw
+    Assert ($authSource -like "*`$iParams['Prompt'] = 'Login'*" -and $authSource -notlike "*@{ prompt = 'login' }*") 'MFA retry uses the reserved MSAL prompt parameter'
     . "$root/src/Auth.ps1"
 
     . "$root/src/Import.ps1"

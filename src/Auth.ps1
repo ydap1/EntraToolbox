@@ -1201,10 +1201,10 @@ function Start-TenantConnectAsync {
                     $token = Get-MsalToken @iParams -ErrorAction Stop
                 } catch {
                     # If AADSTS50076 still comes back from interactive, strip the stale
-                    # SSO session by adding prompt=login and try once more.
+                    # SSO session by forcing a fresh login and try once more.
                     if ($_.Exception.Message -match 'AADSTS5007[69]') {
                         [void]$iParams.Remove('ExtraQueryParameters')
-                        $iParams['ExtraQueryParameters'] = @{ prompt = 'login' }
+                        $iParams['Prompt'] = 'Login'
                         $token = Get-MsalToken @iParams
                     } else {
                         throw
