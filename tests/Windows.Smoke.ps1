@@ -45,6 +45,24 @@ try {
             $reader = [Xml.XmlNodeReader]::new([xml](Invoke-ThemeXaml $xaml))
             try { $view = [Windows.Markup.XamlReader]::Load($reader) } finally { $reader.Close() }
             if ($xaml -eq $Script:TpXaml) {
+                foreach ($pair in @(@('TpRbClass', 'TpRbStandard'), @('TpRbYearGroup', 'TpRbDirect'))) {
+                    $first = $view.FindName($pair[0])
+                    $second = $view.FindName($pair[1])
+                    [void]$first.ApplyTemplate()
+                    [void]$second.ApplyTemplate()
+                    foreach ($selected in @($second, $first)) {
+                        $peer = [Windows.Automation.Peers.RadioButtonAutomationPeer]::new($selected)
+                        $selection = [Windows.Automation.Provider.ISelectionItemProvider]$peer.GetPattern([Windows.Automation.Peers.PatternInterface]::SelectionItem)
+                        $selection.Select()
+                        foreach ($radio in @($first, $second)) {
+                            $dot = $radio.Template.FindName('SelectedDot', $radio)
+                            $expected = if ($radio -eq $selected) { 'Visible' } else { 'Collapsed' }
+                            if (-not $dot -or $dot.Visibility -ne $expected -or [bool]$radio.IsChecked -ne ($radio -eq $selected)) {
+                                throw "Teams radio selection is not visible or exclusive for $($radio.Name) in theme $preset."
+                            }
+                        }
+                    }
+                }
                 $owner = $view.FindName('TpGrid').Columns[3].CellTemplate.LoadContent()
                 $row = [pscustomobject]@{ IsOwner = $false }
                 $owner.DataContext = $row

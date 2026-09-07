@@ -10,6 +10,13 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.22.1'
+        Date    = '2026-09-07'
+        Changes = @(
+            'Teams Provisioning: visible selection dots for Class / Standard and Year Group / Direct Users, with themed hover and keyboard focus'
+        )
+    }
+    @{
         Version = '0.22.0'
         Date    = '2026-09-07'
         Changes = @(

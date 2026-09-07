@@ -204,6 +204,39 @@ $Script:TpXaml = @'
       <Setter Property="Background" Value="Transparent"/>
       <Setter Property="Cursor"     Value="Hand"/>
       <Setter Property="Margin"     Value="0,4,0,0"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Border x:Name="RadioSurface" Background="{TemplateBinding Background}"
+                    BorderBrush="Transparent" BorderThickness="1" CornerRadius="4" Padding="4,5">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <Ellipse x:Name="Ring" Width="18" Height="18" VerticalAlignment="Center"
+                         Fill="#242436" Stroke="#7878A0" StrokeThickness="1.5"/>
+                <Ellipse x:Name="SelectedDot" Width="8" Height="8" VerticalAlignment="Center"
+                         Fill="#E2E2F0" Visibility="Collapsed"/>
+                <ContentPresenter Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center"
+                                  RecognizesAccessKey="True"/>
+              </Grid>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="SelectedDot" Property="Visibility" Value="Visible"/>
+                <Setter TargetName="Ring" Property="Stroke" Value="#6366F1"/>
+              </Trigger>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="RadioSurface" Property="Background" Value="#2E2E48"/>
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="RadioSurface" Property="BorderBrush" Value="#6366F1"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="RadioSurface" Property="Opacity" Value="0.45"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
     </Style>
 
     <Style TargetType="DataGrid">
