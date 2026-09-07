@@ -42,12 +42,65 @@ try {
             [pscustomobject]@{ id = 'e'; department = 'Staff - Support' }
             [pscustomobject]@{ id = 'f'; department = $null }
         )
-        $years = @(Get-SgPopulationChoices -Users $users -Mode YearGroup)
-        $departments = @(Get-SgPopulationChoices -Users $users -Mode Department)
+        $years = @(Get-EtbPopulationChoices -Users $users -Mode YearGroup)
+        $departments = @(Get-EtbPopulationChoices -Users $users -Mode Department)
         Assert ($years.Count -eq 3 -and $years[0].Value -eq 7 -and $years[1].Value -eq 10 -and $years[2].Value -eq 'Staff') 'security group year choices use Teams grouping and numeric year ordering'
         Assert ($years[0].Label -eq 'Year 7 - 2 users' -and ($years[0].Users.id -join ',') -eq 'a,b') 'a year group combines classes and reports their total membership'
         Assert ($departments.Count -eq 5 -and @($departments | Where-Object Value -eq '7A')[0].Users.id -eq 'a' -and @($departments | Where-Object Value -eq 'Staff - Support')[0].Users.id -eq 'e') 'department choices preserve exact departments and their own membership'
-        Assert (@(Get-SgPopulationChoices -Users @() -Mode YearGroup).Count -eq 0) 'an empty user list has no year-group choices'
+        Assert (@(Get-EtbPopulationChoices -Users @() -Mode YearGroup).Count -eq 0) 'an empty user list has no year-group choices'
+        Assert ((Get-DeptGroup 'Year 7') -eq 7 -and (Get-DeptGroup 'Year 10') -eq 10 -and (Get-DeptGroup '10B') -eq 10) 'written year labels and class codes use the same year grouping'
+    }
+    & {
+        function Write-AppLog { param($Message, $Color) }
+        function Set-MainStatus { param($Message, $Color) }
+        $savedGroups = [Collections.Generic.List[string]]::new()
+        function Set-TenantSetting { param($TenantId, $Name, $Value); $savedGroups.Add("${Name}:$Value") }
+        $users = @(
+            [pscustomobject]@{ id = 'a'; displayName = 'Ann'; userPrincipalName = 'ann@school.test'; department = '7A' }
+            [pscustomobject]@{ id = 'b'; displayName = 'Ben'; userPrincipalName = 'ben@school.test'; department = '7B' }
+        )
+        $year = @(Get-EtbPopulationChoices -Users $users -Mode YearGroup)[0]
+        $dept = @(Get-EtbPopulationChoices -Users $users -Mode Department)[0]
+        foreach ($tool in 'TP', 'PwReset') {
+            $rows = Get-Variable "${tool}_Rows" -Scope Script -ValueOnly
+            $grid = [pscustomobject]@{ ItemsSource = $rows; SelectedItems = @() }
+            $grid | Add-Member ScriptMethod SelectAll { $this.SelectedItems = @($this.ItemsSource) }
+            $ui = @{ Grid = $grid; RbLive = [pscustomobject]@{ IsChecked = $false }; TeamName = [pscustomobject]@{ Text = 'Test' } }
+            foreach ($name in 'BtnSelectAll','BtnSelectNone','BtnImport','BtnExport','BtnPrint','PnlStats','BtnRun','BtnCreate','LblSelection') {
+                $ui[$name] = [pscustomobject]@{ IsEnabled = $false; Visibility = ''; Content = ''; Background = ''; Text = '' }
+            }
+            Set-Variable "${tool}_UI" -Scope Script -Value $ui
+        }
+        Set-TpPopulation -Choice $year
+        Assert ($Script:TP_Rows.Count -eq 2 -and $Script:TP_UI.Grid.SelectedItems.Count -eq 2) 'Teams year loading selects every class in the year'
+        Set-TpPopulation -Choice $dept
+        Assert ($Script:TP_Rows.Count -eq 1 -and $Script:TP_Rows[0].Id -eq 'a' -and -not $Script:TP_Rows[0].IsOwner) 'Teams department loading replaces members with that exact department'
+        $Script:TP_Creating = $true
+        Set-TpPopulation -Choice $year
+        Assert ($Script:TP_Rows.Count -eq 1) 'Teams population cannot change during creation'
+        $Script:TP_Creating = $false
+        $Script:CurrentTenantId = 'test-tenant'
+        Set-PwPopulation -Choice $year -RememberYear
+        Assert ($Script:PwReset_Rows.Count -eq 2 -and $Script:PwReset_UI.Grid.SelectedItems.Count -eq 2) 'password reset year loading selects every class in the year'
+        Set-PwPopulation -Choice $dept
+        Assert ($Script:PwReset_Rows.Count -eq 1 -and $Script:PwReset_Rows[0].Id -eq 'a' -and $savedGroups.Count -eq 1 -and $savedGroups[0] -eq 'LastYearGroup:7') 'department loading preserves the remembered password-reset year'
+        $Script:PwReset_Running = $true
+        Set-PwPopulation -Choice $year
+        Assert ($Script:PwReset_Rows.Count -eq 1) 'password-reset population cannot change during a run'
+        $Script:PwReset_Running = $false
+        $Script:CurrentTenantId = $null
+        function Update-BucUserFilter { }
+        function Update-BucButtons { }
+        $Script:BUC_AllUsers = $users
+        $Script:BUC_UI = @{ DomainCombo = [pscustomobject]@{ SelectedItem = 'new.school.test' } }
+        Add-BucByField -Field YearGroup -ComboBox ([pscustomobject]@{ SelectedItem = [pscustomobject]@{ Tag = 7 } })
+        Add-BucByField -Field department -ComboBox ([pscustomobject]@{ SelectedItem = [pscustomobject]@{ Tag = '7A' } })
+        Assert ($Script:BUC_Rows.Count -eq 2 -and $Script:BUC_Rows[0].NewUpn -eq 'ann@new.school.test') 'bulk UPN year selection sets the target domain and deduplicates an overlapping department'
+        foreach ($tool in 'TP', 'PwReset', 'BUC') {
+            (Get-Variable "${tool}_Rows" -Scope Script -ValueOnly).Clear()
+            Set-Variable "${tool}_UI" -Scope Script -Value $null
+        }
+        $Script:BUC_AllUsers = @()
     }
     # Group creation uses a single create request and reports member failures
     # without losing the group ID or skipping the remaining users.
@@ -96,8 +149,8 @@ try {
             [pscustomobject]@{ id = 'a'; displayName = 'Ann'; userPrincipalName = 'ann@school.test'; department = '7A' }
             [pscustomobject]@{ id = 'b'; displayName = 'Ben'; userPrincipalName = 'ben@school.test'; department = '7B' }
         )
-        Add-SgUsers @(Get-SgPopulationChoices -Users $users -Mode YearGroup)[0].Users
-        Add-SgUsers @(Get-SgPopulationChoices -Users $users -Mode Department)[0].Users
+        Add-SgUsers @(Get-EtbPopulationChoices -Users $users -Mode YearGroup)[0].Users
+        Add-SgUsers @(Get-EtbPopulationChoices -Users $users -Mode Department)[0].Users
         Assert ($Script:SG_Rows.Count -eq 2) 'adding a department after its year group does not duplicate pupils'
         function Start-AsyncWork { throw 'Preview must not start a worker' }
         function Write-AppLog { param($Message, $Color) }

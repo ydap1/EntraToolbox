@@ -94,6 +94,32 @@ try {
             $window.UpdateLayout()
         }
     }
+    foreach ($tool in @(
+        @{ Nav = 'Teams'; UI = $Script:TP_UI; Rows = $Script:TP_Rows }
+        @{ Nav = 'YearGroup'; UI = $Script:PwReset_UI; Rows = $Script:PwReset_Rows }
+    )) {
+        Set-NavSelection $tool.Nav
+        foreach ($source in @(@('CboYear', 'BtnLoad'), @('CboDept', 'BtnLoadDept'))) {
+            $combo = $tool.UI[$source[0]]
+            if ($combo -isnot [Windows.Controls.ComboBox] -or $combo.Items.Count -eq 0) { throw "$($tool.Nav): missing population dropdown." }
+            $combo.SelectedIndex = 0
+            $tool.UI[$source[1]].RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
+            $expected = @($combo.SelectedItem.DataContext.Users.id | Sort-Object)
+            $actual = @($tool.Rows.Id | Sort-Object)
+            if (($expected -join ',') -ne ($actual -join ',')) { throw "$($tool.Nav): $($source[0]) loaded the wrong users." }
+            if ($tool.UI.Grid.SelectedItems.Count -ne $actual.Count) { throw "$($tool.Nav): loaded users were not selected." }
+        }
+    }
+    Set-NavSelection 'BulkUpn'
+    $Script:BUC_UI.YearCombo.SelectedIndex = 0
+    $Script:BUC_UI.BtnAddYear.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
+    $expectedCount = $Script:BUC_UI.YearCombo.SelectedItem.DataContext.Users.Count
+    if ($Script:BUC_Rows.Count -ne $expectedCount) { throw 'Bulk UPN year dropdown did not add the expected users.' }
+    $overlappingDepartment = $Script:BUC_UI.YearCombo.SelectedItem.DataContext.Users[0].department
+    $Script:BUC_UI.DeptCombo.SelectedItem = $Script:BUC_UI.DeptCombo.Items | Where-Object Tag -eq $overlappingDepartment | Select-Object -First 1
+    $Script:BUC_UI.BtnAddDept.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
+    if ($Script:BUC_Rows.Count -ne $expectedCount) { throw 'Bulk UPN department selection duplicated existing users.' }
+    if (-not $Script:BUC_UI.OfficeCombo.IsEnabled) { throw 'Bulk UPN office selector was lost.' }
     Set-NavSelection 'SecurityGroup'
     if ($Script:SG_UI.Years -isnot [Windows.Controls.ComboBox] -or $Script:SG_UI.Departments -isnot [Windows.Controls.ComboBox]) {
         throw 'Year groups and departments must both use dropdowns.'

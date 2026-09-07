@@ -201,23 +201,7 @@ function Get-DemoGroupsForUser {
 function Start-PwUserLoadDemo {
     $Script:PwReset_GraphUsers = @($Script:Demo_Users | Where-Object { $_.accountEnabled -and $_.department })
 
-    $allGroups     = $Script:PwReset_GraphUsers | ForEach-Object { Get-DeptGroup $_.department } |
-                     Where-Object { $_ -ne $null } | Sort-Object -Unique
-    $numericGroups = @($allGroups | Where-Object { $_ -is [int] }    | Sort-Object)
-    $namedGroups   = @($allGroups | Where-Object { $_ -is [string] } | Sort-Object)
-
-    $Script:PwReset_UI.CboYear.Items.Clear()
-    foreach ($g in ($numericGroups + $namedGroups)) {
-        $cnt   = ($Script:PwReset_GraphUsers | Where-Object { (Get-DeptGroup $_.department) -eq $g }).Count
-        $label = if ($g -is [int]) { "Year $g  -  $cnt students" } else { "$g  -  $cnt students" }
-        $item  = New-Object System.Windows.Controls.ComboBoxItem
-        $item.Content = $label
-        $item.Tag     = $g
-        $Script:PwReset_UI.CboYear.Items.Add($item) | Out-Null
-    }
-    if ($Script:PwReset_UI.CboYear.Items.Count -gt 0) { $Script:PwReset_UI.CboYear.SelectedIndex = 0 }
-    $Script:PwReset_UI.CboYear.IsEnabled = $true
-    $Script:PwReset_UI.BtnLoad.IsEnabled = $true
+    Update-PwPopulationCombos
 
     $n = $Script:PwReset_GraphUsers.Count
     Write-Log "Demo: PwReset loaded $n users" 'INFO'
@@ -465,23 +449,7 @@ function Start-GcCopyDemo {
 function Start-TpUserLoadDemo {
     $Script:TP_AllUsers = @($Script:Demo_Users | Sort-Object { $_.displayName })
 
-    $allGroups     = $Script:TP_AllUsers | ForEach-Object { Get-DeptGroup $_.department } |
-                     Where-Object { $_ -ne $null } | Sort-Object -Unique
-    $numericGroups = @($allGroups | Where-Object { $_ -is [int] }    | Sort-Object)
-    $namedGroups   = @($allGroups | Where-Object { $_ -is [string] } | Sort-Object)
-
-    $Script:TP_UI.CboYear.Items.Clear()
-    foreach ($g in ($numericGroups + $namedGroups)) {
-        $cnt   = ($Script:TP_AllUsers | Where-Object { (Get-DeptGroup $_.department) -eq $g }).Count
-        $label = if ($g -is [int]) { "Year $g  -  $cnt users" } else { "$g  -  $cnt users" }
-        $item  = New-Object System.Windows.Controls.ComboBoxItem
-        $item.Content = $label
-        $item.Tag     = $g
-        $Script:TP_UI.CboYear.Items.Add($item) | Out-Null
-    }
-    if ($Script:TP_UI.CboYear.Items.Count -gt 0) { $Script:TP_UI.CboYear.SelectedIndex = 0 }
-    $Script:TP_UI.CboYear.IsEnabled = $true
-    $Script:TP_UI.BtnLoad.IsEnabled = $true
+    Update-TpPopulationCombos
 
     $n = $Script:TP_AllUsers.Count
     Write-Log "Demo: TP loaded $n users" 'INFO'

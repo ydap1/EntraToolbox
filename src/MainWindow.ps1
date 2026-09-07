@@ -1107,7 +1107,7 @@ function Show-MainWindow {
     # ── Build nav sidebar ─────────────────────────────────────────────────────
     $navDef = @(
         @{ Type = 'cat';  Label = 'USERS' }
-        @{ Type = 'tool'; Name = 'YearGroup';   Title = 'Year Group Passwords'; Desc = 'Reset passwords for an entire year group' }
+        @{ Type = 'tool'; Name = 'YearGroup';   Title = 'Year Group Passwords'; Desc = 'Reset passwords by year group or department' }
         @{ Type = 'tool'; Name = 'UserReset';   Title = 'User Password Reset';  Desc = 'Reset a single account password' }
         @{ Type = 'tool'; Name = 'Leaver';      Title = 'Leaver Workflow';      Desc = 'Disable, revoke sessions, remove from groups' }
         @{ Type = 'tool'; Name = 'Licence';     Title = 'Licence Assignment';   Desc = 'View and assign Microsoft 365 licences' }
@@ -1121,7 +1121,7 @@ function Show-MainWindow {
         @{ Type = 'cat';  Label = 'GROUPS & TEAMS' }
         @{ Type = 'tool'; Name = 'GroupCopy';   Title = 'Group Copy';           Desc = 'Copy memberships from one user to another' }
         @{ Type = 'tool'; Name = 'SecurityGroup'; Title = 'Security Group Creator'; Desc = 'Create a security group from year groups, departments, individual users or CSV' }
-        @{ Type = 'tool'; Name = 'Teams';        Title = 'Teams Provisioning';  Desc = 'Create and populate Microsoft Teams' }
+        @{ Type = 'tool'; Name = 'Teams';        Title = 'Teams Provisioning';  Desc = 'Create Teams from year groups, departments or individual users' }
         @{ Type = 'cat';  Label = 'SECURITY' }
         @{ Type = 'tool'; Name = 'SecureScore'; Title = 'Secure Score';         Desc = 'Microsoft Secure Score with control breakdown' }
         @{ Type = 'cat';  Label = 'APP' }

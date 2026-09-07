@@ -25,28 +25,17 @@ function Write-BucLog {
 }
 
 function Update-BucGroupCombos {
-    # Single pass to count departments and offices (replaces O(n²) Where-Object per group)
-    $deptCounts   = @{}
+    Set-EtbPopulationCombo -ComboBox $Script:BUC_UI.YearCombo -Users $Script:BUC_AllUsers -Mode YearGroup
+    Set-EtbPopulationCombo -ComboBox $Script:BUC_UI.DeptCombo -Users $Script:BUC_AllUsers -Mode Department
+    $Script:BUC_UI.BtnAddYear.IsEnabled = $Script:BUC_UI.YearCombo.Items.Count -gt 0
+    $Script:BUC_UI.BtnAddDept.IsEnabled = $Script:BUC_UI.DeptCombo.Items.Count -gt 0
+
     $officeCounts = @{}
     foreach ($u in $Script:BUC_AllUsers) {
-        if ($u.department)     { $deptCounts[$u.department]       = ($deptCounts[$u.department]       ?? 0) + 1 }
         if ($u.officeLocation) { $officeCounts[$u.officeLocation] = ($officeCounts[$u.officeLocation] ?? 0) + 1 }
     }
-    $Script:BUC_Depts   = @($deptCounts.Keys   | Sort-Object)
+    $Script:BUC_Depts   = @($Script:BUC_UI.DeptCombo.Items | ForEach-Object { $_.Tag })
     $Script:BUC_Offices = @($officeCounts.Keys | Sort-Object)
-
-    $Script:BUC_UI.DeptCombo.Items.Clear()
-    foreach ($dept in $Script:BUC_Depts) {
-        $item = [System.Windows.Controls.ComboBoxItem]::new()
-        $item.Content = "$dept  ($($deptCounts[$dept]))"
-        $item.Tag     = $dept
-        [void]$Script:BUC_UI.DeptCombo.Items.Add($item)
-    }
-    $Script:BUC_UI.DeptCombo.IsEnabled = ($Script:BUC_Depts.Count -gt 0)
-    if ($Script:BUC_UI.DeptCombo.Items.Count -gt 0) {
-        $Script:BUC_UI.DeptCombo.SelectedIndex = 0
-        $Script:BUC_UI.BtnAddDept.IsEnabled    = $true
-    }
 
     $Script:BUC_UI.OfficeCombo.Items.Clear()
     foreach ($office in $Script:BUC_Offices) {
@@ -105,7 +94,7 @@ function Add-BucByField {
     param([string]$Field, $ComboBox)
     $selItem = $ComboBox.SelectedItem
     if (-not $selItem) { return }
-    $value = if ($selItem -is [System.Windows.Controls.ComboBoxItem]) { $selItem.Tag } else { $selItem.ToString() }
+    $value = if ($null -ne $selItem.Tag) { $selItem.Tag } else { $selItem.ToString() }
     if (-not $value) { return }
 
     $domain = if ($Script:BUC_UI.DomainCombo.SelectedItem) {
@@ -115,7 +104,10 @@ function Add-BucByField {
     $added = [System.Collections.Generic.HashSet[string]]::new()
     foreach ($r in $Script:BUC_Rows) { [void]$added.Add($r.Id) }
 
-    $users = @($Script:BUC_AllUsers | Where-Object { $_.$Field -eq $value -and -not $added.Contains($_.id) })
+    $users = @($Script:BUC_AllUsers | Where-Object {
+        $inGroup = if ($Field -eq 'YearGroup') { (Get-DeptGroup $_.department) -eq $value } else { $_.$Field -eq $value }
+        $inGroup -and -not $added.Contains($_.id)
+    })
     foreach ($u in $users) {
         $local = ($u.userPrincipalName -split '@')[0]
         [void]$Script:BUC_Rows.Add([PSCustomObject]@{
@@ -128,7 +120,7 @@ function Add-BucByField {
     }
     Update-BucUserFilter
     Update-BucButtons
-    $label = if ($Field -eq 'department') { 'department' } else { 'office location' }
+    $label = if ($Field -eq 'YearGroup') { 'year group' } elseif ($Field -eq 'department') { 'department' } else { 'office location' }
     if ($users.Count -gt 0) {
         Write-BucLog "Added $($users.Count) user(s) from ${label}: $value" 'Text'
     } else {
@@ -536,13 +528,20 @@ $Script:BucXaml = @'
         <RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
 
-      <!-- Group import: by department and by office location -->
+      <!-- Group import: year group, department and office location -->
       <Border Grid.Row="0" Padding="12,12,12,10" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
+        <ScrollViewer MaxHeight="240" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel>
+          <TextBlock Text="BY YEAR GROUP" Foreground="#50507A" FontSize="10"
+                     FontWeight="Bold" Margin="0,0,0,6"/>
+          <ComboBox x:Name="BucYearCombo" Style="{StaticResource EtbPopulationCombo}" IsEnabled="False"/>
+          <Button x:Name="BucBtnAddYear" Content="Add year group →" IsEnabled="False"
+                  Style="{StaticResource PrimaryBtn}" Background="#6366F1"
+                  Padding="12,8" Margin="0,6,0,14" HorizontalAlignment="Stretch"/>
           <TextBlock Text="BY DEPARTMENT" Foreground="#50507A" FontSize="10"
                      FontWeight="Bold" Margin="0,0,0,6"/>
-          <ComboBox x:Name="BucDeptCombo" IsEnabled="False"/>
-          <Button x:Name="BucBtnAddDept" Content="Add All  →" IsEnabled="False"
+          <ComboBox x:Name="BucDeptCombo" Style="{StaticResource EtbPopulationCombo}" IsEnabled="False"/>
+          <Button x:Name="BucBtnAddDept" Content="Add department →" IsEnabled="False"
                   Style="{StaticResource PrimaryBtn}" Background="#6366F1"
                   Padding="12,8" Margin="0,6,0,0" HorizontalAlignment="Stretch"/>
 
@@ -553,6 +552,7 @@ $Script:BucXaml = @'
                   Style="{StaticResource PrimaryBtn}" Background="#6366F1"
                   Padding="12,8" Margin="0,6,0,0" HorizontalAlignment="Stretch"/>
         </StackPanel>
+        </ScrollViewer>
       </Border>
 
       <!-- Individual search -->
@@ -653,6 +653,8 @@ function Initialize-BulkUpnChangeTool {
     $content = [System.Windows.Markup.XamlReader]::Load($reader)
 
     $Script:BUC_UI = @{
+        YearCombo   = $content.FindName('BucYearCombo')
+        BtnAddYear  = $content.FindName('BucBtnAddYear')
         DeptCombo   = $content.FindName('BucDeptCombo')
         BtnAddDept  = $content.FindName('BucBtnAddDept')
         OfficeCombo = $content.FindName('BucOfficeCombo')
@@ -704,6 +706,11 @@ function Initialize-BulkUpnChangeTool {
     $Script:BUC_UI.BtnAddDept.Add_Click({
         try { Add-BucByField -Field 'department' -ComboBox $Script:BUC_UI.DeptCombo }
         catch { Write-Log "BUC BtnAddDept click error: $_" 'ERROR' }
+    })
+
+    $Script:BUC_UI.BtnAddYear.Add_Click({
+        try { Add-BucByField -Field 'YearGroup' -ComboBox $Script:BUC_UI.YearCombo }
+        catch { Write-Log "BUC BtnAddYear click error: $_" 'ERROR' }
     })
 
     $Script:BUC_UI.BtnAddOffice.Add_Click({
@@ -779,6 +786,9 @@ function Initialize-BulkUpnChangeTool {
         $Script:BUC_Offices  = @()
         $Script:BUC_Rows.Clear()
         $Script:BUC_UI.DeptCombo.Items.Clear()
+        $Script:BUC_UI.YearCombo.Items.Clear()
+        $Script:BUC_UI.YearCombo.IsEnabled    = $false
+        $Script:BUC_UI.BtnAddYear.IsEnabled   = $false
         $Script:BUC_UI.DeptCombo.IsEnabled    = $false
         $Script:BUC_UI.BtnAddDept.IsEnabled   = $false
         $Script:BUC_UI.OfficeCombo.Items.Clear()

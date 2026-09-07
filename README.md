@@ -8,18 +8,18 @@ WPF PowerShell GUI for Entra ID (Azure AD) tenant management. Requires Windows a
 
 | Tool | Category | Description |
 |------|----------|-------------|
-| **Year Group Passwords** | Users | Bulk password reset by department. Memorable password generation (`cat.dog.pat11!`), optional forced sign-in prompt, dry-run preview, CSV export, printable slips, and a Stop button for live runs. Narrow the selection to a pasted list or CSV. |
+| **Year Group Passwords** | Users | Bulk password reset with separate year-group and department dropdowns. Memorable password generation (`cat.dog.pat11!`), optional forced sign-in prompt, dry-run preview, CSV export, printable slips, and a Stop button for live runs. Narrow the selection to a pasted list or CSV. |
 | **User Password Reset** | Users | Single-account password reset without blocking the UI, with live `forceChangePasswordNextSignIn` toggle and group membership view. |
 | **Leaver Workflow** | Users | Disable account, revoke sign-in sessions, and remove from all groups in one click. Each step is individually togglable. Dry-run aware. Removed memberships are saved to disk and can be put back with Restore Groups. |
 | **Licence Assignment** | Users | View a user's assigned Microsoft 365 licences. Assign or remove individual SKUs. Shows available seats remaining per SKU. |
-| **Bulk UPN Change** | Users | Move cloud-only users to a different verified domain. Import by department, office location, individual search, or a pasted list / CSV. |
+| **Bulk UPN Change** | Users | Move cloud-only users to a different verified domain. Add users by year group, department, office location, individual search, or a pasted list / CSV. Overlapping selections are deduplicated. |
 | **Immutable ID** | Users | Assign or remove `onPremisesImmutableId` on cloud-only accounts. Per-row checkboxes, confirm-by-typing-YES safety gate. |
 | **Last Device** | Devices | Intune device lookup by user or by device name, sharing one inventory download per connection. Stale device filter (7 / 30 / 60 / 90 days). Time Logs sub-tab. Export CSV reports (per device/user sign-in, or one row per device) of the latest recorded user/device sign-ins within the past 3 months; this is not a complete sign-in audit trail. |
 | **Device Compliance** | Devices | Overview of all Intune-managed device compliance states, filterable by state and by name. Selecting a non-compliant device shows which policies are failing and how many settings are out of compliance. |
 | **Sign-In Logs** | Audit | Last 50 sign-ins for any user — app, result, IP, location, device. |
 | **Group Copy** | Groups & Teams | Copy all group memberships from one user to another. Skips existing memberships, dynamic groups, and role-assignable groups. |
 | **Security Group Creator** | Groups & Teams | Create an assigned-membership security group. Choose year groups (using the same grouping as Teams Provisioning) or exact departments from separate dropdowns with user counts. Combine these with manual user searches, pasted usernames and CSV imports; review and remove members before creation. Supports empty groups, dry-run previews, offline demo, per-member results and audit records. |
-| **Teams Provisioning** | Groups & Teams | Create a Class or Standard team, populate members from a year group or direct user search. Team Type and Population choices show a contrasting selection dot; per-person Owner roles use single-click checkboxes. |
+| **Teams Provisioning** | Groups & Teams | Create a Class or Standard team. Load members using separate year-group and department dropdowns, or direct user search. Team Type and Population choices show a contrasting selection dot; per-person Owner roles use single-click checkboxes. |
 | **Secure Score** | Security | Microsoft Secure Score percentage headline with per-control breakdown table. |
 | **Appearance** | App | Theme presets (Slate & Amber, Indigo Night, Ocean, Forest, Rose) and UI font picker with per-font preview. |
 
@@ -34,6 +34,8 @@ Multi-tenant. Profiles saved locally, token cache persisted across sessions — 
 ## Usage
 
 Tools in the navigation sidebar have individual bordered cards; the selected tool has an accent outline.
+
+Teams Provisioning, Year Group Passwords, Bulk UPN Change and Security Group Creator share year-group and department dropdowns with user counts. Year groups combine class codes such as `7A` and `7B`; department selection preserves the full department name. Names such as `Year 7` are also recognised. Teams and password-reset load buttons replace the current list; Bulk UPN Change and Security Group Creator add to it without duplicating users. Counts reflect each tool's eligible users, including the cloud-only restriction in Bulk UPN Change.
 
 ```batch
 Launch.cmd

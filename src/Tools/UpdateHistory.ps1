@@ -10,6 +10,16 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.24.0'
+        Date    = '2026-09-07'
+        Changes = @(
+            'Separate year-group and department dropdowns in Teams Provisioning and Year Group Passwords'
+            'Bulk UPN Change adds a year-group dropdown alongside departments and office locations'
+            'All four bulk user selectors share themed dropdowns, user counts and grouping rules'
+            'Recognise written year names such as Year 7 alongside class codes such as 7A'
+        )
+    }
+    @{
         Version = '0.23.0'
         Date    = '2026-09-07'
         Changes = @(

@@ -324,14 +324,21 @@ $Script:TpXaml = @'
         <Border Background="#3C3C5A" Height="1" Margin="0,14"/>
 
         <TextBlock Text="POPULATION" Style="{StaticResource SectionLbl}"/>
-        <RadioButton x:Name="TpRbYearGroup" Content="Year Group"   GroupName="tppop" IsChecked="True"/>
+        <RadioButton x:Name="TpRbYearGroup" Content="Year group / department" GroupName="tppop" IsChecked="True"/>
         <RadioButton x:Name="TpRbDirect"    Content="Direct Users" GroupName="tppop" Margin="0,4,0,8"/>
 
         <StackPanel x:Name="TpPnlYearGroup">
-          <ComboBox x:Name="TpCboYear" IsEnabled="False"/>
-          <Button x:Name="TpBtnLoad" Content="Load Students" IsEnabled="False"
+          <TextBlock Text="YEAR GROUP" Style="{StaticResource SectionLbl}" Margin="0,6,0,6"/>
+          <ComboBox x:Name="TpCboYear" Style="{StaticResource EtbPopulationCombo}" IsEnabled="False"/>
+          <Button x:Name="TpBtnLoad" Content="Load year group" IsEnabled="False"
                   Style="{StaticResource PrimaryBtn}" Background="#242436"
                   Foreground="#7878A0" Padding="0,10" Margin="0,8,0,0"/>
+          <TextBlock Text="DEPARTMENT" Style="{StaticResource SectionLbl}" Margin="0,14,0,6"/>
+          <ComboBox x:Name="TpCboDept" Style="{StaticResource EtbPopulationCombo}" IsEnabled="False"/>
+          <Button x:Name="TpBtnLoadDept" Content="Load department" IsEnabled="False"
+                  Style="{StaticResource PrimaryBtn}" Background="#242436"
+                  Foreground="#7878A0" Padding="0,10" Margin="0,8,0,0"/>
+          <TextBlock Text="Loading replaces the current member list." Foreground="#7878A0" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"/>
         </StackPanel>
 
         <StackPanel x:Name="TpPnlDirect" Visibility="Collapsed">
@@ -456,6 +463,9 @@ function Start-TpUserLoad {
 
     $Script:TP_UI.CboYear.Items.Clear()
     $Script:TP_UI.CboYear.IsEnabled = $false
+    $Script:TP_UI.CboDept.Items.Clear()
+    $Script:TP_UI.CboDept.IsEnabled = $false
+    $Script:TP_UI.BtnLoadDept.IsEnabled = $false
     $Script:TP_UI.BtnLoad.IsEnabled = $false
     Set-MainStatus 'Teams: loading users...' 'TextDim'
     Write-TpLog 'Fetching users from Entra ID...' 'TextDim'
@@ -476,23 +486,7 @@ function Complete-TpUserLoad {
             Write-Log "TP: loaded $($Script:TP_AllUsers.Count) users" 'INFO'
             Write-TpLog "Loaded $($Script:TP_AllUsers.Count) enabled users." 'Success'
 
-            $allGroups     = $Script:TP_AllUsers | ForEach-Object { Get-DeptGroup $_.department } |
-                             Where-Object { $_ -ne $null } | Sort-Object -Unique
-            $numericGroups = @($allGroups | Where-Object { $_ -is [int] }    | Sort-Object)
-            $namedGroups   = @($allGroups | Where-Object { $_ -is [string] } | Sort-Object)
-
-            $Script:TP_UI.CboYear.Items.Clear()
-            foreach ($g in ($numericGroups + $namedGroups)) {
-                $cnt   = ($Script:TP_AllUsers | Where-Object { (Get-DeptGroup $_.department) -eq $g }).Count
-                $label = if ($g -is [int]) { "Year $g  -  $cnt users" } else { "$g  -  $cnt users" }
-                $item  = New-Object System.Windows.Controls.ComboBoxItem
-                $item.Content = $label
-                $item.Tag     = $g
-                $Script:TP_UI.CboYear.Items.Add($item) | Out-Null
-            }
-            if ($Script:TP_UI.CboYear.Items.Count -gt 0) { $Script:TP_UI.CboYear.SelectedIndex = 0 }
-            $Script:TP_UI.CboYear.IsEnabled = $true
-            $Script:TP_UI.BtnLoad.IsEnabled = $true
+            Update-TpPopulationCombos
             Set-MainStatus "Teams: $($Script:TP_AllUsers.Count) users loaded." 'Success'
     } catch {
         Write-Log "TP user-load error: $_" 'ERROR'
@@ -531,6 +525,7 @@ function Start-TpCreateTeam {
     $Script:TP_Creating                    = $true
     $Script:TP_UI.BtnCreate.IsEnabled      = $false
     $Script:TP_UI.BtnLoad.IsEnabled        = $false
+    $Script:TP_UI.BtnLoadDept.IsEnabled    = $false
     $Script:TP_UI.BtnSelectAll.IsEnabled   = $false
     $Script:TP_UI.BtnSelectNone.IsEnabled  = $false
     $Script:TP_UI.PnlStats.Visibility      = 'Collapsed'
@@ -664,6 +659,7 @@ function Start-TpCreateTeam {
 
                 $Script:TP_UI.PnlStats.Visibility     = 'Visible'
                 $Script:TP_UI.BtnLoad.IsEnabled       = $true
+                $Script:TP_UI.BtnLoadDept.IsEnabled   = $Script:TP_UI.CboDept.Items.Count -gt 0
                 $Script:TP_UI.BtnSelectAll.IsEnabled  = $true
                 $Script:TP_UI.BtnSelectNone.IsEnabled = $true
                 Update-TpCreateButton
@@ -671,6 +667,40 @@ function Start-TpCreateTeam {
                 Write-Log "TP create timer error: $_" 'ERROR'
             }
         }
+}
+
+function Update-TpPopulationCombos {
+    Set-EtbPopulationCombo -ComboBox $Script:TP_UI.CboYear -Users $Script:TP_AllUsers -Mode YearGroup
+    Set-EtbPopulationCombo -ComboBox $Script:TP_UI.CboDept -Users $Script:TP_AllUsers -Mode Department
+    $Script:TP_UI.BtnLoad.IsEnabled = $Script:TP_UI.CboYear.Items.Count -gt 0
+    $Script:TP_UI.BtnLoadDept.IsEnabled = $Script:TP_UI.CboDept.Items.Count -gt 0
+}
+
+function Set-TpPopulation {
+    param($Choice)
+    if ($Script:TP_Creating -or -not $Choice) { return }
+    $selGroup = $Choice.Value
+    Write-Log "TP: loading users for group $selGroup" 'INFO'
+
+    $Script:TP_Rows.Clear()
+    $members = @($Choice.Users)
+    foreach ($u in $members) {
+        $Script:TP_Rows.Add([PSCustomObject]@{
+            Id          = $u.id
+            DisplayName = $u.displayName
+            UPN         = $u.userPrincipalName
+            Department  = $u.department
+            IsOwner     = $false
+        })
+    }
+    $Script:TP_UI.Grid.SelectAll()
+    $Script:TP_UI.BtnSelectAll.IsEnabled  = $true
+    $Script:TP_UI.BtnSelectNone.IsEnabled = $true
+    $Script:TP_UI.PnlStats.Visibility     = 'Collapsed'
+    Update-TpSelectionLabel
+    Update-TpCreateButton
+    Write-TpLog "Loaded $($members.Count) users for group: $selGroup" 'TextDim'
+    Set-MainStatus "Group $selGroup - $($members.Count) users loaded." 'TextDim'
 }
 
 function Initialize-TeamsProvisioningTool {
@@ -687,6 +717,8 @@ function Initialize-TeamsProvisioningTool {
         PnlDirect     = $content.FindName('TpPnlDirect')
         CboYear       = $content.FindName('TpCboYear')
         BtnLoad       = $content.FindName('TpBtnLoad')
+        CboDept       = $content.FindName('TpCboDept')
+        BtnLoadDept   = $content.FindName('TpBtnLoadDept')
         Search        = $content.FindName('TpSearch')
         SearchList    = $content.FindName('TpSearchList')
         LblSelection  = $content.FindName('TpLblSelection')
@@ -724,34 +756,13 @@ function Initialize-TeamsProvisioningTool {
         } catch { Write-Log "TP RbDirect Checked error: $_" 'ERROR' }
     })
 
-    # Load Students (year group mode)
     $Script:TP_UI.BtnLoad.Add_Click({
-        try {
-            $selItem = $Script:TP_UI.CboYear.SelectedItem
-            if (-not $selItem) { return }
-            $selGroup = $selItem.Tag
-            Write-Log "TP: loading users for group $selGroup" 'INFO'
-
-            $Script:TP_Rows.Clear()
-            $members = @($Script:TP_AllUsers | Where-Object { (Get-DeptGroup $_.department) -eq $selGroup })
-            foreach ($u in $members) {
-                $Script:TP_Rows.Add([PSCustomObject]@{
-                    Id          = $u.id
-                    DisplayName = $u.displayName
-                    UPN         = $u.userPrincipalName
-                    Department  = $u.department
-                    IsOwner     = $false
-                })
-            }
-            $Script:TP_UI.Grid.SelectAll()
-            $Script:TP_UI.BtnSelectAll.IsEnabled  = $true
-            $Script:TP_UI.BtnSelectNone.IsEnabled = $true
-            $Script:TP_UI.PnlStats.Visibility     = 'Collapsed'
-            Update-TpSelectionLabel
-            Update-TpCreateButton
-            Write-TpLog "Loaded $($members.Count) users for group: $selGroup" 'TextDim'
-            Set-MainStatus "Group $selGroup - $($members.Count) users loaded." 'TextDim'
-        } catch { Write-Log "TP BtnLoad click error: $_" 'ERROR' }
+        try { Set-TpPopulation -Choice $Script:TP_UI.CboYear.SelectedItem.DataContext }
+        catch { Write-Log "Tp: year group load failed: $_" 'ERROR' }
+    })
+    $Script:TP_UI.BtnLoadDept.Add_Click({
+        try { Set-TpPopulation -Choice $Script:TP_UI.CboDept.SelectedItem.DataContext }
+        catch { Write-Log "Tp: department load failed: $_" 'ERROR' }
     })
 
     # Direct user search — filter as user types
@@ -815,6 +826,9 @@ function Initialize-TeamsProvisioningTool {
         $Script:TP_UI.TeamName.Text            = ''
         $Script:TP_UI.CboYear.Items.Clear()
         $Script:TP_UI.CboYear.IsEnabled        = $false
+        $Script:TP_UI.CboDept.Items.Clear()
+        $Script:TP_UI.CboDept.IsEnabled        = $false
+        $Script:TP_UI.BtnLoadDept.IsEnabled    = $false
         $Script:TP_UI.BtnLoad.IsEnabled        = $false
         $Script:TP_UI.BtnCreate.IsEnabled      = $false
         $Script:TP_UI.BtnSelectAll.IsEnabled   = $false

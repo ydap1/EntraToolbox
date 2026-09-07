@@ -600,6 +600,58 @@ $Script:ThemeListBoxTemplate = @'
 #
 # Keyed on the exact opening tag used to detect a local declaration.
 $Script:ThemeSharedStyles = [ordered]@{
+    '<Style x:Key="EtbPopulationComboItem"' = @"
+    <Style x:Key="EtbPopulationComboItem" TargetType="ComboBoxItem">
+      <Setter Property="Foreground" Value="$($Script:Theme.Text)"/>
+      <Setter Property="Padding" Value="8,7"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value><ControlTemplate TargetType="ComboBoxItem">
+          <Border x:Name="Item" Background="Transparent" Padding="{TemplateBinding Padding}"><ContentPresenter/></Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Item" Property="Background" Value="$($Script:Theme.Hover)"/></Trigger>
+            <Trigger Property="IsSelected" Value="True"><Setter TargetName="Item" Property="Background" Value="$($Script:Theme.Hover)"/></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate></Setter.Value>
+      </Setter>
+    </Style>
+"@
+    '<Style x:Key="EtbPopulationCombo"' = @"
+    <Style x:Key="EtbPopulationCombo" TargetType="ComboBox">
+      <Setter Property="ItemContainerStyle" Value="{StaticResource EtbPopulationComboItem}"/>
+      <Setter Property="Background" Value="$($Script:Theme.Card)"/>
+      <Setter Property="Foreground" Value="$($Script:Theme.Text)"/>
+      <Setter Property="BorderBrush" Value="$($Script:Theme.Border)"/>
+      <Setter Property="Height" Value="32"/>
+      <Setter Property="MaxDropDownHeight" Value="220"/>
+      <Setter Property="Template">
+        <Setter.Value><ControlTemplate TargetType="ComboBox">
+          <Grid>
+            <Border x:Name="Box" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="4"/>
+            <ContentPresenter Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                              ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                              Margin="8,0,26,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
+            <Path Data="M0,0 L4,4 L8,0 Z" Fill="$($Script:Theme.TextDim)" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0" IsHitTestVisible="False"/>
+            <ToggleButton Focusable="False" Cursor="Hand" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+              <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="Transparent"/></ControlTemplate></ToggleButton.Template>
+            </ToggleButton>
+            <Popup x:Name="PART_Popup" AllowsTransparency="True" Placement="Bottom"
+                   Width="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                   IsOpen="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}}">
+              <Border Background="$($Script:Theme.Card)" BorderBrush="$($Script:Theme.Border)" BorderThickness="1" CornerRadius="4" MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"><ItemsPresenter/></ScrollViewer>
+              </Border>
+            </Popup>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Box" Property="BorderBrush" Value="$($Script:Theme.Accent)"/></Trigger>
+            <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="Box" Property="BorderBrush" Value="$($Script:Theme.Accent)"/></Trigger>
+            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate></Setter.Value>
+      </Setter>
+    </Style>
+"@
     '<SolidColorBrush x:Key="Bg"' = @"
 <SolidColorBrush x:Key="Bg"      Color="$($Script:Theme.Bg)"/>
 "@

@@ -23,12 +23,6 @@ function New-Password {
     "$a.$b.$c$n!"
 }
 
-function Get-DeptGroup([string]$d) {
-    if ($d -match '^(\d+)')       { return [int]$Matches[1] }
-    if ($d -match '^([A-Za-z]+)') { return $Matches[1] }
-    return $null
-}
-
 # ── Script-level state ─────────────────────────────────────────────────────────
 $Script:PwReset_UI         = $null
 $Script:PwReset_Rows       = New-Object System.Collections.ObjectModel.ObservableCollection[PSObject]
@@ -77,7 +71,7 @@ function Complete-PwResetRow {
 # year group is reported rather than silently ignored.
 function Select-PwRowsFromList {
     if ($Script:PwReset_Rows.Count -eq 0) {
-        Write-PwLog 'Load a year group first, then select from a list.' 'Warning'
+        Write-PwLog 'Load a year group or department first, then select from a list.' 'Warning'
         return
     }
     $upns = @(Show-EtbUpnImport)
@@ -96,7 +90,7 @@ function Select-PwRowsFromList {
     }
     $missing = $upns.Count - $found
     $color   = if ($missing -gt 0) { 'Warning' } else { 'Success' }
-    Write-PwLog "Selected $found of $($upns.Count) from the list; $missing not in this year group." $color
+    Write-PwLog "Selected $found of $($upns.Count) from the list; $missing not in the loaded group." $color
     Update-PwSelectionLabel
 }
 
@@ -168,6 +162,9 @@ function Start-PwUserLoad {
     if ($Script:DemoMode) { Start-PwUserLoadDemo; return }
     $Script:PwReset_UI.CboYear.Items.Clear()
     $Script:PwReset_UI.CboYear.IsEnabled   = $false
+    $Script:PwReset_UI.CboDept.Items.Clear()
+    $Script:PwReset_UI.CboDept.IsEnabled   = $false
+    $Script:PwReset_UI.BtnLoadDept.IsEnabled = $false
     $Script:PwReset_UI.BtnLoad.IsEnabled   = $false
     $Script:PwReset_UI.BtnRun.IsEnabled    = $false
     $Script:PwReset_UI.BtnExport.IsEnabled = $false
@@ -192,27 +189,9 @@ function Complete-PwUserLoad {
             Write-Log "PwReset: loaded $($Script:PwReset_GraphUsers.Count) users" 'INFO'
             Write-PwLog "Loaded $($Script:PwReset_GraphUsers.Count) enabled users with departments." 'Success'
 
-            # Single-pass group count (replaces O(n²) Where-Object per group)
-            $groupCounts = @{}
-            foreach ($u in $Script:PwReset_GraphUsers) {
-                $g = Get-DeptGroup $u.department
-                if ($null -ne $g) { $groupCounts[$g] = ($groupCounts[$g] ?? 0) + 1 }
-            }
-            $numericGroups = @($groupCounts.Keys | Where-Object { $_ -is [int] }    | Sort-Object)
-            $namedGroups   = @($groupCounts.Keys | Where-Object { $_ -is [string] } | Sort-Object)
-
-            $Script:PwReset_UI.CboYear.Items.Clear()
-            foreach ($g in ($numericGroups + $namedGroups)) {
-                $cnt   = $groupCounts[$g]
-                $label = if ($g -is [int]) { "Year $g  -  $cnt students" } else { "$g  -  $cnt students" }
-                $item  = New-Object System.Windows.Controls.ComboBoxItem
-                $item.Content = $label
-                $item.Tag     = $g
-                $Script:PwReset_UI.CboYear.Items.Add($item) | Out-Null
-            }
+            Update-PwPopulationCombos
             # Reopen on the group last worked on in this tenant — a year group
             # is usually revisited across several sessions.
-            $Script:PwReset_UI.CboYear.SelectedIndex = 0
             $lastGroup = if ($Script:CurrentTenantId) {
                 Get-TenantSetting -TenantId $Script:CurrentTenantId -Name 'LastYearGroup'
             } else { $null }
@@ -224,8 +203,6 @@ function Complete-PwUserLoad {
                     }
                 }
             }
-            $Script:PwReset_UI.CboYear.IsEnabled = $true
-            $Script:PwReset_UI.BtnLoad.IsEnabled = $true
             Set-MainStatus "Ready - $($Script:PwReset_GraphUsers.Count) users loaded." 'Success'
     } catch {
         Write-Log "PwReset user-load error: $_" 'ERROR'
@@ -422,10 +399,16 @@ $Script:PwResetXaml = @'
       <StackPanel Margin="16,20,16,16">
 
         <TextBlock Text="YEAR GROUP" Style="{StaticResource SectionLbl}"/>
-        <ComboBox x:Name="PwCboYear" IsEnabled="False"/>
-        <Button x:Name="PwBtnLoad" Content="Load Students" IsEnabled="False"
+        <ComboBox x:Name="PwCboYear" Style="{StaticResource EtbPopulationCombo}" IsEnabled="False"/>
+        <Button x:Name="PwBtnLoad" Content="Load year group" IsEnabled="False"
                 Style="{StaticResource PrimaryBtn}" Background="#242436"
                 Foreground="#7878A0" Padding="0,10" Margin="0,8,0,0"/>
+        <TextBlock Text="DEPARTMENT" Style="{StaticResource SectionLbl}" Margin="0,14,0,6"/>
+        <ComboBox x:Name="PwCboDept" Style="{StaticResource EtbPopulationCombo}" IsEnabled="False"/>
+        <Button x:Name="PwBtnLoadDept" Content="Load department" IsEnabled="False"
+                Style="{StaticResource PrimaryBtn}" Background="#242436"
+                Foreground="#7878A0" Padding="0,10" Margin="0,8,0,0"/>
+        <TextBlock Text="Loading replaces the current user list." Foreground="#7878A0" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"/>
         <Button x:Name="PwBtnImport" Content="Select From List…" IsEnabled="False"
                 Style="{StaticResource PrimaryBtn}" Background="#242436"
                 Foreground="#7878A0" Padding="0,8" Margin="0,6,0,0" FontSize="12"
@@ -606,6 +589,58 @@ $Script:PwResetXaml = @'
 '@
 
 # ── Initialize ─────────────────────────────────────────────────────────────────
+function Update-PwPopulationCombos {
+    Set-EtbPopulationCombo -ComboBox $Script:PwReset_UI.CboYear -Users $Script:PwReset_GraphUsers -Mode YearGroup
+    Set-EtbPopulationCombo -ComboBox $Script:PwReset_UI.CboDept -Users $Script:PwReset_GraphUsers -Mode Department
+    $Script:PwReset_UI.BtnLoad.IsEnabled = $Script:PwReset_UI.CboYear.Items.Count -gt 0
+    $Script:PwReset_UI.BtnLoadDept.IsEnabled = $Script:PwReset_UI.CboDept.Items.Count -gt 0
+}
+
+function Set-PwPopulation {
+    param($Choice, [switch]$RememberYear)
+    if ($Script:PwReset_Running -or -not $Choice) { return }
+    $selGroup = $Choice.Value
+    Write-Log "PwReset: loading users for group $selGroup" 'INFO'
+    if ($RememberYear -and $Script:CurrentTenantId) {
+        Set-TenantSetting -TenantId $Script:CurrentTenantId `
+                          -Name 'LastYearGroup' -Value ([string]$selGroup)
+    }
+
+    $Script:PwReset_Rows.Clear()
+    $students = @($Choice.Users)
+
+    foreach ($u in $students) {
+        $Script:PwReset_Rows.Add([PSCustomObject]@{
+            Id          = $u.id
+            DisplayName = $u.displayName
+            UPN         = $u.userPrincipalName
+            Department  = $u.department
+            Password    = ''
+            Status      = 'Pending'
+        })
+    }
+
+    # Auto-select all loaded rows
+    $Script:PwReset_UI.Grid.SelectAll()
+
+    Write-Log "PwReset: $($students.Count) users loaded for group $selGroup" 'INFO'
+    $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $true
+    $Script:PwReset_UI.BtnSelectNone.IsEnabled = $true
+    $Script:PwReset_UI.BtnImport.IsEnabled     = $true
+    $Script:PwReset_UI.BtnExport.IsEnabled     = $false
+    $Script:PwReset_UI.BtnPrint.IsEnabled      = $false
+    $Script:PwReset_UI.PnlStats.Visibility     = 'Collapsed'
+    if ($Script:PwReset_UI.RbLive.IsChecked) {
+        $Script:PwReset_UI.BtnRun.Content    = 'Reset Passwords Now'
+        $Script:PwReset_UI.BtnRun.Background = (Get-ThemeHex 'Danger')
+    } else {
+        $Script:PwReset_UI.BtnRun.Content    = 'Generate Passwords'
+        $Script:PwReset_UI.BtnRun.Background = (Get-ThemeHex 'Accent')
+    }
+    Write-PwLog "Loaded $($students.Count) users for group: $selGroup" 'Text'
+    Set-MainStatus "Group $selGroup - $($students.Count) users loaded." 'Text'
+}
+
 function Initialize-PasswordResetTool {
     $reader  = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new((Invoke-ThemeXaml $Script:PwResetXaml)))
     $content = [System.Windows.Markup.XamlReader]::Load($reader)
@@ -613,6 +648,8 @@ function Initialize-PasswordResetTool {
     $Script:PwReset_UI = @{
         CboYear        = $content.FindName('PwCboYear')
         BtnLoad        = $content.FindName('PwBtnLoad')
+        CboDept        = $content.FindName('PwCboDept')
+        BtnLoadDept    = $content.FindName('PwBtnLoadDept')
         LblSelection   = $content.FindName('PwLblSelection')
         BtnSelectAll   = $content.FindName('PwBtnSelectAll')
         BtnSelectNone  = $content.FindName('PwBtnSelectNone')
@@ -681,54 +718,13 @@ function Initialize-PasswordResetTool {
         } catch { Write-Log "RbDry Checked error: $_" 'ERROR' }
     })
 
-    # Load Students
     $Script:PwReset_UI.BtnLoad.Add_Click({
-        try {
-            $selItem = $Script:PwReset_UI.CboYear.SelectedItem
-            if (-not $selItem) { return }
-            $selGroup = $selItem.Tag
-            Write-Log "PwReset: loading students for group $selGroup" 'INFO'
-            if ($Script:CurrentTenantId) {
-                Set-TenantSetting -TenantId $Script:CurrentTenantId `
-                                  -Name 'LastYearGroup' -Value ([string]$selGroup)
-            }
-
-            $Script:PwReset_Rows.Clear()
-            $students = @($Script:PwReset_GraphUsers | Where-Object { (Get-DeptGroup $_.department) -eq $selGroup })
-
-            foreach ($u in $students) {
-                $Script:PwReset_Rows.Add([PSCustomObject]@{
-                    Id          = $u.id
-                    DisplayName = $u.displayName
-                    UPN         = $u.userPrincipalName
-                    Department  = $u.department
-                    Password    = ''
-                    Status      = 'Pending'
-                })
-            }
-
-            # Auto-select all loaded rows
-            $Script:PwReset_UI.Grid.SelectAll()
-
-            Write-Log "PwReset: $($students.Count) students loaded for group $selGroup" 'INFO'
-            $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $true
-            $Script:PwReset_UI.BtnSelectNone.IsEnabled = $true
-            $Script:PwReset_UI.BtnImport.IsEnabled     = $true
-            $Script:PwReset_UI.BtnExport.IsEnabled     = $false
-            $Script:PwReset_UI.BtnPrint.IsEnabled      = $false
-            $Script:PwReset_UI.PnlStats.Visibility     = 'Collapsed'
-            if ($Script:PwReset_UI.RbLive.IsChecked) {
-                $Script:PwReset_UI.BtnRun.Content    = 'Reset Passwords Now'
-                $Script:PwReset_UI.BtnRun.Background = (Get-ThemeHex 'Danger')
-            } else {
-                $Script:PwReset_UI.BtnRun.Content    = 'Generate Passwords'
-                $Script:PwReset_UI.BtnRun.Background = (Get-ThemeHex 'Accent')
-            }
-            Write-PwLog "Loaded $($students.Count) students for group: $selGroup" 'Text'
-            Set-MainStatus "Group $selGroup - $($students.Count) students loaded." 'Text'
-        } catch {
-            Write-Log "BtnLoad click error: $_" 'ERROR'
-        }
+        try { Set-PwPopulation -Choice $Script:PwReset_UI.CboYear.SelectedItem.DataContext -RememberYear }
+        catch { Write-Log "Pw: year group load failed: $_" 'ERROR' }
+    })
+    $Script:PwReset_UI.BtnLoadDept.Add_Click({
+        try { Set-PwPopulation -Choice $Script:PwReset_UI.CboDept.SelectedItem.DataContext }
+        catch { Write-Log "Pw: department load failed: $_" 'ERROR' }
     })
 
     # Generate / Reset
@@ -780,6 +776,7 @@ function Initialize-PasswordResetTool {
             $Script:PwReset_Running                    = $true
             $Script:PwReset_UI.BtnRun.IsEnabled        = $false
             $Script:PwReset_UI.BtnLoad.IsEnabled       = $false
+            $Script:PwReset_UI.BtnLoadDept.IsEnabled   = $false
             $Script:PwReset_UI.BtnExport.IsEnabled     = $false
             $Script:PwReset_UI.BtnPrint.IsEnabled      = $false
             $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $false
@@ -803,6 +800,7 @@ function Initialize-PasswordResetTool {
                 $Script:PwReset_Running                    = $false
                 $Script:PwReset_UI.Progress.Visibility     = 'Collapsed'
                 $Script:PwReset_UI.BtnLoad.IsEnabled       = $true
+                $Script:PwReset_UI.BtnLoadDept.IsEnabled   = $Script:PwReset_UI.CboDept.Items.Count -gt 0
                 $Script:PwReset_UI.BtnExport.IsEnabled     = $true
                 $Script:PwReset_UI.BtnPrint.IsEnabled      = $true
                 $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $true
@@ -870,6 +868,7 @@ function Initialize-PasswordResetTool {
                         $Script:PwReset_Running                    = $false
                         $Script:PwReset_UI.Progress.Visibility     = 'Collapsed'
                         $Script:PwReset_UI.BtnLoad.IsEnabled       = $true
+                        $Script:PwReset_UI.BtnLoadDept.IsEnabled   = $Script:PwReset_UI.CboDept.Items.Count -gt 0
                         $Script:PwReset_UI.BtnExport.IsEnabled     = $true
                         $Script:PwReset_UI.BtnPrint.IsEnabled      = $true
                         $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $true
@@ -943,6 +942,9 @@ function Initialize-PasswordResetTool {
         $Script:PwReset_GraphUsers = @()
         $Script:PwReset_UI.CboYear.Items.Clear()
         $Script:PwReset_UI.CboYear.IsEnabled        = $false
+        $Script:PwReset_UI.CboDept.Items.Clear()
+        $Script:PwReset_UI.CboDept.IsEnabled        = $false
+        $Script:PwReset_UI.BtnLoadDept.IsEnabled    = $false
         $Script:PwReset_UI.BtnLoad.IsEnabled        = $false
         $Script:PwReset_UI.BtnRun.IsEnabled         = $false
         $Script:PwReset_UI.BtnExport.IsEnabled      = $false
