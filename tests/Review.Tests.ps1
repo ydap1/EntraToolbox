@@ -33,6 +33,22 @@ try {
     Assert ($csv.Name.StartsWith("'=") -and $csv.Upn -eq 'student@school.test' -and $csv.Password -eq 'cat.sun.cup42!' -and $csv.Count -eq -2) 'CSV formula protection preserves ordinary values and passwords'
     foreach ($file in Get-ChildItem "$root/src/Tools" -Filter *.ps1) { . $file.FullName }
     . "$root/src/Demo.ps1"
+    & {
+        $users = @(
+            [pscustomobject]@{ id = 'a'; department = '7A' }
+            [pscustomobject]@{ id = 'b'; department = '7B' }
+            [pscustomobject]@{ id = 'c'; department = '10A' }
+            [pscustomobject]@{ id = 'd'; department = 'Staff - Teaching' }
+            [pscustomobject]@{ id = 'e'; department = 'Staff - Support' }
+            [pscustomobject]@{ id = 'f'; department = $null }
+        )
+        $years = @(Get-SgPopulationChoices -Users $users -Mode YearGroup)
+        $departments = @(Get-SgPopulationChoices -Users $users -Mode Department)
+        Assert ($years.Count -eq 3 -and $years[0].Value -eq 7 -and $years[1].Value -eq 10 -and $years[2].Value -eq 'Staff') 'security group year choices use Teams grouping and numeric year ordering'
+        Assert ($years[0].Label -eq 'Year 7 - 2 users' -and ($years[0].Users.id -join ',') -eq 'a,b') 'a year group combines classes and reports their total membership'
+        Assert ($departments.Count -eq 5 -and @($departments | Where-Object Value -eq '7A')[0].Users.id -eq 'a' -and @($departments | Where-Object Value -eq 'Staff - Support')[0].Users.id -eq 'e') 'department choices preserve exact departments and their own membership'
+        Assert (@(Get-SgPopulationChoices -Users @() -Mode YearGroup).Count -eq 0) 'an empty user list has no year-group choices'
+    }
     # Group creation uses a single create request and reports member failures
     # without losing the group ID or skipping the remaining users.
     & {
@@ -75,6 +91,14 @@ try {
         Add-SgUsers @($user, $user)
         Add-SgUsers @($user)
         Assert ($Script:SG_Rows.Count -eq 1) 'combining security group imports does not duplicate members'
+        $Script:SG_Rows.Clear()
+        $users = @(
+            [pscustomobject]@{ id = 'a'; displayName = 'Ann'; userPrincipalName = 'ann@school.test'; department = '7A' }
+            [pscustomobject]@{ id = 'b'; displayName = 'Ben'; userPrincipalName = 'ben@school.test'; department = '7B' }
+        )
+        Add-SgUsers @(Get-SgPopulationChoices -Users $users -Mode YearGroup)[0].Users
+        Add-SgUsers @(Get-SgPopulationChoices -Users $users -Mode Department)[0].Users
+        Assert ($Script:SG_Rows.Count -eq 2) 'adding a department after its year group does not duplicate pupils'
         function Start-AsyncWork { throw 'Preview must not start a worker' }
         function Write-AppLog { param($Message, $Color) }
         $Script:AccessToken = 'test'

@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.23.0'
+        Date    = '2026-09-07'
+        Changes = @(
+            'Security Group Creator: year-group dropdown uses the same grouping as Teams Provisioning, with user counts'
+            'Separate department dropdown keeps full department names; combine both with manual and CSV selections'
+        )
+    }
+    @{
         Version = '0.22.1'
         Date    = '2026-09-07'
         Changes = @(

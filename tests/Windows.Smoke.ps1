@@ -95,8 +95,15 @@ try {
         }
     }
     Set-NavSelection 'SecurityGroup'
+    if ($Script:SG_UI.Years -isnot [Windows.Controls.ComboBox] -or $Script:SG_UI.Departments -isnot [Windows.Controls.ComboBox]) {
+        throw 'Year groups and departments must both use dropdowns.'
+    }
     if ($Script:SG_UI.Departments.Items.Count -eq 0) { throw 'Security group demo has no departments.' }
     $Script:SG_UI.Name.Text = 'Demo security group'
+    $Script:SG_UI.Years.SelectedIndex = 0
+    $Script:SG_UI.AddYear.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
+    if ($Script:SG_Rows.Count -ne $Script:SG_UI.Years.SelectedItem.Users.Count) { throw 'Security group year selection failed.' }
+    $Script:SG_Rows.Clear()
     $Script:SG_UI.Departments.SelectedIndex = 0
     $Script:SG_UI.AddDepartment.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
     if ($Script:SG_Rows.Count -eq 0 -or -not $Script:SG_UI.Create.IsEnabled) { throw 'Security group department selection failed.' }

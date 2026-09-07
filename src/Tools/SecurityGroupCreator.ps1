@@ -10,6 +10,53 @@ $Script:SgXaml = @'
 <Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Background="#12121C">
   <Grid.Resources>
+    <Style TargetType="ComboBox">
+      <Setter Property="Background" Value="#242436"/>
+      <Setter Property="Foreground" Value="#E2E2F0"/>
+      <Setter Property="BorderBrush" Value="#3C3C5A"/>
+      <Setter Property="Height" Value="32"/>
+      <Setter Property="MaxDropDownHeight" Value="220"/>
+      <Setter Property="Template">
+        <Setter.Value><ControlTemplate TargetType="ComboBox">
+          <Grid>
+            <Border x:Name="Box" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="4"/>
+            <ContentPresenter Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                              ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                              Margin="8,0,26,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
+            <Path Data="M0,0 L4,4 L8,0 Z" Fill="#7878A0" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0" IsHitTestVisible="False"/>
+            <ToggleButton Focusable="False" Cursor="Hand" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+              <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="Transparent"/></ControlTemplate></ToggleButton.Template>
+            </ToggleButton>
+            <Popup x:Name="PART_Popup" AllowsTransparency="True" Placement="Bottom"
+                   Width="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                   IsOpen="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}}">
+              <Border Background="#242436" BorderBrush="#3C3C5A" BorderThickness="1" CornerRadius="4" MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"><ItemsPresenter/></ScrollViewer>
+              </Border>
+            </Popup>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Box" Property="BorderBrush" Value="#6366F1"/></Trigger>
+            <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="Box" Property="BorderBrush" Value="#6366F1"/></Trigger>
+            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate></Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="ComboBoxItem">
+      <Setter Property="Foreground" Value="#E2E2F0"/>
+      <Setter Property="Padding" Value="8,7"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value><ControlTemplate TargetType="ComboBoxItem">
+          <Border x:Name="Item" Background="Transparent" Padding="{TemplateBinding Padding}"><ContentPresenter/></Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Item" Property="Background" Value="#2E2E48"/></Trigger>
+            <Trigger Property="IsSelected" Value="True"><Setter TargetName="Item" Property="Background" Value="#2E2E48"/></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate></Setter.Value>
+      </Setter>
+    </Style>
     <Style x:Key="SgButton" TargetType="Button">
       <Setter Property="Foreground" Value="#E2E2F0"/>
       <Setter Property="Background" Value="#242436"/>
@@ -48,9 +95,12 @@ $Script:SgXaml = @'
         <TextBox x:Name="SgName" MaxLength="256" AutomationProperties.Name="Group name"/>
         <TextBlock Text="Description (optional)" Style="{StaticResource SgLabel}"/>
         <TextBox x:Name="SgDescription" MaxLength="1024" Height="60" AcceptsReturn="True" TextWrapping="Wrap" AutomationProperties.Name="Group description"/>
+        <TextBlock Text="Add a year group" Style="{StaticResource SgLabel}"/>
+        <ComboBox x:Name="SgYears" DisplayMemberPath="Label" AutomationProperties.Name="Year groups"/>
+        <Button x:Name="SgAddYear" Content="Add year group" Style="{StaticResource SgButton}" IsEnabled="False"/>
         <TextBlock Text="Add a department" Style="{StaticResource SgLabel}"/>
-        <ListBox x:Name="SgDepartments" Height="100" AutomationProperties.Name="Departments"/>
-        <Button x:Name="SgAddDepartment" Content="Add department" Style="{StaticResource SgButton}"/>
+        <ComboBox x:Name="SgDepartments" DisplayMemberPath="Label" AutomationProperties.Name="Departments"/>
+        <Button x:Name="SgAddDepartment" Content="Add department" Style="{StaticResource SgButton}" IsEnabled="False"/>
         <TextBlock Text="Find individual users" Style="{StaticResource SgLabel}"/>
         <TextBox x:Name="SgSearch" AutomationProperties.Name="Search by name or username"/>
         <ListBox x:Name="SgMatches" Height="110" Margin="0,6,0,0" SelectionMode="Extended" DisplayMemberPath="userPrincipalName" AutomationProperties.Name="Matching users"/>
@@ -123,13 +173,31 @@ function Update-SgSearch {
     $Script:SG_UI.Matches.ItemsSource = @($matches)
 }
 
+function Get-SgPopulationChoices {
+    param([object[]]$Users, [ValidateSet('YearGroup', 'Department')][string]$Mode)
+    # Use Teams Provisioning's grouping: e.g. 7A and 7B become Year 7.
+    # Department mode retains the complete department name instead.
+    $choices = foreach ($group in @($Users | Group-Object -Property {
+        if ($Mode -eq 'YearGroup') { Get-DeptGroup $_.department } else { $_.department }
+    } | Where-Object { $_.Name })) {
+        $value = if ($Mode -eq 'YearGroup') { Get-DeptGroup $group.Group[0].department } else { $group.Name }
+        $label = if ($value -is [int]) { "Year $value" } else { $value }
+        [pscustomobject]@{ Label = "$label - $($group.Count) users"; Value = $value; Users = @($group.Group) }
+    }
+    $choices | Sort-Object @{ Expression = { if ($_.Value -is [int]) { 0 } else { 1 } } }, Value
+}
+
 function Complete-SgUserLoad {
     if (-not $Script:DemoMode -and $Script:UserCache.Error) {
         $Script:SG_UI.Status.Text = "Could not load users: $($Script:UserCache.Error)"
         return
     }
     $Script:SG_Users = if ($Script:DemoMode) { @($Script:Demo_Users) } else { @($Script:UserCache.Users) }
-    $Script:SG_UI.Departments.ItemsSource = @($Script:SG_Users.department | Where-Object { $_ } | Sort-Object -Unique)
+    $Script:SG_UI.Years.ItemsSource = @(Get-SgPopulationChoices -Users $Script:SG_Users -Mode YearGroup)
+    $Script:SG_UI.Departments.ItemsSource = @(Get-SgPopulationChoices -Users $Script:SG_Users -Mode Department)
+    foreach ($key in 'Years', 'Departments') {
+        if ($Script:SG_UI[$key].Items.Count -gt 0) { $Script:SG_UI[$key].SelectedIndex = 0 }
+    }
     $Script:SG_UI.Status.Text = "$($Script:SG_Users.Count) users loaded. Add members or create an empty group."
     Update-SgSearch
     Update-SgControls
@@ -223,15 +291,21 @@ function Initialize-SecurityGroupCreatorTool {
     $reader = [Xml.XmlReader]::Create([IO.StringReader]::new((Invoke-ThemeXaml $Script:SgXaml)))
     try { $content = [Windows.Markup.XamlReader]::Load($reader) } finally { $reader.Close() }
     $Script:SG_UI = @{}
-    foreach ($key in 'Editor','Name','Description','Departments','AddDepartment','Search','Matches','AddUsers','Import','Create','Count','Grid','Remove','New','Status') {
+    foreach ($key in 'Editor','Name','Description','Years','AddYear','Departments','AddDepartment','Search','Matches','AddUsers','Import','Create','Count','Grid','Remove','New','Status') {
         $Script:SG_UI[$key] = $content.FindName("Sg$key")
     }
     $Script:SG_UI.Grid.ItemsSource = $Script:SG_Rows
     $Script:SG_UI.Name.Add_TextChanged({ Update-SgControls })
     $Script:SG_UI.Search.Add_TextChanged({ Invoke-EtbDebounced -Key 'SG_Search' -Command 'Update-SgSearch' })
+    $Script:SG_UI.Years.Add_SelectionChanged({ $Script:SG_UI.AddYear.IsEnabled = $null -ne $Script:SG_UI.Years.SelectedItem })
+    $Script:SG_UI.Departments.Add_SelectionChanged({ $Script:SG_UI.AddDepartment.IsEnabled = $null -ne $Script:SG_UI.Departments.SelectedItem })
+    $Script:SG_UI.AddYear.Add_Click({
+        $choice = $Script:SG_UI.Years.SelectedItem
+        if ($choice) { Add-SgUsers $choice.Users }
+    })
     $Script:SG_UI.AddDepartment.Add_Click({
-        $department = $Script:SG_UI.Departments.SelectedItem
-        if ($department) { Add-SgUsers @($Script:SG_Users | Where-Object department -eq $department) }
+        $choice = $Script:SG_UI.Departments.SelectedItem
+        if ($choice) { Add-SgUsers $choice.Users }
     })
     $Script:SG_UI.AddUsers.Add_Click({ Add-SgUsers @($Script:SG_UI.Matches.SelectedItems) })
     $Script:SG_UI.Import.Add_Click({
@@ -253,6 +327,7 @@ function Initialize-SecurityGroupCreatorTool {
         if ($Script:SG_Timer) { $Script:SG_Timer.Stop(); $Script:SG_Timer = $null }
         $Script:SG_Busy = $false
         $Script:SG_Users = @()
+        $Script:SG_UI.Years.ItemsSource = @()
         $Script:SG_UI.Departments.ItemsSource = @()
         $Script:SG_UI.Matches.ItemsSource = @()
         Reset-SgForm

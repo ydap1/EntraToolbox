@@ -1120,7 +1120,7 @@ function Show-MainWindow {
         @{ Type = 'tool'; Name = 'SignIn';       Title = 'Sign-In Logs';        Desc = 'Browse Entra ID sign-in events' }
         @{ Type = 'cat';  Label = 'GROUPS & TEAMS' }
         @{ Type = 'tool'; Name = 'GroupCopy';   Title = 'Group Copy';           Desc = 'Copy memberships from one user to another' }
-        @{ Type = 'tool'; Name = 'SecurityGroup'; Title = 'Security Group Creator'; Desc = 'Create a security group from departments, individual users or CSV' }
+        @{ Type = 'tool'; Name = 'SecurityGroup'; Title = 'Security Group Creator'; Desc = 'Create a security group from year groups, departments, individual users or CSV' }
         @{ Type = 'tool'; Name = 'Teams';        Title = 'Teams Provisioning';  Desc = 'Create and populate Microsoft Teams' }
         @{ Type = 'cat';  Label = 'SECURITY' }
         @{ Type = 'tool'; Name = 'SecureScore'; Title = 'Secure Score';         Desc = 'Microsoft Secure Score with control breakdown' }
