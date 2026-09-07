@@ -156,6 +156,8 @@ function Set-NavSelection {
 
     $Script:MainUI.ContentArea.Content = $Script:NavContents[$Name]
     $Script:CurrentNavItem = $Name
+    try { Set-AppSetting -Name 'LastTool' -Value $Name }
+    catch { Write-Log "Could not save last tool: $_" 'DEBUG' }
 
     # Quick fade-in so panel switches feel fluid instead of snapping.
     $Script:MainUI.ContentArea.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $null)
@@ -1134,8 +1136,12 @@ function Show-MainWindow {
         }
     }
 
-    # Select first tool by default
-    Set-NavSelection -Name 'YearGroup'
+    # Reopen on the tool last used, so relaunching lands where work stopped.
+    $startTool = Get-AppSetting -Name 'LastTool'
+    if (-not $startTool -or -not $Script:NavInitializers.ContainsKey([string]$startTool)) {
+        $startTool = 'YearGroup'
+    }
+    Set-NavSelection -Name ([string]$startTool)
 
     # ── Demo button ───────────────────────────────────────────────────────────
     $Script:MainUI.BtnDemo.Add_Click({

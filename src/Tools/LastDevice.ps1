@@ -293,10 +293,19 @@ function Update-LdStaleFilter {
         })
     }
 
+    $search = $Script:LD_UI.StaleSearch.Text.Trim()
+    if ($search) {
+        $rows = [System.Collections.Generic.List[PSObject]](@($rows | Where-Object {
+            $_.DeviceName -like "*$search*" -or
+            $_.Model      -like "*$search*" -or
+            $_.LastUser   -like "*$search*"
+        }))
+    }
     $sorted = [object[]]($rows | Sort-Object { $_._Sort } -Descending)
     $Script:LD_UI.StaleGrid.ItemsSource = $sorted
     $n = $rows.Count
-    $Script:LD_UI.StaleCount.Text = "$n device$(if ($n -ne 1) { 's' }) stale"
+    $suffix = if ($search) { " matching '$search'" } else { '' }
+    $Script:LD_UI.StaleCount.Text = "$n device$(if ($n -ne 1) { 's' }) stale$suffix"
 }
 
 function Show-LdDeviceUsers {
@@ -736,6 +745,9 @@ $Script:LastDeviceXaml = @'
             <TextBlock Text="Not checked in for:" Foreground="#7878A0"
                        FontSize="12" VerticalAlignment="Center" Margin="0,0,10,0"/>
             <ComboBox x:Name="LdStaleDays" Width="130"/>
+            <TextBox x:Name="LdStaleSearch" Width="180" Height="28" Margin="12,0,0,0"
+                     VerticalContentAlignment="Center"
+                     ToolTip="Filter by device name, model or last user"/>
             <TextBlock x:Name="LdStaleCount" Foreground="#7878A0"
                        FontSize="12" VerticalAlignment="Center" Margin="16,0,0,0"/>
           </StackPanel>
@@ -796,6 +808,7 @@ function Initialize-LastDeviceTool {
         # LogBox removed — use Write-AppLog to the global Log pane
         StaleDays         = $content.FindName('LdStaleDays')
         StaleGrid         = $content.FindName('LdStaleGrid')
+        StaleSearch       = $content.FindName('LdStaleSearch')
         StaleCount        = $content.FindName('LdStaleCount')
     }
 
@@ -806,6 +819,11 @@ function Initialize-LastDeviceTool {
     $Script:LD_UI.StaleDays.Add_SelectionChanged({
         try { Update-LdStaleFilter }
         catch { Write-Log "StaleDays SelectionChanged error: $_" 'ERROR' }
+    })
+
+    $Script:LD_UI.StaleSearch.Add_TextChanged({
+        try { Invoke-EtbDebounced -Key 'LD_Stale' -Command 'Update-LdStaleFilter' }
+        catch { Write-Log "StaleSearch TextChanged error: $_" 'ERROR' }
     })
 
     # Search box
@@ -1028,6 +1046,7 @@ function Initialize-LastDeviceTool {
         $Script:LD_UI.DevUserPlaceholder.Visibility  = 'Visible'
         $Script:LD_UI.DevUserDetailPanel.Visibility   = 'Collapsed'
         $Script:LD_UI.StaleGrid.ItemsSource = $null
+        $Script:LD_UI.StaleSearch.Text      = ''
         $Script:LD_UI.StaleCount.Text = ''
         $Script:LD_UI.DevDetailPanel.Visibility = 'Collapsed'
     })

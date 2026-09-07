@@ -35,6 +35,7 @@ function Start-DcLoad {
 
     $Script:DC_UI.RefreshBtn.IsEnabled    = $false
     $Script:DC_UI.FilterCombo.IsEnabled   = $false
+    $Script:DC_UI.Search.IsEnabled        = $false
     $Script:DC_UI.Grid.ItemsSource        = $null
     $Script:DC_UI.DetailPanel.Visibility  = 'Collapsed'
     $Script:DC_UI.SummaryCompliant.Text   = '—'
@@ -80,6 +81,7 @@ function Start-DcLoad {
             Update-DcGrid
             $Script:DC_UI.RefreshBtn.IsEnabled  = $true
             $Script:DC_UI.FilterCombo.IsEnabled = $true
+            $Script:DC_UI.Search.IsEnabled      = $true
         } catch {
             Write-Log "DC load timer error: $_" 'ERROR'
         }
@@ -88,6 +90,7 @@ function Start-DcLoad {
 
 function Update-DcGrid {
     $filterIdx = $Script:DC_UI.FilterCombo.SelectedIndex
+    $search    = $Script:DC_UI.Search.Text.Trim()
     $rows = [System.Collections.Generic.List[PSObject]]::new()
 
     $nCompliant = 0; $nNonComp = 0; $nOther = 0
@@ -106,6 +109,9 @@ function Update-DcGrid {
             default { $true }
         }
         if (-not $include) { continue }
+        if ($search -and
+            $d.deviceName -notlike "*$search*" -and
+            $d.userDisplayName -notlike "*$search*") { continue }
 
         $os = "$($d.operatingSystem)$(if ($d.osVersion) { " $($d.osVersion)" })"
         $rows.Add([PSCustomObject]@{
@@ -347,6 +353,9 @@ $Script:DcXaml = @'
 
       <!-- Filter -->
       <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
+        <TextBox x:Name="DcSearch" Width="170" Height="28" IsEnabled="False"
+                 Margin="0,0,10,0" VerticalContentAlignment="Center"
+                 ToolTip="Filter by device name or user"/>
         <TextBlock Text="Show:" Foreground="#7878A0" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0"/>
         <ComboBox x:Name="DcFilterCombo" Width="150" IsEnabled="False"/>
       </StackPanel>
@@ -425,6 +434,7 @@ function Initialize-DeviceComplianceTool {
         Grid             = $content.FindName('DcGrid')
         Placeholder      = $content.FindName('DcPlaceholder')
         FilterCombo      = $content.FindName('DcFilterCombo')
+        Search           = $content.FindName('DcSearch')
         RefreshBtn       = $content.FindName('DcRefreshBtn')
         SummaryCompliant = $content.FindName('DcSummaryCompliant')
         SummaryNonComp   = $content.FindName('DcSummaryNonComp')
@@ -443,6 +453,11 @@ function Initialize-DeviceComplianceTool {
         try {
             if ($Script:DC_AllDevices.Count -gt 0) { Update-DcGrid }
         } catch { Write-Log "DC FilterCombo error: $_" 'ERROR' }
+    })
+
+    $Script:DC_UI.Search.Add_TextChanged({
+        try { Invoke-EtbDebounced -Key 'DC_Search' -Command 'Update-DcGrid' }
+        catch { Write-Log "DC Search error: $_" 'ERROR' }
     })
 
     $Script:DC_UI.RefreshBtn.Add_Click({
@@ -475,6 +490,8 @@ function Initialize-DeviceComplianceTool {
         $Script:DC_UI.Placeholder.Visibility  = 'Visible'
         $Script:DC_UI.FilterCombo.IsEnabled   = $false
         $Script:DC_UI.FilterCombo.SelectedIndex = 0
+        $Script:DC_UI.Search.IsEnabled        = $false
+        $Script:DC_UI.Search.Text             = ''
         $Script:DC_UI.RefreshBtn.IsEnabled    = $false
         $Script:DC_UI.SummaryCompliant.Text   = '—'
         $Script:DC_UI.SummaryNonComp.Text     = '—'

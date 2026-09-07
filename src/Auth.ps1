@@ -1018,6 +1018,27 @@ function Set-TenantAccountHint {
     ConvertTo-Json @($all) -Depth 3 | Set-Content -Path (Get-TenantsConfigPath) -Encoding UTF8
 }
 
+# Per-tenant preferences stored alongside the profile, the same way the account
+# hint is. Used for things that are only meaningful within one tenant, such as
+# the year group last worked on.
+function Get-TenantSetting {
+    param([Parameter(Mandatory)][string]$TenantId, [Parameter(Mandatory)][string]$Name)
+    $t = @(Get-SavedTenants) | Where-Object { $_.TenantId -eq $TenantId } | Select-Object -First 1
+    if ($t -and $t.PSObject.Properties.Name -contains $Name) { return $t.$Name }
+    return $null
+}
+
+function Set-TenantSetting {
+    param([Parameter(Mandatory)][string]$TenantId, [Parameter(Mandatory)][string]$Name, $Value)
+    $all = @(Get-SavedTenants)
+    foreach ($t in $all) {
+        if ($t.TenantId -eq $TenantId) {
+            $t | Add-Member -NotePropertyName $Name -NotePropertyValue $Value -Force
+        }
+    }
+    ConvertTo-Json @($all) -Depth 3 | Set-Content -Path (Get-TenantsConfigPath) -Encoding UTF8
+}
+
 function Disconnect-Tenant {
     param([Parameter(Mandatory)][string]$TenantId)
     $Script:AccessToken     = $null

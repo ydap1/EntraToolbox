@@ -100,6 +100,67 @@ function Select-PwRowsFromList {
     Update-PwSelectionLabel
 }
 
+# ── Printable slips ───────────────────────────────────────────────────────────
+# The CSV is the right record to keep, but the thing that actually goes into a
+# classroom is a sheet of slips to cut up and hand out. Written as HTML and
+# opened in the default browser, which already knows how to print.
+function Export-PwPrintSheet {
+    $rows = @($Script:PwReset_UI.Grid.SelectedItems)
+    if ($rows.Count -eq 0) { $rows = @($Script:PwReset_Rows) }
+    $rows = @($rows | Where-Object { $_.Password })
+    if ($rows.Count -eq 0) {
+        Write-PwLog 'Generate passwords first — there is nothing to print yet.' 'Warning'
+        return
+    }
+
+    $dlg = New-Object Microsoft.Win32.SaveFileDialog
+    $dlg.Filter   = 'Web page (*.html)|*.html'
+    $dlg.FileName = "PasswordSlips_$(Get-Date -Format 'yyyyMMdd_HHmmss').html"
+    if (-not $dlg.ShowDialog()) { return }
+
+    $esc = { param($t) [System.Security.SecurityElement]::Escape([string]$t) }
+    $cards = foreach ($r in $rows) {
+        @"
+  <div class="slip">
+    <div class="name">$(& $esc $r.DisplayName)</div>
+    <div class="form">$(& $esc $r.Department)</div>
+    <div class="label">Username</div>
+    <div class="value">$(& $esc $r.UPN)</div>
+    <div class="label">Password</div>
+    <div class="value pw">$(& $esc $r.Password)</div>
+  </div>
+"@
+    }
+
+    $html = @"
+<!doctype html>
+<meta charset="utf-8">
+<title>Password slips</title>
+<style>
+  body { font-family: Segoe UI, Arial, sans-serif; margin: 12mm; color: #000; }
+  h1 { font-size: 13pt; margin: 0 0 6mm; }
+  .sheet { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0; }
+  .slip { border: 1px dashed #999; padding: 6mm; break-inside: avoid; }
+  .name { font-size: 13pt; font-weight: 700; }
+  .form { font-size: 9pt; color: #555; margin-bottom: 3mm; }
+  .label { font-size: 7.5pt; text-transform: uppercase; letter-spacing: .06em; color: #666; margin-top: 2mm; }
+  .value { font-family: Consolas, monospace; font-size: 11pt; }
+  .pw { font-size: 14pt; font-weight: 700; letter-spacing: .02em; }
+  @media print { h1 { display: none; } body { margin: 8mm; } }
+</style>
+<h1>$($rows.Count) password slips — cut along the dashed lines</h1>
+<div class="sheet">
+$($cards -join "`n")
+</div>
+"@
+
+    Set-Content -Path $dlg.FileName -Value $html -Encoding UTF8
+    Write-PwLog "Print sheet saved: $($dlg.FileName)" 'Success'
+    Set-MainStatus "Print sheet ready — $($rows.Count) slips." 'Success'
+    # Opens in the default browser; print from there.
+    Start-Process $dlg.FileName
+}
+
 # ── Async user load ────────────────────────────────────────────────────────────
 $Script:PwResetTimer = $null
 
@@ -110,6 +171,7 @@ function Start-PwUserLoad {
     $Script:PwReset_UI.BtnLoad.IsEnabled   = $false
     $Script:PwReset_UI.BtnRun.IsEnabled    = $false
     $Script:PwReset_UI.BtnExport.IsEnabled = $false
+    $Script:PwReset_UI.BtnPrint.IsEnabled  = $false
     Set-MainStatus 'Loading users...' 'TextDim'
     Write-PwLog 'Fetching users from Entra ID...' 'TextDim'
 
@@ -148,7 +210,20 @@ function Complete-PwUserLoad {
                 $item.Tag     = $g
                 $Script:PwReset_UI.CboYear.Items.Add($item) | Out-Null
             }
-            if ($Script:PwReset_UI.CboYear.Items.Count -gt 0) { $Script:PwReset_UI.CboYear.SelectedIndex = 0 }
+            # Reopen on the group last worked on in this tenant — a year group
+            # is usually revisited across several sessions.
+            $Script:PwReset_UI.CboYear.SelectedIndex = 0
+            $lastGroup = if ($Script:CurrentTenantId) {
+                Get-TenantSetting -TenantId $Script:CurrentTenantId -Name 'LastYearGroup'
+            } else { $null }
+            if ($lastGroup) {
+                foreach ($item in $Script:PwReset_UI.CboYear.Items) {
+                    if ([string]$item.Tag -eq [string]$lastGroup) {
+                        $Script:PwReset_UI.CboYear.SelectedItem = $item
+                        break
+                    }
+                }
+            }
             $Script:PwReset_UI.CboYear.IsEnabled = $true
             $Script:PwReset_UI.BtnLoad.IsEnabled = $true
             Set-MainStatus "Ready - $($Script:PwReset_GraphUsers.Count) users loaded." 'Success'
@@ -409,6 +484,10 @@ $Script:PwResetXaml = @'
                 Style="{StaticResource PrimaryBtn}" Background="#EF4444"
                 Padding="0,10" Margin="0,8,0,0"
                 ToolTip="Finish the account in progress, then stop"/>
+        <Button x:Name="PwBtnPrint" Content="Print Slips" IsEnabled="False"
+                Style="{StaticResource PrimaryBtn}" Background="#242436"
+                Foreground="#7878A0" Padding="0,10" Margin="0,8,0,0"
+                ToolTip="Save a printable sheet of slips to cut up and hand out"/>
         <Button x:Name="PwBtnExport" Content="Export CSV" IsEnabled="False"
                 Style="{StaticResource PrimaryBtn}" Background="#242436"
                 Foreground="#7878A0" Padding="0,10" Margin="0,8,0,0"/>
@@ -544,6 +623,7 @@ function Initialize-PasswordResetTool {
         BtnRun         = $content.FindName('PwBtnRun')
         BtnStop        = $content.FindName('PwBtnStop')
         BtnImport      = $content.FindName('PwBtnImport')
+        BtnPrint       = $content.FindName('PwBtnPrint')
         BtnExport      = $content.FindName('PwBtnExport')
         Grid           = $content.FindName('PwGrid')
         Progress       = $content.FindName('PwProgress')
@@ -608,6 +688,10 @@ function Initialize-PasswordResetTool {
             if (-not $selItem) { return }
             $selGroup = $selItem.Tag
             Write-Log "PwReset: loading students for group $selGroup" 'INFO'
+            if ($Script:CurrentTenantId) {
+                Set-TenantSetting -TenantId $Script:CurrentTenantId `
+                                  -Name 'LastYearGroup' -Value ([string]$selGroup)
+            }
 
             $Script:PwReset_Rows.Clear()
             $students = @($Script:PwReset_GraphUsers | Where-Object { (Get-DeptGroup $_.department) -eq $selGroup })
@@ -631,6 +715,7 @@ function Initialize-PasswordResetTool {
             $Script:PwReset_UI.BtnSelectNone.IsEnabled = $true
             $Script:PwReset_UI.BtnImport.IsEnabled     = $true
             $Script:PwReset_UI.BtnExport.IsEnabled     = $false
+            $Script:PwReset_UI.BtnPrint.IsEnabled      = $false
             $Script:PwReset_UI.PnlStats.Visibility     = 'Collapsed'
             if ($Script:PwReset_UI.RbLive.IsChecked) {
                 $Script:PwReset_UI.BtnRun.Content    = 'Reset Passwords Now'
@@ -679,6 +764,7 @@ function Initialize-PasswordResetTool {
                 $forceLabel = if ($force) { 'will prompt on next sign-in' } else { 'no prompt required' }
                 Write-PwLog "[DRY RUN] Generated passwords for $($work.Count) selected users ($forceLabel)." 'TextDim'
                 $Script:PwReset_UI.BtnExport.IsEnabled     = $true
+                $Script:PwReset_UI.BtnPrint.IsEnabled      = $true
                 $Script:PwReset_UI.PnlStats.Visibility     = 'Visible'
                 $Script:PwReset_UI.LblTotal.Text           = "Total  $($selected.Count)"
                 $Script:PwReset_UI.LblOK.Text              = "OK     $($selected.Count)"
@@ -695,6 +781,7 @@ function Initialize-PasswordResetTool {
             $Script:PwReset_UI.BtnRun.IsEnabled        = $false
             $Script:PwReset_UI.BtnLoad.IsEnabled       = $false
             $Script:PwReset_UI.BtnExport.IsEnabled     = $false
+            $Script:PwReset_UI.BtnPrint.IsEnabled      = $false
             $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $false
             $Script:PwReset_UI.BtnImport.IsEnabled     = $false
             $Script:PwReset_UI.BtnSelectNone.IsEnabled = $false
@@ -717,6 +804,7 @@ function Initialize-PasswordResetTool {
                 $Script:PwReset_UI.Progress.Visibility     = 'Collapsed'
                 $Script:PwReset_UI.BtnLoad.IsEnabled       = $true
                 $Script:PwReset_UI.BtnExport.IsEnabled     = $true
+                $Script:PwReset_UI.BtnPrint.IsEnabled      = $true
                 $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $true
                 $Script:PwReset_UI.BtnSelectNone.IsEnabled = $true
                 $Script:PwReset_UI.BtnImport.IsEnabled     = $true
@@ -783,6 +871,7 @@ function Initialize-PasswordResetTool {
                         $Script:PwReset_UI.Progress.Visibility     = 'Collapsed'
                         $Script:PwReset_UI.BtnLoad.IsEnabled       = $true
                         $Script:PwReset_UI.BtnExport.IsEnabled     = $true
+                        $Script:PwReset_UI.BtnPrint.IsEnabled      = $true
                         $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $true
                         $Script:PwReset_UI.BtnSelectNone.IsEnabled = $true
                         $Script:PwReset_UI.BtnImport.IsEnabled     = $true
@@ -824,6 +913,11 @@ function Initialize-PasswordResetTool {
     })
 
     # Export CSV
+    $Script:PwReset_UI.BtnPrint.Add_Click({
+        try { Export-PwPrintSheet }
+        catch { Write-Log "BtnPrint click error: $_" 'ERROR' }
+    })
+
     $Script:PwReset_UI.BtnExport.Add_Click({
         try {
             $dlg = New-Object Microsoft.Win32.SaveFileDialog
@@ -852,6 +946,7 @@ function Initialize-PasswordResetTool {
         $Script:PwReset_UI.BtnLoad.IsEnabled        = $false
         $Script:PwReset_UI.BtnRun.IsEnabled         = $false
         $Script:PwReset_UI.BtnExport.IsEnabled      = $false
+        $Script:PwReset_UI.BtnPrint.IsEnabled       = $false
         $Script:PwReset_UI.BtnSelectAll.IsEnabled   = $false
         $Script:PwReset_UI.BtnSelectNone.IsEnabled  = $false
         $Script:PwReset_UI.BtnImport.IsEnabled      = $false
