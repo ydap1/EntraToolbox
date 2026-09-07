@@ -868,6 +868,7 @@ $Script:GraphScopes = @(
     'https://graph.microsoft.com/DeviceManagementConfiguration.Read.All',
     'https://graph.microsoft.com/AuditLog.Read.All',
     'https://graph.microsoft.com/GroupMember.ReadWrite.All',
+    'https://graph.microsoft.com/Group.ReadWrite.All',
     'https://graph.microsoft.com/Team.Create',
     'https://graph.microsoft.com/TeamMember.ReadWrite.All',
     'https://graph.microsoft.com/SecurityEvents.Read.All',

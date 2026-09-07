@@ -18,6 +18,7 @@ WPF PowerShell GUI for Entra ID (Azure AD) tenant management. Requires Windows a
 | **Device Compliance** | Devices | Overview of all Intune-managed device compliance states, filterable by state and by name. Selecting a non-compliant device shows which policies are failing and how many settings are out of compliance. |
 | **Sign-In Logs** | Audit | Last 50 sign-ins for any user — app, result, IP, location, device. |
 | **Group Copy** | Groups & Teams | Copy all group memberships from one user to another. Skips existing memberships, dynamic groups, and role-assignable groups. |
+| **Security Group Creator** | Groups & Teams | Create an assigned-membership security group. Combine departments, manual user searches, pasted usernames and CSV imports; review and remove members before creation. Supports empty groups, dry-run previews, offline demo, per-member results and audit records. |
 | **Teams Provisioning** | Groups & Teams | Create a Class or Standard team, populate members from a year group or direct user search, assign per-person Owner roles with visible, single-click checkboxes. |
 | **Secure Score** | Security | Microsoft Secure Score percentage headline with per-control breakdown table. |
 | **Appearance** | App | Theme presets (Slate & Amber, Indigo Night, Ocean, Forest, Rose) and UI font picker with per-font preview. |
@@ -60,6 +61,7 @@ Uses the Microsoft Intune PowerShell public client ID — no app registration re
 | `DeviceManagementManagedDevices.PrivilegedOperations.All` | Request Intune device sync |
 | `AuditLog.Read.All` | Sign-In Logs tab |
 | `GroupMember.ReadWrite.All` | Group membership view and Group Copy tab |
+| `Group.ReadWrite.All` | Create security groups and add their members |
 | `Team.Create` | Create new Teams |
 | `TeamMember.ReadWrite.All` | Add members and owners to Teams |
 | `SecurityEvents.Read.All` | Secure Score tab |
@@ -68,6 +70,8 @@ Uses the Microsoft Intune PowerShell public client ID — no app registration re
 | `LicenseAssignment.ReadWrite.All` | Licence Assignment — read tenant SKUs, assign/remove licences |
 
 The corrected password-profile and device-sync scopes may require renewed admin consent after upgrading. The signed-in account also needs the appropriate Entra/Intune role.
+
+Security Group Creator also requests admin consent for [`Group.ReadWrite.All`](https://learn.microsoft.com/en-us/graph/api/group-post-groups?view=graph-rest-1.0). It creates standard security groups without email or dynamic membership. CSV files must contain user principal names (for example, `pupil@school.example`); unmatched usernames appear in the activity log. Member additions that fail are reported individually; the created group is kept, with its ID shown, so you can resolve any failures in Entra.
 
 ## Screenshots
 

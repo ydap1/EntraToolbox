@@ -43,7 +43,24 @@ try {
         foreach ($assignment in $themeAssignments) { . ([scriptblock]::Create($assignment)) }
         foreach ($xaml in $documents) {
             $reader = [Xml.XmlNodeReader]::new([xml](Invoke-ThemeXaml $xaml))
-            try { $null = [Windows.Markup.XamlReader]::Load($reader) } finally { $reader.Close() }
+            try { $view = [Windows.Markup.XamlReader]::Load($reader) } finally { $reader.Close() }
+            if ($xaml -eq $Script:TpXaml) {
+                $owner = $view.FindName('TpGrid').Columns[3].CellTemplate.LoadContent()
+                $row = [pscustomobject]@{ IsOwner = $false }
+                $owner.DataContext = $row
+                [void]$owner.ApplyTemplate()
+                $peer = [Windows.Automation.Peers.CheckBoxAutomationPeer]::new($owner)
+                $toggle = [Windows.Automation.Provider.IToggleProvider]$peer.GetPattern([Windows.Automation.Peers.PatternInterface]::Toggle)
+                $toggle.Toggle()
+                $tick = $owner.Template.FindName('Check', $owner)
+                if (-not $row.IsOwner -or $tick.Visibility -ne 'Visible') {
+                    throw "Owner checkbox did not show a tick and update its member in theme $preset."
+                }
+                $toggle.Toggle()
+                if ($row.IsOwner -or $tick.Visibility -ne 'Collapsed') {
+                    throw "Owner checkbox did not clear in theme $preset."
+                }
+            }
         }
     }
     $window = Show-MainWindow -AppVersion 'smoke' -InitializeOnly
@@ -59,6 +76,14 @@ try {
             $window.UpdateLayout()
         }
     }
+    Set-NavSelection 'SecurityGroup'
+    if ($Script:SG_UI.Departments.Items.Count -eq 0) { throw 'Security group demo has no departments.' }
+    $Script:SG_UI.Name.Text = 'Demo security group'
+    $Script:SG_UI.Departments.SelectedIndex = 0
+    $Script:SG_UI.AddDepartment.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
+    if ($Script:SG_Rows.Count -eq 0 -or -not $Script:SG_UI.Create.IsEnabled) { throw 'Security group department selection failed.' }
+    $Script:SG_UI.Create.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
+    if ($Script:SG_UI.Status.Text -notlike '*No changes made*') { throw 'Security group demo creation failed.' }
     if ($Script:SmokeErrors.Count) { throw ($Script:SmokeErrors -join "`n") }
     if ($Script:AsyncJobs.Count) { throw 'Demo navigation unexpectedly started network workers.' }
     Write-Host "PASS: $($documents.Count) XAML documents, $($Script:ThemePresets.Count) themes, $($Script:NavContents.Count) demo panels at three widths."

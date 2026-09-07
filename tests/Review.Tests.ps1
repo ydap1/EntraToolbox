@@ -33,6 +33,63 @@ try {
     Assert ($csv.Name.StartsWith("'=") -and $csv.Upn -eq 'student@school.test' -and $csv.Password -eq 'cat.sun.cup42!' -and $csv.Count -eq -2) 'CSV formula protection preserves ordinary values and passwords'
     foreach ($file in Get-ChildItem "$root/src/Tools" -Filter *.ps1) { . $file.FullName }
     . "$root/src/Demo.ps1"
+    # Group creation uses a single create request and reports member failures
+    # without losing the group ID or skipping the remaining users.
+    & {
+        $calls = [Collections.Generic.List[object]]::new()
+        function Invoke-RestMethod {
+            param($Uri, $Method, $Headers, $Body, $ContentType)
+            $payload = $Body | ConvertFrom-Json
+            $calls.Add([pscustomobject]@{ Uri = $Uri; Method = $Method; Body = $payload })
+            if ($Uri -eq 'https://graph.microsoft.com/v1.0/groups') { return @{ id = 'created-group' } }
+            if ($payload.'@odata.id' -like '*/user-2') { throw 'Membership denied' }
+        }
+        $GroupName = 'Year 7 resources'
+        $Description = 'Classroom access'
+        $Members = @(1..25 | ForEach-Object { [pscustomobject]@{ Id = "user-$_"; UPN = "user$_@school.test" } })
+        $Token = 'test'
+        $Ref = @{ GroupId = $null; Results = @() }
+        & $Script:SgCreateWork
+        Assert ($calls.Count -eq 26 -and $calls[0].Body.securityEnabled -and -not $calls[0].Body.mailEnabled -and $calls[0].Body.groupTypes.Count -eq 0) 'creates a security group with assigned membership before adding users'
+        Assert ($calls[0].Body.displayName -eq $GroupName -and $calls[0].Body.description -eq $Description -and $calls[0].Body.mailNickname) 'group request carries the entered details and a mail nickname'
+        Assert ($calls[25].Uri -eq 'https://graph.microsoft.com/v1.0/groups/created-group/members/$ref' -and $calls[25].Body.'@odata.id' -like '*/user-25') 'member requests support lists larger than 20 users'
+        Assert ($Ref.GroupId -eq 'created-group' -and @($Ref.Results | Where-Object Result -eq 'Added').Count -eq 24 -and $Ref.Results[1].Error -eq 'Membership denied') 'failed membership is reported and later users are still added'
+        $calls.Clear()
+        $Members = @()
+        $Ref = @{ GroupId = $null; Results = @() }
+        & $Script:SgCreateWork
+        Assert ($calls.Count -eq 1 -and $Ref.GroupId -eq 'created-group') 'empty security group creation makes no member requests'
+        function Invoke-RestMethod { throw 'Group creation denied' }
+        $Ref = @{ GroupId = $null; Results = @() }
+        Assert-Throws { & $Script:SgCreateWork } 'Group creation denied'
+        Assert (-not $Ref.GroupId -and $Ref.Results.Count -eq 0) 'failed group creation cannot report successful membership'
+    }
+    & {
+        $Script:SG_UI = @{
+            Editor = [pscustomobject]@{ IsEnabled = $true }; Remove = [pscustomobject]@{ IsEnabled = $true }
+            New = [pscustomobject]@{ IsEnabled = $true }; Create = [pscustomobject]@{ IsEnabled = $false }
+            Name = [pscustomobject]@{ Text = 'Classroom access' }; Count = [pscustomobject]@{ Text = '' }
+            Status = [pscustomobject]@{ Text = '' }
+        }
+        $user = [pscustomobject]@{ id = 'pupil'; displayName = 'Pupil'; userPrincipalName = 'pupil@school.test'; department = 'Year 7' }
+        Add-SgUsers @($user, $user)
+        Add-SgUsers @($user)
+        Assert ($Script:SG_Rows.Count -eq 1) 'combining security group imports does not duplicate members'
+        function Start-AsyncWork { throw 'Preview must not start a worker' }
+        function Write-AppLog { param($Message, $Color) }
+        $Script:AccessToken = 'test'
+        $Script:DryMode = $true
+        Start-SgCreate
+        Assert ($Script:SG_UI.Status.Text -like '[[]DRY[]]*No changes made*' -and -not $Script:SG_GroupId) 'security group dry run leaves the directory unchanged'
+        $Script:DryMode = $false
+        $Script:DemoMode = $true
+        Start-SgCreate
+        Assert ($Script:SG_UI.Status.Text -like '[[]DEMO[]]*No changes made*') 'security group demo never starts a network worker'
+        $Script:DemoMode = $false
+        $Script:AccessToken = $null
+        $Script:SG_Rows.Clear()
+        $Script:SG_UI = $null
+    }
     $missing = @()
     $xamlCount = 0
     foreach ($file in Get-ChildItem "$root/src" -Recurse -Filter *.ps1) {

@@ -10,6 +10,16 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.22.0'
+        Date    = '2026-09-07'
+        Changes = @(
+            'Security Group Creator: combine departments, manually selected users and pasted lists or CSV imports'
+            'Review and remove members before creation; duplicate users are added only once'
+            'Dry-run previews, offline demo and per-member results with a directory change record'
+            'Group creation requests Group.ReadWrite.All; fresh admin consent may be needed'
+        )
+    }
+    @{
         Version = '0.21.2'
         Date    = '2026-09-07'
         Changes = @(
