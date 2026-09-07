@@ -362,15 +362,6 @@ $Script:LaXaml = @'
       Background="#12121C">
   <Grid.Resources>
 
-    <SolidColorBrush x:Key="Bg"      Color="#12121C"/>
-    <SolidColorBrush x:Key="Surface" Color="#1C1C2A"/>
-    <SolidColorBrush x:Key="Card"    Color="#242436"/>
-    <SolidColorBrush x:Key="Border"  Color="#3C3C5A"/>
-    <SolidColorBrush x:Key="Accent"  Color="#6366F1"/>
-    <SolidColorBrush x:Key="Text"    Color="#E2E2F0"/>
-    <SolidColorBrush x:Key="TextDim" Color="#7878A0"/>
-    <SolidColorBrush x:Key="Muted"   Color="#50507A"/>
-
     <Style x:Key="ActionBtn" TargetType="Button">
       <Setter Property="Foreground"      Value="White"/>
       <Setter Property="FontWeight"      Value="SemiBold"/>
@@ -419,12 +410,6 @@ $Script:LaXaml = @'
           </ControlTemplate>
         </Setter.Value>
       </Setter>
-    </Style>
-
-    <Style TargetType="ListBox">
-      <Setter Property="Background"      Value="#12121C"/>
-      <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="Padding"         Value="0"/>
     </Style>
 
     <Style TargetType="ListBoxItem">

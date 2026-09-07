@@ -560,6 +560,208 @@ $Script:ThemeListBoxTemplate = @'
 </Setter>
 '@
 
+# ── Shared control styles ─────────────────────────────────────────────────────
+# Styles that were byte-identical across most tool XAML documents now live here
+# once. Invoke-ThemeXaml appends each entry to a document's resource dictionary
+# only when that document does not already declare the same style, so a tool
+# that deliberately differs (a non-sortable grid, a denser list) keeps its own
+# copy and no duplicate resource key is ever created.
+#
+# Written with themed values already substituted, because injection happens
+# after Invoke-ThemeXaml's hex translation pass.
+#
+# Keyed on the exact opening tag used to detect a local declaration.
+$Script:ThemeSharedStyles = [ordered]@{
+    '<SolidColorBrush x:Key="Bg"' = @"
+<SolidColorBrush x:Key="Bg"      Color="$($Script:Theme.Bg)"/>
+"@
+    '<SolidColorBrush x:Key="Surface"' = @"
+<SolidColorBrush x:Key="Surface" Color="$($Script:Theme.Surface)"/>
+"@
+    '<SolidColorBrush x:Key="Card"' = @"
+<SolidColorBrush x:Key="Card"    Color="$($Script:Theme.Card)"/>
+"@
+    '<SolidColorBrush x:Key="Border"' = @"
+<SolidColorBrush x:Key="Border"  Color="$($Script:Theme.Border)"/>
+"@
+    '<SolidColorBrush x:Key="Accent"' = @"
+<SolidColorBrush x:Key="Accent"  Color="$($Script:Theme.Accent)"/>
+"@
+    '<SolidColorBrush x:Key="Danger"' = @"
+<SolidColorBrush x:Key="Danger"  Color="$($Script:Theme.Danger)"/>
+"@
+    '<SolidColorBrush x:Key="Success"' = @"
+<SolidColorBrush x:Key="Success" Color="$($Script:Theme.Success)"/>
+"@
+    '<SolidColorBrush x:Key="Text"' = @"
+<SolidColorBrush x:Key="Text"    Color="$($Script:Theme.Text)"/>
+"@
+    '<SolidColorBrush x:Key="TextDim"' = @"
+<SolidColorBrush x:Key="TextDim" Color="$($Script:Theme.TextDim)"/>
+"@
+    '<SolidColorBrush x:Key="Muted"' = @"
+<SolidColorBrush x:Key="Muted"   Color="$($Script:Theme.Muted)"/>
+"@
+    '<Style TargetType="TabControl">' = @"
+<Style TargetType="TabControl">
+  <Setter Property="Background"      Value="$($Script:Theme.Bg)"/>
+  <Setter Property="BorderThickness" Value="0"/>
+</Style>
+"@
+    '<Style TargetType="TabItem">' = @"
+<Style TargetType="TabItem">
+  <Setter Property="Foreground"      Value="$($Script:Theme.TextDim)"/>
+  <Setter Property="Background"      Value="Transparent"/>
+  <Setter Property="BorderThickness" Value="0"/>
+  <Setter Property="Padding"         Value="14,8"/>
+  <Setter Property="FontWeight"      Value="SemiBold"/>
+  <Setter Property="Template">
+    <Setter.Value>
+      <ControlTemplate TargetType="TabItem">
+        <Border Padding="{TemplateBinding Padding}" Cursor="Hand">
+          <Border x:Name="ind" BorderThickness="0,0,0,2" BorderBrush="Transparent" Padding="0,0,0,3">
+            <ContentPresenter ContentSource="Header"/>
+          </Border>
+        </Border>
+        <ControlTemplate.Triggers>
+          <Trigger Property="IsSelected" Value="True">
+            <Setter Property="Foreground" Value="$($Script:Theme.Text)"/>
+            <Setter TargetName="ind" Property="BorderBrush" Value="$($Script:Theme.Accent)"/>
+          </Trigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate>
+    </Setter.Value>
+  </Setter>
+</Style>
+"@
+    '<Style TargetType="TextBox">' = @"
+<Style TargetType="TextBox">
+  <Setter Property="Background"               Value="$($Script:Theme.Card)"/>
+  <Setter Property="Foreground"               Value="$($Script:Theme.Text)"/>
+  <Setter Property="BorderBrush"              Value="$($Script:Theme.Border)"/>
+  <Setter Property="BorderThickness"          Value="1"/>
+  <Setter Property="Padding"                  Value="8,4"/>
+  <Setter Property="VerticalContentAlignment" Value="Center"/>
+  <Setter Property="CaretBrush"               Value="$($Script:Theme.Text)"/>
+  <Setter Property="FocusVisualStyle"         Value="{x:Null}"/>
+  <Setter Property="Template">
+    <Setter.Value>
+      <ControlTemplate TargetType="TextBox">
+        <Border x:Name="bd" Background="{TemplateBinding Background}"
+                BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}"
+                CornerRadius="4">
+          <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                        Background="{TemplateBinding Background}"/>
+        </Border>
+        <ControlTemplate.Triggers>
+          <Trigger Property="IsEnabled" Value="False">
+            <Setter TargetName="bd" Property="Background" Value="$($Script:Theme.Surface)"/>
+            <Setter Property="Foreground" Value="$($Script:Theme.Border)"/>
+          </Trigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate>
+    </Setter.Value>
+  </Setter>
+</Style>
+"@
+    '<Style TargetType="ListBox">' = @"
+<Style TargetType="ListBox">
+  <Setter Property="Background"      Value="$($Script:Theme.Bg)"/>
+  <Setter Property="BorderThickness" Value="0"/>
+  <Setter Property="Padding"         Value="0"/>
+</Style>
+"@
+    '<Style TargetType="ListBoxItem">' = @"
+<Style TargetType="ListBoxItem">
+  <Setter Property="Foreground"                 Value="$($Script:Theme.Text)"/>
+  <Setter Property="Background"                 Value="Transparent"/>
+  <Setter Property="Padding"                    Value="12,7"/>
+  <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+  <Setter Property="Cursor"                     Value="Hand"/>
+  <Setter Property="Template">
+    <Setter.Value>
+      <ControlTemplate TargetType="ListBoxItem">
+        <Border x:Name="bd" Background="{TemplateBinding Background}"
+                Padding="{TemplateBinding Padding}">
+          <ContentPresenter VerticalAlignment="Center"/>
+        </Border>
+        <ControlTemplate.Triggers>
+          <Trigger Property="IsMouseOver" Value="True">
+            <Setter TargetName="bd" Property="Background" Value="$($Script:Theme.Hover)"/>
+          </Trigger>
+          <Trigger Property="IsSelected" Value="True">
+            <Setter TargetName="bd" Property="Background" Value="$($Script:Theme.Selected)"/>
+          </Trigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate>
+    </Setter.Value>
+  </Setter>
+</Style>
+"@
+    '<Style TargetType="DataGrid">' = @"
+<Style TargetType="DataGrid">
+  <Setter Property="Background"               Value="$($Script:Theme.Bg)"/>
+  <Setter Property="Foreground"               Value="$($Script:Theme.Text)"/>
+  <Setter Property="BorderThickness"          Value="0"/>
+  <Setter Property="GridLinesVisibility"      Value="Horizontal"/>
+  <Setter Property="HorizontalGridLinesBrush" Value="$($Script:Theme.GridLine)"/>
+  <Setter Property="RowBackground"            Value="$($Script:Theme.Bg)"/>
+  <Setter Property="AlternatingRowBackground" Value="$($Script:Theme.AltRow)"/>
+  <Setter Property="ColumnHeaderHeight"       Value="34"/>
+  <Setter Property="RowHeight"                Value="28"/>
+  <Setter Property="AutoGenerateColumns"      Value="False"/>
+  <Setter Property="CanUserAddRows"           Value="False"/>
+  <Setter Property="CanUserDeleteRows"        Value="False"/>
+  <Setter Property="IsReadOnly"               Value="True"/>
+  <Setter Property="SelectionMode"            Value="Single"/>
+  <Setter Property="SelectionUnit"            Value="FullRow"/>
+  <Setter Property="FontSize"                 Value="12"/>
+</Style>
+"@
+    '<Style TargetType="DataGridColumnHeader">' = @"
+<Style TargetType="DataGridColumnHeader">
+  <Setter Property="Background"      Value="$($Script:Theme.Surface)"/>
+  <Setter Property="Foreground"      Value="$($Script:Theme.TextDim)"/>
+  <Setter Property="FontWeight"      Value="SemiBold"/>
+  <Setter Property="Padding"         Value="12,0"/>
+  <Setter Property="BorderBrush"     Value="$($Script:Theme.Border)"/>
+  <Setter Property="BorderThickness" Value="0,0,0,1"/>
+  <Setter Property="FontSize"        Value="11"/>
+</Style>
+"@
+    '<Style x:Key="DgRow"' = @"
+<Style x:Key="DgRow" TargetType="DataGridRow">
+  <Setter Property="Background" Value="Transparent"/>
+  <Style.Triggers>
+    <Trigger Property="IsSelected"  Value="True">
+      <Setter Property="Background" Value="$($Script:Theme.Selected)"/>
+    </Trigger>
+    <Trigger Property="IsMouseOver" Value="True">
+      <Setter Property="Background" Value="$($Script:Theme.Hover)"/>
+    </Trigger>
+  </Style.Triggers>
+</Style>
+"@
+    '<Style x:Key="DgCell"' = @"
+<Style x:Key="DgCell" TargetType="DataGridCell">
+  <Setter Property="Background"      Value="Transparent"/>
+  <Setter Property="Foreground"      Value="$($Script:Theme.Text)"/>
+  <Setter Property="BorderThickness" Value="0"/>
+  <Setter Property="Padding"         Value="12,0"/>
+  <Setter Property="Template">
+    <Setter.Value>
+      <ControlTemplate TargetType="DataGridCell">
+        <Border Padding="{TemplateBinding Padding}" Background="{TemplateBinding Background}">
+          <ContentPresenter VerticalAlignment="Center"/>
+        </Border>
+      </ControlTemplate>
+    </Setter.Value>
+  </Setter>
+</Style>
+"@
+}
+
 function Get-ThemeHex([string]$Semantic) {
     if ($Script:Theme.ContainsKey($Semantic)) { return $Script:Theme[$Semantic] }
     return $Semantic
@@ -597,6 +799,16 @@ function Invoke-ThemeXaml([string]$Xaml) {
     }
     $Xaml = $Xaml.Replace('</Grid.Resources>',   "$Script:ThemeScrollBarStyle</Grid.Resources>")
     $Xaml = $Xaml.Replace('</Window.Resources>', "$Script:ThemeScrollBarStyle</Window.Resources>")
+    # Add each shared style the document does not already declare for itself.
+    # Must run before the ListBox template pass below so an injected ListBox
+    # style still receives the virtualization/disabled-state template.
+    $shared = -join @(foreach ($marker in $Script:ThemeSharedStyles.Keys) {
+        if (-not $Xaml.Contains($marker)) { $Script:ThemeSharedStyles[$marker] }
+    })
+    if ($shared) {
+        $Xaml = $Xaml.Replace('</Grid.Resources>',   "$shared</Grid.Resources>")
+        $Xaml = $Xaml.Replace('</Window.Resources>', "$shared</Window.Resources>")
+    }
     $Xaml = $Xaml.Replace('<Style TargetType="ListBox">', "<Style TargetType=`"ListBox`">$Script:ThemeListBoxTemplate")
     $Xaml
 }

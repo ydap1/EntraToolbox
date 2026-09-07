@@ -211,15 +211,6 @@ $Script:UprXaml = @'
       Background="#12121C">
   <Grid.Resources>
 
-    <SolidColorBrush x:Key="Bg"      Color="#12121C"/>
-    <SolidColorBrush x:Key="Surface" Color="#1C1C2A"/>
-    <SolidColorBrush x:Key="Card"    Color="#242436"/>
-    <SolidColorBrush x:Key="Border"  Color="#3C3C5A"/>
-    <SolidColorBrush x:Key="Accent"  Color="#6366F1"/>
-    <SolidColorBrush x:Key="Text"    Color="#E2E2F0"/>
-    <SolidColorBrush x:Key="TextDim" Color="#7878A0"/>
-    <SolidColorBrush x:Key="Muted"   Color="#50507A"/>
-
     <Style x:Key="PrimaryBtn" TargetType="Button">
       <Setter Property="Foreground"      Value="White"/>
       <Setter Property="FontWeight"      Value="SemiBold"/>
@@ -238,36 +229,6 @@ $Script:UprXaml = @'
               </Trigger>
               <Trigger Property="IsEnabled" Value="False">
                 <Setter TargetName="bd" Property="Background" Value="#242436"/>
-                <Setter Property="Foreground" Value="#3C3C5A"/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-
-    <Style TargetType="TextBox">
-      <Setter Property="Background"               Value="#242436"/>
-      <Setter Property="Foreground"               Value="#E2E2F0"/>
-      <Setter Property="BorderBrush"              Value="#3C3C5A"/>
-      <Setter Property="BorderThickness"          Value="1"/>
-      <Setter Property="Padding"                  Value="8,4"/>
-      <Setter Property="VerticalContentAlignment" Value="Center"/>
-      <Setter Property="CaretBrush"               Value="#E2E2F0"/>
-      <Setter Property="FocusVisualStyle"         Value="{x:Null}"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="TextBox">
-            <Border x:Name="bd" Background="{TemplateBinding Background}"
-                    BorderBrush="{TemplateBinding BorderBrush}"
-                    BorderThickness="{TemplateBinding BorderThickness}"
-                    CornerRadius="4">
-              <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
-                            Background="{TemplateBinding Background}"/>
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsEnabled" Value="False">
-                <Setter TargetName="bd" Property="Background" Value="#1C1C2A"/>
                 <Setter Property="Foreground" Value="#3C3C5A"/>
               </Trigger>
             </ControlTemplate.Triggers>
@@ -310,68 +271,6 @@ $Script:UprXaml = @'
     <Style TargetType="CheckBox">
       <Setter Property="Foreground" Value="#E2E2F0"/>
       <Setter Property="Cursor"     Value="Hand"/>
-    </Style>
-
-    <Style TargetType="ListBox">
-      <Setter Property="Background"      Value="#12121C"/>
-      <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="Padding"         Value="0"/>
-    </Style>
-
-    <Style TargetType="ListBoxItem">
-      <Setter Property="Foreground"                 Value="#E2E2F0"/>
-      <Setter Property="Background"                 Value="Transparent"/>
-      <Setter Property="Padding"                    Value="12,7"/>
-      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-      <Setter Property="Cursor"                     Value="Hand"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="ListBoxItem">
-            <Border x:Name="bd" Background="{TemplateBinding Background}"
-                    Padding="{TemplateBinding Padding}">
-              <ContentPresenter VerticalAlignment="Center"/>
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="bd" Property="Background" Value="#1E1E38"/>
-              </Trigger>
-              <Trigger Property="IsSelected" Value="True">
-                <Setter TargetName="bd" Property="Background" Value="#2A2A50"/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-
-    <Style TargetType="TabControl">
-      <Setter Property="Background"      Value="#12121C"/>
-      <Setter Property="BorderThickness" Value="0"/>
-    </Style>
-
-    <Style TargetType="TabItem">
-      <Setter Property="Foreground"      Value="#7878A0"/>
-      <Setter Property="Background"      Value="Transparent"/>
-      <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="Padding"         Value="14,8"/>
-      <Setter Property="FontWeight"      Value="SemiBold"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="TabItem">
-            <Border Padding="{TemplateBinding Padding}" Cursor="Hand">
-              <Border x:Name="ind" BorderThickness="0,0,0,2" BorderBrush="Transparent" Padding="0,0,0,3">
-                <ContentPresenter ContentSource="Header"/>
-              </Border>
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsSelected" Value="True">
-                <Setter Property="Foreground" Value="#E2E2F0"/>
-                <Setter TargetName="ind" Property="BorderBrush" Value="#6366F1"/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
     </Style>
 
   </Grid.Resources>

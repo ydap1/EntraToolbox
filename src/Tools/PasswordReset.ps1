@@ -119,17 +119,6 @@ $Script:PwResetXaml = @'
       Background="#12121C">
   <Grid.Resources>
 
-    <SolidColorBrush x:Key="Bg"       Color="#12121C"/>
-    <SolidColorBrush x:Key="Surface"  Color="#1C1C2A"/>
-    <SolidColorBrush x:Key="Card"     Color="#242436"/>
-    <SolidColorBrush x:Key="Border"   Color="#3C3C5A"/>
-    <SolidColorBrush x:Key="Accent"   Color="#6366F1"/>
-    <SolidColorBrush x:Key="Danger"   Color="#EF4444"/>
-    <SolidColorBrush x:Key="Success"  Color="#22C55E"/>
-    <SolidColorBrush x:Key="Text"     Color="#E2E2F0"/>
-    <SolidColorBrush x:Key="TextDim"  Color="#7878A0"/>
-    <SolidColorBrush x:Key="Muted"    Color="#50507A"/>
-
     <Style x:Key="PrimaryBtn" TargetType="Button">
       <Setter Property="Foreground"      Value="White"/>
       <Setter Property="FontWeight"      Value="SemiBold"/>
@@ -269,39 +258,6 @@ $Script:PwResetXaml = @'
       <Setter Property="BorderThickness" Value="0,0,0,1"/>
       <Setter Property="FontSize"        Value="11"/>
       <Setter Property="Cursor"          Value="Hand"/>
-    </Style>
-
-    <Style x:Key="DgRow" TargetType="DataGridRow">
-      <Setter Property="Background" Value="Transparent"/>
-      <Style.Triggers>
-        <Trigger Property="IsSelected"  Value="True">
-          <Setter Property="Background" Value="#2A2A50"/>
-        </Trigger>
-        <Trigger Property="IsMouseOver" Value="True">
-          <Setter Property="Background" Value="#1E1E38"/>
-        </Trigger>
-      </Style.Triggers>
-    </Style>
-
-    <Style x:Key="DgCell" TargetType="DataGridCell">
-      <Setter Property="Background"      Value="Transparent"/>
-      <Setter Property="Foreground"      Value="#E2E2F0"/>
-      <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="Padding"         Value="12,0"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="DataGridCell">
-            <Border Padding="{TemplateBinding Padding}" Background="{TemplateBinding Background}">
-              <ContentPresenter VerticalAlignment="Center"/>
-            </Border>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-
-    <Style TargetType="TabControl">
-      <Setter Property="Background"      Value="#12121C"/>
-      <Setter Property="BorderThickness" Value="0"/>
     </Style>
 
     <Style TargetType="TabItem">
