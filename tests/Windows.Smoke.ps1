@@ -10,6 +10,7 @@ $window = $null
 try {
     Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
     . "$root/src/Auth.ps1"
+    . "$root/src/Import.ps1"
     . "$root/src/Demo.ps1"
     foreach ($file in Get-ChildItem "$root/src/Tools" -Filter *.ps1) { . $file.FullName }
     . "$root/src/MainWindow.ps1"
@@ -27,12 +28,19 @@ try {
             $documents.Add($node.Value)
         }
     }
+    # These are built once from $Script:Theme when Auth.ps1 is dot-sourced, so
+    # each must be rebuilt per preset or the loop would keep re-testing the
+    # first theme's colours in every injected style.
     $authAst = [Management.Automation.Language.Parser]::ParseFile("$root/src/Auth.ps1", [ref]$null, [ref]$null)
-    $mapAssignment = $authAst.Find({ param($a) $a -is [Management.Automation.Language.AssignmentStatementAst] -and $a.Left.Extent.Text -eq '$Script:ThemeMap' }, $true)
+    $themeAssignments = foreach ($name in '$Script:ThemeMap', '$Script:ThemeScrollBarStyle', '$Script:ThemeSharedStyles') {
+        $found = $authAst.Find({ param($a) $a -is [Management.Automation.Language.AssignmentStatementAst] -and $a.Left.Extent.Text -eq $name }.GetNewClosure(), $true)
+        if (-not $found) { throw "Smoke test could not find the $name assignment in Auth.ps1." }
+        $found.Extent.Text
+    }
     foreach ($preset in $Script:ThemePresets.Keys) {
         $Script:Theme = $Script:ThemeBase.Clone()
         foreach ($key in $Script:ThemePresets[$preset].Keys) { $Script:Theme[$key] = $Script:ThemePresets[$preset][$key] }
-        . ([scriptblock]::Create($mapAssignment.Extent.Text))
+        foreach ($assignment in $themeAssignments) { . ([scriptblock]::Create($assignment)) }
         foreach ($xaml in $documents) {
             $reader = [Xml.XmlNodeReader]::new([xml](Invoke-ThemeXaml $xaml))
             try { $null = [Windows.Markup.XamlReader]::Load($reader) } finally { $reader.Close() }
