@@ -204,6 +204,8 @@ function Start-GcCopy {
         -IntervalMs 500 `
         -Vars    @{ SrcGroups = $srcGroups; TgtUserId = $tgtUser.id } `
         -RefSeed @{
+            SrcUpn  = $srcUser.userPrincipalName
+            TgtUpn  = $tgtUser.userPrincipalName
             Added   = [System.Collections.Generic.List[string]]::new()
             Skipped = [System.Collections.Generic.List[string]]::new()
             Failed  = [System.Collections.Generic.List[string]]::new()
@@ -258,6 +260,10 @@ function Start-GcCopy {
                     Write-GcLog $summary 'Text'
                     Set-MainStatus $summary $(if ($failed.Count) { 'Warning' } else { 'Success' })
                     Write-Log "GC: $summary" 'INFO'
+                    Write-EtbAudit -Tool 'Group Copy' -Action 'Copy group memberships' `
+                                   -Target $ref['TgtUpn'] `
+                                   -Result $(if ($failed.Count) { 'Partial' } else { 'OK' }) `
+                                   -Detail "From $($ref['SrcUpn']): $($added.Count) added, $($skipped.Count) skipped, $($failed.Count) failed"
                 }
 
                 $Script:GC_UI.SrcList.IsEnabled = $true

@@ -278,10 +278,14 @@ function Start-BucApply {
                     $ok++
                     Write-BucLog "Changed: $($res['OldUpn'])  →  $($res['NewUpn'])" 'Success'
                     if ($row) { $row.Status = 'Done' }
+                    Write-EtbAudit -Tool 'Bulk UPN Change' -Action 'Change UPN' `
+                                   -Target $res['OldUpn'] -Detail "New UPN: $($res['NewUpn'])"
                 } else {
                     $fail++
                     Write-BucLog "Failed:  $($res['OldUpn']) — $($res['Err'])" 'Danger'
                     if ($row) { $row.Status = 'Error' }
+                    Write-EtbAudit -Tool 'Bulk UPN Change' -Action 'Change UPN' `
+                                   -Target $res['OldUpn'] -Result 'Failed' -Detail $res['Err']
                 }
             }
             $Script:BUC_UI.PreviewGrid.Items.Refresh()

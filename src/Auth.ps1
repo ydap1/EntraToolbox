@@ -182,6 +182,7 @@ function New-BackgroundRunspace {
 $Script:EtbWorkerPreamble = Get-Content (Join-Path $PSScriptRoot 'Graph.ps1') -Raw
 . (Join-Path $PSScriptRoot 'Graph.ps1')
 . (Join-Path $PSScriptRoot 'Data.ps1')
+. (Join-Path $PSScriptRoot 'Audit.ps1')
 
 # ── WPF-safe async runspace + completion timer ────────────────────────────────
 # Runs $Script in a background Runspace with $Ref (synchronized hashtable), $Token
@@ -251,6 +252,8 @@ function Reset-EtbSessionWork {
     $Script:TokenRefreshBusy = $false
     $Script:AuthRef = $null
     $Script:CurrentTenantId = $null
+    $Script:CurrentAccountUPN = $null
+    $Script:AuditPathLogged = $false
     $Script:TokenExpiresOn = $null
     $Script:AccessToken = $null
 }
@@ -817,6 +820,8 @@ function Invoke-ThemeXaml([string]$Xaml) {
 # ── Shared state ───────────────────────────────────────────────────────────────
 $Script:AccessToken       = $null
 $Script:CurrentTenantId   = $null
+# UPN of the signed-in administrator; named as the operator on every audit row.
+$Script:CurrentAccountUPN = $null
 
 # Well-known Microsoft Intune PowerShell public client app ID - no app registration needed
 $Script:GraphClientId = '14d82eec-204b-4c2f-b7e8-296a70dab67e'
@@ -1221,6 +1226,7 @@ function Start-TenantConnectAsync {
                 # ensure the tenant row exists before we write the account hint into it.
                 Invoke-EtbScript $Script:AuthSuccess
                 if ($Script:AuthRef['AccountUPN']) {
+                    $Script:CurrentAccountUPN = $Script:AuthRef['AccountUPN']
                     Set-TenantAccountHint -TenantId $Script:AuthRef['TenantId'] `
                                           -AccountHint $Script:AuthRef['AccountUPN']
                     Write-Log "Auth: account hint saved ($($Script:AuthRef['AccountUPN']))" 'DEBUG'

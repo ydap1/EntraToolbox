@@ -11,10 +11,113 @@ $Script:LW_UI           = $null
 $Script:LW_AllUsers     = @()
 $Script:LW_SelectedUser = $null
 $Script:LW_RunTimer     = $null
+$Script:LW_RestoreTimer = $null
 
 function Write-LwLog {
     param([string]$Msg, [string]$Color = 'TextDim')
     Write-AppLog $Msg $Color
+}
+
+# ── Membership snapshots ──────────────────────────────────────────────────────
+# Removing every group membership is the one step here that cannot be worked
+# out again afterwards: once the memberships are gone, nothing records what the
+# account used to belong to. Each live run writes the removed groups to
+# config\leavers\ so a workflow run against the wrong account can be undone.
+function Save-LwGroupSnapshot {
+    param($User, $Groups)
+    if ($Script:DemoMode -or -not $User -or -not $Groups -or $Groups.Count -eq 0) { return }
+    try {
+        $dir = Join-Path $Global:AppRoot 'config\leavers'
+        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        $safe = ($User.userPrincipalName -replace '[^a-zA-Z0-9._-]', '_')
+        $path = Join-Path $dir "$safe-$(Get-Date -Format 'yyyyMMdd-HHmmss').json"
+        [pscustomobject]@{
+            UserId      = $User.id
+            Upn         = $User.userPrincipalName
+            DisplayName = $User.displayName
+            RemovedAt   = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+            Groups      = @($Groups | ForEach-Object { [pscustomobject]@{ Id = $_.Id; Name = $_.Name } })
+        } | ConvertTo-Json -Depth 4 | Set-Content -Path $path -Encoding UTF8
+        Write-LwLog "Saved membership snapshot: $path" 'Muted'
+    } catch {
+        Write-Log "LW snapshot save failed: $_" 'ERROR'
+    }
+}
+
+function Start-LwRestore {
+    $dlg = New-Object Microsoft.Win32.OpenFileDialog
+    $dlg.Filter           = 'Membership snapshot (*.json)|*.json'
+    $dlg.Title            = 'Restore group memberships from snapshot'
+    $dlg.InitialDirectory = Join-Path $Global:AppRoot 'config\leavers'
+    if (-not $dlg.ShowDialog()) { return }
+
+    try {
+        $snap = Get-Content -Path $dlg.FileName -Raw | ConvertFrom-Json
+    } catch {
+        Write-LwLog "Could not read snapshot: $_" 'Danger'
+        return
+    }
+    if (-not $snap.UserId -or -not $snap.Groups) {
+        Write-LwLog 'Snapshot is missing a user or group list.' 'Danger'
+        return
+    }
+
+    $groups = @($snap.Groups)
+    if ($Script:DryMode) {
+        Write-LwLog "[DRY] Would restore $($groups.Count) group membership(s) for $($snap.Upn)" 'Warning'
+        return
+    }
+    if ($Script:DemoMode) {
+        Write-LwLog "Demo: would restore $($groups.Count) membership(s) for $($snap.Upn)." 'Warning'
+        return
+    }
+
+    $Script:LW_UI.BtnRestore.IsEnabled = $false
+    Write-LwLog "Restoring $($groups.Count) membership(s) for $($snap.Upn)..." 'TextDim'
+
+    if ($Script:LW_RestoreTimer) { $Script:LW_RestoreTimer.Stop() }
+    $Script:LW_RestoreTimer = Start-AsyncWork `
+        -Vars    @{ UserId = $snap.UserId; Groups = $groups } `
+        -RefSeed @{ Upn = $snap.Upn; Restored = 0; Results = @() } `
+        -Script {
+            $out = [System.Collections.Generic.List[object]]::new()
+            $body = @{ '@odata.id' = "https://graph.microsoft.com/v1.0/directoryObjects/$UserId" } | ConvertTo-Json
+            foreach ($g in $Groups) {
+                try {
+                    Invoke-RestMethod `
+                        -Uri "https://graph.microsoft.com/v1.0/groups/$($g.Id)/members/`$ref" `
+                        -Headers @{ Authorization = "Bearer $Token"; 'Content-Type' = 'application/json' } `
+                        -Method POST -Body $body -ErrorAction Stop
+                    $out.Add(@{ Name = $g.Name; Ok = $true; Err = '' })
+                } catch {
+                    $out.Add(@{ Name = $g.Name; Ok = $false; Err = $_.Exception.Message })
+                }
+            }
+            $Ref['Results'] = $out.ToArray()
+        } -OnComplete {
+            param($ref)
+            try {
+                $Script:LW_UI.BtnRestore.IsEnabled = $true
+                if ($ref['Error']) {
+                    Write-LwLog "Restore failed: $($ref['Error'])" 'Danger'
+                    return
+                }
+                $ok = 0; $fail = 0
+                foreach ($r in $ref['Results']) {
+                    if ($r['Ok']) { $ok++; Write-LwLog "Restored: $($r['Name'])" 'Success' }
+                    else { $fail++; Write-LwLog "Restore failed: $($r['Name']) — $($r['Err'])" 'Danger' }
+                }
+                $summary = "Restore complete — $ok restored, $fail failed."
+                $color = if ($fail -gt 0) { 'Warning' } else { 'Success' }
+                Write-LwLog $summary $color
+                Set-MainStatus $summary $color
+                Write-EtbAudit -Tool 'Leaver Workflow' -Action 'Restore group memberships' `
+                               -Target $ref['Upn'] -Result $(if ($fail -gt 0) { 'Partial' } else { 'OK' }) `
+                               -Detail "$ok restored, $fail failed"
+            } catch {
+                Write-Log "LW restore-timer error: $_" 'ERROR'
+            }
+        }
 }
 
 function Start-LwUserLoad {
@@ -122,6 +225,9 @@ function Start-LwRun {
             RevokeErr     = $null
             GroupsRemoved = [System.Collections.Generic.List[string]]::new()
             GroupsFailed  = [System.Collections.Generic.List[string]]::new()
+            # id + name of every group actually removed, so the membership can
+            # be put back if the workflow was run against the wrong account.
+            RemovedDetail = [System.Collections.Generic.List[object]]::new()
         } `
         -Script {
             if ($Ref['DoDisable']) {
@@ -168,6 +274,7 @@ function Start-LwRun {
                             -Headers @{ Authorization = "Bearer $Token" } `
                             -Method DELETE -ErrorAction Stop
                         $Ref['GroupsRemoved'].Add($grp.displayName)
+                        $Ref['RemovedDetail'].Add(@{ Id = $grp.id; Name = $grp.displayName })
                     } catch {
                         $Ref['GroupsFailed'].Add("$($grp.displayName): $($_.Exception.Message)")
                     }
@@ -180,18 +287,25 @@ function Start-LwRun {
                     Write-LwLog "Workflow error: $($ref['Error'])" 'Danger'
                     Set-MainStatus 'Leaver workflow failed.' 'Danger'
                 } else {
+                    $upn = if ($Script:LW_SelectedUser) { $Script:LW_SelectedUser.userPrincipalName } else { '' }
                     if ($ref['DoDisable']) {
                         if ($ref['DisableErr']) {
                             Write-LwLog "Disable account: FAILED — $($ref['DisableErr'])" 'Danger'
+                            Write-EtbAudit -Tool 'Leaver Workflow' -Action 'Disable account' -Target $upn `
+                                           -Result 'Failed' -Detail $ref['DisableErr']
                         } else {
                             Write-LwLog 'Disable account: done' 'Success'
+                            Write-EtbAudit -Tool 'Leaver Workflow' -Action 'Disable account' -Target $upn
                         }
                     }
                     if ($ref['DoRevoke']) {
                         if ($ref['RevokeErr']) {
                             Write-LwLog "Revoke sessions: FAILED — $($ref['RevokeErr'])" 'Danger'
+                            Write-EtbAudit -Tool 'Leaver Workflow' -Action 'Revoke sessions' -Target $upn `
+                                           -Result 'Failed' -Detail $ref['RevokeErr']
                         } else {
                             Write-LwLog 'Revoke sign-in sessions: done' 'Success'
+                            Write-EtbAudit -Tool 'Leaver Workflow' -Action 'Revoke sessions' -Target $upn
                         }
                     }
                     if ($ref['DoGroups']) {
@@ -200,6 +314,10 @@ function Start-LwRun {
                         $nr = $ref['GroupsRemoved'].Count
                         $nf = $ref['GroupsFailed'].Count
                         Write-LwLog "Groups: $nr removed, $nf failed" 'Text'
+                        Write-EtbAudit -Tool 'Leaver Workflow' -Action 'Remove all group memberships' `
+                                       -Target $upn -Result $(if ($nf -gt 0) { 'Partial' } else { 'OK' }) `
+                                       -Detail "$nr removed, $nf failed"
+                        Save-LwGroupSnapshot -User $Script:LW_SelectedUser -Groups $ref['RemovedDetail']
                     }
                     $displayName = if ($Script:LW_SelectedUser) { $Script:LW_SelectedUser.displayName } else { 'user' }
                     $summary = "Leaver workflow complete for $displayName"
@@ -320,10 +438,16 @@ $Script:LwXaml = @'
           <TextBlock x:Name="LwSelState" Foreground="#50507A" FontSize="10"
                      FontWeight="Bold" Margin="0,5,0,0"/>
         </StackPanel>
-        <Button x:Name="LwBtnRun" Grid.Column="1"
-                Content="Run Leaver Workflow" IsEnabled="False"
-                Style="{StaticResource PrimaryBtn}" Background="#EF4444"
-                Padding="18,10" FontSize="13" VerticalAlignment="Center"/>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+          <Button x:Name="LwBtnRestore" Content="Restore Groups…"
+                  Style="{StaticResource PrimaryBtn}" Background="#3C3C5A"
+                  Padding="14,10" FontSize="12" Margin="0,0,10,0"
+                  ToolTip="Put back the group memberships a previous leaver run removed"/>
+          <Button x:Name="LwBtnRun"
+                  Content="Run Leaver Workflow" IsEnabled="False"
+                  Style="{StaticResource PrimaryBtn}" Background="#EF4444"
+                  Padding="18,10" FontSize="13"/>
+        </StackPanel>
       </Grid>
     </Border>
 
@@ -384,6 +508,7 @@ function Initialize-LeaverWorkflowTool {
         SelUpn     = $content.FindName('LwSelUpn')
         SelState   = $content.FindName('LwSelState')
         BtnRun     = $content.FindName('LwBtnRun')
+        BtnRestore = $content.FindName('LwBtnRestore')
         ChkDisable = $content.FindName('LwChkDisable')
         ChkRevoke  = $content.FindName('LwChkRevoke')
         ChkGroups  = $content.FindName('LwChkGroups')
@@ -409,11 +534,17 @@ function Initialize-LeaverWorkflowTool {
         catch { Write-Log "LW BtnRun click error: $_" 'ERROR' }
     })
 
+    $Script:LW_UI.BtnRestore.Add_Click({
+        try { Start-LwRestore }
+        catch { Write-Log "LW BtnRestore click error: $_" 'ERROR' }
+    })
+
     Register-ConnectCallback 'Start-LwUserLoad'
     $Script:ResetCallbacks.Add({
         $Script:LW_AllUsers     = @()
         $Script:LW_SelectedUser = $null
-        if ($Script:LW_RunTimer)  { $Script:LW_RunTimer.Stop() }
+        if ($Script:LW_RunTimer)     { $Script:LW_RunTimer.Stop() }
+        if ($Script:LW_RestoreTimer) { $Script:LW_RestoreTimer.Stop() }
         Clear-EtbList $Script:LW_UI.UserList
         $Script:LW_UI.UserSearch.Text      = ''
         $Script:LW_UI.UserSearch.IsEnabled = $false

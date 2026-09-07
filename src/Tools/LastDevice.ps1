@@ -924,9 +924,13 @@ function Initialize-LastDeviceTool {
                     if ($ref['Error']) {
                         Write-LdLog "Sync failed for $($ref['DeviceName']): $($ref['Error'])" 'Danger'
                         Set-MainStatus 'Sync request failed.' 'Danger'
+                        Write-EtbAudit -Tool 'Last Device' -Action 'Request Intune sync' `
+                                       -Target $ref['DeviceName'] -Result 'Failed' -Detail $ref['Error']
                     } else {
                         Write-LdLog "Intune sync requested for $($ref['DeviceName'])" 'Success'
                         Set-MainStatus "Sync requested: $($ref['DeviceName'])" 'Success'
+                        Write-EtbAudit -Tool 'Last Device' -Action 'Request Intune sync' `
+                                       -Target $ref['DeviceName']
                     }
                 }
         } catch {

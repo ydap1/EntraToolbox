@@ -241,7 +241,7 @@ function Start-LaRemove {
     if ($Script:LA_ActionTimer) { $Script:LA_ActionTimer.Stop() }
     $Script:LA_ActionTimer = Start-AsyncWork `
         -Vars    @{ UserId = $user.id; SkuId = $lic.skuId } `
-        -RefSeed @{ Name = $user.displayName } `
+        -RefSeed @{ Name = $user.displayName; Upn = $user.userPrincipalName; Sku = [string]$sel.Content } `
         -Script {
             $body = "{`"addLicenses`":[],`"removeLicenses`":[`"$SkuId`"]}"
             Invoke-RestMethod `
@@ -254,10 +254,14 @@ function Start-LaRemove {
                 if ($ref['Error']) {
                     Write-LaLog "Remove failed: $($ref['Error'])" 'Danger'
                     Set-MainStatus 'Remove licence failed.' 'Danger'
+                    Write-EtbAudit -Tool 'Licence Assignment' -Action 'Remove licence' `
+                                   -Target $ref.Upn -Result 'Failed' -Detail "$($ref.Sku): $($ref['Error'])"
                 } else {
                     $displayName = $ref.Name
                     Write-LaLog "Licence removed from $displayName." 'Success'
                     Set-MainStatus 'Licence removed.' 'Success'
+                    Write-EtbAudit -Tool 'Licence Assignment' -Action 'Remove licence' `
+                                   -Target $ref.Upn -Detail $ref.Sku
                     if ($Script:LA_SelectedUser) { Start-LaLicenceLoad -UserId $Script:LA_SelectedUser.id }
                 }
                 $Script:LA_UI.BtnRemove.IsEnabled = $false
@@ -289,7 +293,7 @@ function Start-LaAssign {
     if ($Script:LA_ActionTimer) { $Script:LA_ActionTimer.Stop() }
     $Script:LA_ActionTimer = Start-AsyncWork `
         -Vars    @{ UserId = $user.id; SkuId = $sku.skuId } `
-        -RefSeed @{ Name = $user.displayName } `
+        -RefSeed @{ Name = $user.displayName; Upn = $user.userPrincipalName; Sku = [string]$sel.Content } `
         -Script {
             $body = "{`"addLicenses`":[{`"skuId`":`"$SkuId`"}],`"removeLicenses`":[]}"
             Invoke-RestMethod `
@@ -302,10 +306,14 @@ function Start-LaAssign {
                 if ($ref['Error']) {
                     Write-LaLog "Assign failed: $($ref['Error'])" 'Danger'
                     Set-MainStatus 'Assign licence failed.' 'Danger'
+                    Write-EtbAudit -Tool 'Licence Assignment' -Action 'Assign licence' `
+                                   -Target $ref.Upn -Result 'Failed' -Detail "$($ref.Sku): $($ref['Error'])"
                 } else {
                     $displayName = $ref.Name
                     Write-LaLog "Licence assigned to $displayName." 'Success'
                     Set-MainStatus 'Licence assigned.' 'Success'
+                    Write-EtbAudit -Tool 'Licence Assignment' -Action 'Assign licence' `
+                                   -Target $ref.Upn -Detail $ref.Sku
                     if ($Script:LA_SelectedUser) { Start-LaLicenceLoad -UserId $Script:LA_SelectedUser.id }
                 }
                 $Script:LA_UI.BtnAssign.IsEnabled = $false

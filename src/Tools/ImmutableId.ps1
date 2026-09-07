@@ -440,6 +440,8 @@ Type YES (all capitals) to confirm.
                     $row = $Script:IID_Rows | Where-Object { $_.Id -eq $res.Id } | Select-Object -First 1
                     if (-not $row) { continue }
                     if ($res.Success) {
+                        Write-EtbAudit -Tool 'Immutable ID' -Action 'Assign immutable ID' `
+                                       -Target $row.Upn -Detail $row.NewId
                         $row.Status      = 'Assigned'
                         $row.CurrentId   = $row.NewId
                         $row.NewId       = ''
@@ -448,6 +450,8 @@ Type YES (all capitals) to confirm.
                     } else {
                         $row.Status = 'Error'
                         Write-IidLog "  Error on $($row.Name): $($res.Error)" 'Danger'
+                        Write-EtbAudit -Tool 'Immutable ID' -Action 'Assign immutable ID' `
+                                       -Target $row.Upn -Result 'Failed' -Detail $res.Error
                         $err++
                     }
                 }
@@ -540,6 +544,8 @@ Type YES (all capitals) to confirm.
                     $row = $Script:IID_Rows | Where-Object { $_.Id -eq $res.Id } | Select-Object -First 1
                     if (-not $row) { continue }
                     if ($res.Success) {
+                        Write-EtbAudit -Tool 'Immutable ID' -Action 'Remove immutable ID' `
+                                       -Target $row.Upn -Detail "Was: $($row.CurrentId)"
                         $row.Status      = 'Removed'
                         $row.CurrentId   = '—'
                         $row.NewId       = ''
@@ -548,6 +554,8 @@ Type YES (all capitals) to confirm.
                     } else {
                         $row.Status = 'Error'
                         Write-IidLog "  Error on $($row.Name): $($res.Error)" 'Danger'
+                        Write-EtbAudit -Tool 'Immutable ID' -Action 'Remove immutable ID' `
+                                       -Target $row.Upn -Result 'Failed' -Detail $res.Error
                         $err++
                     }
                 }

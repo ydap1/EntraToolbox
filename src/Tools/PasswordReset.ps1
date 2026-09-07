@@ -55,6 +55,23 @@ function Write-PwLog {
     Write-AppLog $Msg $Color
 }
 
+# Applies one worker result to its grid row, the activity pane and the change
+# record. Shared by the progress ticks and the final drain so a result is
+# handled identically wherever it arrives.
+function Complete-PwResetRow {
+    param($Item)
+    $row = $Script:PwReset_Rows | Where-Object { $_.Id -eq $Item.Id } | Select-Object -First 1
+    if ($row) { $row.Status = if ($Item.Ok) { 'OK' } else { 'Failed' } }
+    if ($Item.Ok) {
+        Write-AppLog "OK: $($Item.Name)  ($($Item.Upn))" 'Success'
+        Write-EtbAudit -Tool 'Year Group Passwords' -Action 'Reset password' -Target $Item.Upn
+    } else {
+        Write-AppLog "FAILED: $($Item.Name) — $($Item.Err)" 'Danger'
+        Write-EtbAudit -Tool 'Year Group Passwords' -Action 'Reset password' -Target $Item.Upn `
+                       -Result 'Failed' -Detail $Item.Err
+    }
+}
+
 # ── Async user load ────────────────────────────────────────────────────────────
 $Script:PwResetTimer = $null
 
@@ -695,10 +712,7 @@ function Initialize-PasswordResetTool {
                     param($ref)
                     $item = $null
                     while ($ref['Queue'].TryDequeue([ref]$item)) {
-                        $row = $Script:PwReset_Rows | Where-Object { $_.Id -eq $item.Id } | Select-Object -First 1
-                        if ($row) { $row.Status = if ($item.Ok) { 'OK' } else { 'Failed' } }
-                        $logMsg = if ($item.Ok) { "OK: $($item.Name)  ($($item.Upn))" } else { "FAILED: $($item.Name) — $($item.Err)" }
-                        Write-AppLog $logMsg $(if ($item.Ok) { 'Success' } else { 'Danger' })
+                        Complete-PwResetRow $item
                     }
                     $Script:PwReset_UI.Grid.Items.Refresh()
                     $Script:PwReset_UI.Progress.Value = $ref['Ok'] + $ref['Fail']
@@ -709,10 +723,7 @@ function Initialize-PasswordResetTool {
                         # Drain any items that arrived after the last OnProgress tick
                         $item = $null
                         while ($ref['Queue'].TryDequeue([ref]$item)) {
-                            $row = $Script:PwReset_Rows | Where-Object { $_.Id -eq $item.Id } | Select-Object -First 1
-                            if ($row) { $row.Status = if ($item.Ok) { 'OK' } else { 'Failed' } }
-                            $logMsg = if ($item.Ok) { "OK: $($item.Name)  ($($item.Upn))" } else { "FAILED: $($item.Name) — $($item.Err)" }
-                            Write-AppLog $logMsg $(if ($item.Ok) { 'Success' } else { 'Danger' })
+                            Complete-PwResetRow $item
                         }
                         $Script:PwReset_UI.Grid.Items.Refresh()
                         $ok   = $ref['Ok']

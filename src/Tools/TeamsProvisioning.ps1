@@ -474,6 +474,7 @@ function Start-TpCreateTeam {
             MemberSnap = $memberSnap
         } `
         -RefSeed @{
+            TeamName    = $teamName
             TeamId      = $null
             MembersOk   = 0
             MembersFail = 0
@@ -567,6 +568,8 @@ function Start-TpCreateTeam {
                     Set-MainStatus 'Team creation failed.' 'Danger'
                     $Script:TP_UI.LblTeamStatus.Text       = 'Team   FAILED'
                     $Script:TP_UI.LblTeamStatus.Foreground = (Get-ThemeHex 'Danger')
+                    Write-EtbAudit -Tool 'Teams Provisioning' -Action 'Create team' `
+                                   -Target $ref['TeamName'] -Result 'Failed' -Detail $ref['Error']
                 } else {
                     $ok   = $ref['MembersOk']
                     $fail = $ref['MembersFail']
@@ -579,6 +582,10 @@ function Start-TpCreateTeam {
                     $Script:TP_UI.LblAdded.Text            = "Added  $ok"
                     $Script:TP_UI.LblFailed.Text           = "Failed $fail"
                     $Script:TP_UI.LblFailed.Foreground     = if ($fail -gt 0) { (Get-ThemeHex 'Danger') } else { (Get-ThemeHex 'TextDim') }
+                    Write-EtbAudit -Tool 'Teams Provisioning' -Action 'Create team' `
+                                   -Target $ref['TeamName'] `
+                                   -Result $(if ($fail -gt 0) { 'Partial' } else { 'OK' }) `
+                                   -Detail "$ok members added, $fail failed"
                 }
 
                 $Script:TP_UI.PnlStats.Visibility     = 'Visible'

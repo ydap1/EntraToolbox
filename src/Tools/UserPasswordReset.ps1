@@ -464,7 +464,7 @@ function Start-UprPasswordReset {
     Set-MainStatus "Resetting password for $($User.displayName)..." 'TextDim'
     $Script:UPR_ResetTimer = Start-AsyncWork `
         -Vars @{ UserId = $User.id; Password = $Password; Force = $Force } `
-        -RefSeed @{ UserId = $User.id; Name = $User.displayName; Force = $Force; ForceLabel = $forceLabel } `
+        -RefSeed @{ UserId = $User.id; Name = $User.displayName; Upn = $User.userPrincipalName; Force = $Force; ForceLabel = $forceLabel } `
         -Script {
             $body = @{ passwordProfile = @{ password = [Net.NetworkCredential]::new('', $Password).Password; forceChangePasswordNextSignIn = $Force } } | ConvertTo-Json
             Invoke-RestMethod -Uri "https://graph.microsoft.com/v1.0/users/$UserId" `
@@ -483,6 +483,9 @@ function Start-UprPasswordReset {
             $color = if ($ref.Error) { 'Danger' } else { 'Success' }
             Write-UprLog $message $color
             Set-MainStatus $message $color
+            Write-EtbAudit -Tool 'User Password Reset' -Action 'Reset password' -Target $ref.Upn `
+                           -Result $(if ($ref.Error) { 'Failed' } else { 'OK' }) `
+                           -Detail $(if ($ref.Error) { $ref.Error } else { $ref.ForceLabel })
             if ($Script:UPR_UI.UserList.SelectedItem.Tag.id -ne $ref.UserId) { return }
             $Script:UPR_UI.InlineStatus.Text = $message
             $Script:UPR_UI.InlineStatus.Foreground = Get-ThemeHex $color
