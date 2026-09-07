@@ -225,6 +225,7 @@ function Start-GcCopy {
                     $Ref['Skipped'].Add("$($grp.displayName) (managed or privileged membership)")
                     continue
                 }
+                if ($Ref['CancelRequested']) { break }
                 if ($tgtGroupIds.Contains($grp.id)) {
                     $Ref['Skipped'].Add($grp.displayName)
                     continue

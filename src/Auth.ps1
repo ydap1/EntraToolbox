@@ -227,6 +227,27 @@ function Stop-EtbAsyncWork {
     Complete-EtbAsyncWork $Timer
 }
 
+# Cooperative cancellation for long batches. Unlike Stop-EtbAsyncWork, which
+# aborts the pipeline and never reaches OnComplete, this asks the worker to stop
+# at its next loop iteration. The request it is already on finishes, results
+# collected so far are kept, and OnComplete still runs — so the tool can report
+# how far it got and re-enable its own controls.
+function Request-EtbAsyncCancel {
+    param($Timer)
+    if (-not $Timer -or -not $Timer.Tag -or -not $Timer.Tag.Ref) { return }
+    $Timer.Tag.Ref['CancelRequested'] = $true
+}
+
+# Access tokens expire after roughly an hour. A worker captures the token when
+# it starts, so a batch that outlives it used to fail the rest of its items with
+# 401. The silent refresh publishes the new token into every live worker's $Ref,
+# and the Graph shim in Graph.ps1 picks it up on the next request.
+function Publish-EtbWorkerToken {
+    foreach ($job in $Script:AsyncJobs.ToArray()) {
+        if ($job.Tag -and $job.Tag.Ref) { $job.Tag.Ref['Token'] = $Script:AccessToken }
+    }
+}
+
 function Start-EtbWorkerCleanup {
     if (-not $Script:WorkerCleanupTimer) {
         $Script:WorkerCleanupTimer = New-EtbDispatcherTimer
@@ -269,14 +290,18 @@ function Start-AsyncWork {
         [switch]$NoToken,
         [switch]$SessionIndependent
     )
-    $seed = @{ Done = $false; Error = $null; Cancelled = $false }
+    $seed = @{ Done = $false; Error = $null; Cancelled = $false; CancelRequested = $false }
     foreach ($k in $RefSeed.Keys) { $seed[$k] = $RefSeed[$k] }
     $ref = [hashtable]::Synchronized($seed)
 
     $rs = New-BackgroundRunspace
     $rs.SessionStateProxy.SetVariable('Ref', $ref)
     $rs.SessionStateProxy.SetVariable('DryMode', $Script:DryMode)
-    if (-not $NoToken) { $rs.SessionStateProxy.SetVariable('Token', $Script:AccessToken) }
+    if (-not $NoToken) {
+        $rs.SessionStateProxy.SetVariable('Token', $Script:AccessToken)
+        # Also on $Ref so a silent refresh can replace it mid-run.
+        $ref['Token'] = $Script:AccessToken
+    }
     foreach ($k in $Vars.Keys) { $rs.SessionStateProxy.SetVariable($k, $Vars[$k]) }
     # Compile worker source inside the background runspace so Invoke-RestMethod etc.
     # resolve against that runspace — passing a main-session scriptblock does not.
@@ -1301,6 +1326,7 @@ function Invoke-TokenRefreshCheck {
             if ($ref['Token']) {
                 $Script:AccessToken    = $ref['Token']
                 $Script:TokenExpiresOn = $ref['ExpiresOn']
+                Publish-EtbWorkerToken
                 Write-Log 'Auth: access token refreshed silently' 'INFO'
             }
         }

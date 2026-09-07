@@ -268,6 +268,7 @@ function Start-LwRun {
                 } while ($url)
 
                 foreach ($grp in $groups) {
+                    if ($Ref['CancelRequested']) { break }
                     try {
                         Invoke-RestMethod `
                             -Uri "https://graph.microsoft.com/v1.0/groups/$($grp.id)/members/$UserId/`$ref" `

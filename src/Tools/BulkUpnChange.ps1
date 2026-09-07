@@ -248,6 +248,7 @@ function Start-BucApply {
     $Script:BUC_ApplyTimer = Start-AsyncWork -RefSeed @{ Results = @() } -Vars @{ Pending = $work } -IntervalMs 500 -Script {
         $out = [System.Collections.Generic.List[object]]::new()
         foreach ($r in $Pending) {
+            if ($Ref['CancelRequested']) { break }
             $res = @{ Id = $r.Id; OldUpn = $r.OldUpn; NewUpn = $r.NewUpn; Ok = $false; Err = '' }
             try {
                 $body = @{ userPrincipalName = $r.NewUpn } | ConvertTo-Json

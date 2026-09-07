@@ -417,6 +417,7 @@ Type YES (all capitals) to confirm.
     $Script:IID_ApplyTimer = Start-AsyncWork -RefSeed @{ Results = @() } -Vars @{ Pending = $workItems } -Script {
         $out = [System.Collections.Generic.List[object]]::new()
         foreach ($item in $Pending) {
+            if ($Ref['CancelRequested']) { break }
             try {
                 $body = ConvertTo-Json @{ onPremisesImmutableId = $item.NewId } -Compress
                 $null = Invoke-RestMethod "https://graph.microsoft.com/v1.0/users/$($item.Id)" `
@@ -522,6 +523,7 @@ Type YES (all capitals) to confirm.
     $Script:IID_ApplyTimer = Start-AsyncWork -RefSeed @{ Results = @() } -Vars @{ Pending = $workItems } -Script {
         $out = [System.Collections.Generic.List[object]]::new()
         foreach ($item in $Pending) {
+            if ($Ref['CancelRequested']) { break }
             try {
                 $null = Invoke-RestMethod "https://graph.microsoft.com/v1.0/users/$($item.Id)" `
                     -Method PATCH -Headers @{ Authorization = "Bearer $Token" } `

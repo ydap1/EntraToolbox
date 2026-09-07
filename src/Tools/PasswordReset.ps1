@@ -373,6 +373,10 @@ $Script:PwResetXaml = @'
         <TextBlock Text="ACTIONS" Style="{StaticResource SectionLbl}"/>
         <Button x:Name="PwBtnRun" Content="Generate Passwords" IsEnabled="False"
                 Style="{StaticResource PrimaryBtn}" Background="#6366F1" Padding="0,10"/>
+        <Button x:Name="PwBtnStop" Content="Stop" Visibility="Collapsed"
+                Style="{StaticResource PrimaryBtn}" Background="#EF4444"
+                Padding="0,10" Margin="0,8,0,0"
+                ToolTip="Finish the account in progress, then stop"/>
         <Button x:Name="PwBtnExport" Content="Export CSV" IsEnabled="False"
                 Style="{StaticResource PrimaryBtn}" Background="#242436"
                 Foreground="#7878A0" Padding="0,10" Margin="0,8,0,0"/>
@@ -506,6 +510,7 @@ function Initialize-PasswordResetTool {
         PnlWarn        = $content.FindName('PwPnlWarn')
         ChkForce       = $content.FindName('PwChkForce')
         BtnRun         = $content.FindName('PwBtnRun')
+        BtnStop        = $content.FindName('PwBtnStop')
         BtnExport      = $content.FindName('PwBtnExport')
         Grid           = $content.FindName('PwGrid')
         Progress       = $content.FindName('PwProgress')
@@ -655,6 +660,8 @@ function Initialize-PasswordResetTool {
             $Script:PwReset_UI.Progress.Visibility     = 'Visible'
             $Script:PwReset_UI.Progress.Maximum        = $work.Count
             $Script:PwReset_UI.Progress.Value          = 0
+            $Script:PwReset_UI.BtnStop.Visibility      = 'Visible'
+            $Script:PwReset_UI.BtnStop.IsEnabled       = $true
 
             if ($Script:DemoMode) {
                 # Demo live run — instant simulation, no async needed
@@ -671,6 +678,7 @@ function Initialize-PasswordResetTool {
                 $Script:PwReset_UI.BtnExport.IsEnabled     = $true
                 $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $true
                 $Script:PwReset_UI.BtnSelectNone.IsEnabled = $true
+                $Script:PwReset_UI.BtnStop.Visibility      = 'Collapsed'
                 $Script:PwReset_UI.PnlStats.Visibility     = 'Visible'
                 $Script:PwReset_UI.LblTotal.Text           = "Total  $ok"
                 $Script:PwReset_UI.LblOK.Text              = "OK     $ok"
@@ -685,11 +693,12 @@ function Initialize-PasswordResetTool {
             # Real live run — async so the UI stays responsive
             if ($Script:PwResetTimer) { $Script:PwResetTimer.Stop() }
             $Script:PwResetTimer = Start-AsyncWork `
-                -RefSeed @{ Ok = 0; Fail = 0; Queue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new() } `
+                -RefSeed @{ Ok = 0; Fail = 0; Total = $work.Count; Queue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new() } `
                 -Vars @{ Work = $work; Force = $force } `
                 -IntervalMs 300 `
                 -Script {
                     foreach ($item in $Work) {
+                        if ($Ref['CancelRequested']) { break }
                         $r = @{ Id = $item.Id; Name = $item.DisplayName; Upn = $item.Upn; Ok = $false; Err = '' }
                         try {
                             $body = @{ passwordProfile = @{ password = $item.Password; forceChangePasswordNextSignIn = $Force } } | ConvertTo-Json
@@ -734,15 +743,23 @@ function Initialize-PasswordResetTool {
                         $Script:PwReset_UI.BtnExport.IsEnabled     = $true
                         $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $true
                         $Script:PwReset_UI.BtnSelectNone.IsEnabled = $true
+                        $Script:PwReset_UI.BtnStop.Visibility      = 'Collapsed'
                         $Script:PwReset_UI.PnlStats.Visibility     = 'Visible'
                         $Script:PwReset_UI.LblTotal.Text           = "Total  $($ok + $fail)"
                         $Script:PwReset_UI.LblOK.Text              = "OK     $ok"
                         $Script:PwReset_UI.LblFailed.Text          = "Failed $fail"
                         $Script:PwReset_UI.LblFailed.Foreground    = if ($fail -gt 0) { Get-ThemeHex 'Danger' } else { Get-ThemeHex 'TextDim' }
                         Update-PwSelectionLabel
-                        $col = if ($fail -gt 0) { 'Warning' } else { 'Success' }
-                        Write-PwLog "Live run complete — $ok OK, $fail failed." $col
-                        Set-MainStatus "Live run complete — $ok OK, $fail failed." $col
+                        $done    = $ok + $fail
+                        $stopped = $ref['CancelRequested'] -and $done -lt $ref['Total']
+                        $col = if ($fail -gt 0 -or $stopped) { 'Warning' } else { 'Success' }
+                        $summary = if ($stopped) {
+                            "Live run stopped after $done of $($ref['Total']) — $ok OK, $fail failed."
+                        } else {
+                            "Live run complete — $ok OK, $fail failed."
+                        }
+                        Write-PwLog $summary $col
+                        Set-MainStatus $summary $col
                     } catch {
                         Write-Log "PwReset OnComplete error: $_" 'ERROR'
                     }
@@ -751,6 +768,16 @@ function Initialize-PasswordResetTool {
             $Script:PwReset_Running = $false
             Write-Log "BtnRun click error: $_" 'ERROR'
         }
+    })
+
+    # Stop a live run — the account in flight finishes, then the worker returns
+    # so OnComplete can report how far it got.
+    $Script:PwReset_UI.BtnStop.Add_Click({
+        try {
+            $Script:PwReset_UI.BtnStop.IsEnabled = $false
+            Request-EtbAsyncCancel $Script:PwResetTimer
+            Write-PwLog 'Stopping after the account in progress...' 'Warning'
+        } catch { Write-Log "BtnStop click error: $_" 'ERROR' }
     })
 
     # Export CSV

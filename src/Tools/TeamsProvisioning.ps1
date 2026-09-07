@@ -533,6 +533,7 @@ function Start-TpCreateTeam {
             # Step 3 — Add members one by one
             $membersUrl = "https://graph.microsoft.com/v1.0/teams/$teamId/members"
             foreach ($m in $MemberSnap) {
+                if ($Ref['CancelRequested']) { break }
                 try {
                     $mBody = @{
                         '@odata.type'     = '#microsoft.graph.aadUserConversationMember'

@@ -40,6 +40,15 @@ function Invoke-RestMethod {
     if ($Script:DryMode -and $Method -notin 'GET', 'HEAD', 'OPTIONS') {
         throw 'Dry run is active. This request would modify the tenant.'
     }
+    # A batch can outlive the token captured when its worker started. The UI
+    # thread publishes each silent refresh into $Ref['Token'] (see
+    # Publish-EtbWorkerToken); use the current one rather than the captured one.
+    if ($Ref -and $Ref['Token'] -and $Headers['Authorization'] -like 'Bearer *') {
+        $current = @{}
+        foreach ($key in $Headers.Keys) { $current[$key] = $Headers[$key] }
+        $current['Authorization'] = "Bearer $($Ref['Token'])"
+        $Headers = $current
+    }
     $request = @{
         Uri = $Uri; Method = $Method; Headers = $Headers
         TimeoutSec = $TimeoutSec; MaximumRedirection = 0; ErrorAction = 'Stop'
