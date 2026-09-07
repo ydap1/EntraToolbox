@@ -62,6 +62,45 @@ function Update-BucGroupCombos {
     }
 }
 
+# Adds users named in a pasted list or CSV. Same row shape as Add-BucByField;
+# names that are not cloud-only users in this tenant are reported, not dropped.
+function Add-BucFromList {
+    if ($Script:BUC_AllUsers.Count -eq 0) {
+        Write-BucLog 'Connect a tenant first, then import a list.' 'Warning'
+        return
+    }
+    $upns = @(Show-EtbUpnImport)
+    if ($upns.Count -eq 0) { return }
+
+    $domain = if ($Script:BUC_UI.DomainCombo.SelectedItem) {
+        $Script:BUC_UI.DomainCombo.SelectedItem.ToString()
+    } else { '' }
+
+    $already = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($r in $Script:BUC_Rows) { [void]$already.Add($r.Id) }
+
+    $lookup = Select-EtbUsersByUpn -Users $Script:BUC_AllUsers -Upns $upns
+    $added  = 0
+    foreach ($u in $lookup.Matched) {
+        if ($already.Contains($u.id)) { continue }
+        $local = ($u.userPrincipalName -split '@')[0]
+        [void]$Script:BUC_Rows.Add([PSCustomObject]@{
+            Id     = $u.id
+            Name   = $u.displayName
+            OldUpn = $u.userPrincipalName
+            NewUpn = if ($domain) { "$local@$domain" } else { '' }
+            Status = 'Pending'
+        })
+        $added++
+    }
+    Update-BucUserFilter
+    Update-BucButtons
+    Write-BucLog "Added $added user(s) from the list." 'Text'
+    foreach ($miss in $lookup.Missing) {
+        Write-BucLog "Not found in this tenant: $miss" 'Warning'
+    }
+}
+
 function Add-BucByField {
     param([string]$Field, $ComboBox)
     $selItem = $ComboBox.SelectedItem
@@ -534,9 +573,16 @@ $Script:BucXaml = @'
                Margin="0,2,0,2"/>
 
       <Border Grid.Row="3" Padding="10,8" BorderBrush="#3C3C5A" BorderThickness="0,1,0,0">
-        <Button x:Name="BucBtnAdd" Content="Add Selected  →" IsEnabled="False"
-                Style="{StaticResource PrimaryBtn}" Background="#6366F1"
-                Padding="12,8" HorizontalAlignment="Stretch"/>
+        <StackPanel>
+          <Button x:Name="BucBtnAdd" Content="Add Selected  →" IsEnabled="False"
+                  Style="{StaticResource PrimaryBtn}" Background="#6366F1"
+                  Padding="12,8" HorizontalAlignment="Stretch"/>
+          <Button x:Name="BucBtnImport" Content="Add From List…"
+                  Style="{StaticResource PrimaryBtn}" Background="#242436"
+                  Foreground="#7878A0" Padding="12,7" Margin="0,6,0,0" FontSize="12"
+                  HorizontalAlignment="Stretch"
+                  ToolTip="Add users by pasting usernames or importing a CSV"/>
+        </StackPanel>
       </Border>
     </Grid>
   </Border>
@@ -614,6 +660,7 @@ function Initialize-BulkUpnChangeTool {
         Search      = $content.FindName('BucSearch')
         UserList    = $content.FindName('BucUserList')
         BtnAdd      = $content.FindName('BucBtnAdd')
+        BtnImport   = $content.FindName('BucBtnImport')
         DomainCombo = $content.FindName('BucDomainCombo')
         PreviewGrid = $content.FindName('BucPreviewGrid')
         BtnRemove   = $content.FindName('BucBtnRemove')
@@ -647,6 +694,11 @@ function Initialize-BulkUpnChangeTool {
     $Script:BUC_UI.BtnAdd.Add_Click({
         try { Add-BucSelected }
         catch { Write-Log "BUC BtnAdd click error: $_" 'ERROR' }
+    })
+
+    $Script:BUC_UI.BtnImport.Add_Click({
+        try { Add-BucFromList }
+        catch { Write-Log "BUC BtnImport click error: $_" 'ERROR' }
     })
 
     $Script:BUC_UI.BtnAddDept.Add_Click({

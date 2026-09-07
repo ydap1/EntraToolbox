@@ -72,6 +72,34 @@ function Complete-PwResetRow {
     }
 }
 
+# Narrows the current grid selection to the students named in a pasted list or
+# CSV. Only rows already loaded can be selected, so a name that is not in this
+# year group is reported rather than silently ignored.
+function Select-PwRowsFromList {
+    if ($Script:PwReset_Rows.Count -eq 0) {
+        Write-PwLog 'Load a year group first, then select from a list.' 'Warning'
+        return
+    }
+    $upns = @(Show-EtbUpnImport)
+    if ($upns.Count -eq 0) { return }
+
+    $wanted = [System.Collections.Generic.HashSet[string]]::new(
+        [string[]]$upns, [System.StringComparer]::OrdinalIgnoreCase)
+
+    $Script:PwReset_UI.Grid.UnselectAll()
+    $found = 0
+    foreach ($row in $Script:PwReset_Rows) {
+        if ($wanted.Contains([string]$row.UPN)) {
+            $Script:PwReset_UI.Grid.SelectedItems.Add($row) | Out-Null
+            $found++
+        }
+    }
+    $missing = $upns.Count - $found
+    $color   = if ($missing -gt 0) { 'Warning' } else { 'Success' }
+    Write-PwLog "Selected $found of $($upns.Count) from the list; $missing not in this year group." $color
+    Update-PwSelectionLabel
+}
+
 # ── Async user load ────────────────────────────────────────────────────────────
 $Script:PwResetTimer = $null
 
@@ -323,6 +351,10 @@ $Script:PwResetXaml = @'
         <Button x:Name="PwBtnLoad" Content="Load Students" IsEnabled="False"
                 Style="{StaticResource PrimaryBtn}" Background="#242436"
                 Foreground="#7878A0" Padding="0,10" Margin="0,8,0,0"/>
+        <Button x:Name="PwBtnImport" Content="Select From List…" IsEnabled="False"
+                Style="{StaticResource PrimaryBtn}" Background="#242436"
+                Foreground="#7878A0" Padding="0,8" Margin="0,6,0,0" FontSize="12"
+                ToolTip="Tick only the loaded students whose usernames appear in a pasted list or CSV"/>
 
         <!-- Selection controls -->
         <Grid Margin="0,6,0,0">
@@ -511,6 +543,7 @@ function Initialize-PasswordResetTool {
         ChkForce       = $content.FindName('PwChkForce')
         BtnRun         = $content.FindName('PwBtnRun')
         BtnStop        = $content.FindName('PwBtnStop')
+        BtnImport      = $content.FindName('PwBtnImport')
         BtnExport      = $content.FindName('PwBtnExport')
         Grid           = $content.FindName('PwGrid')
         Progress       = $content.FindName('PwProgress')
@@ -538,6 +571,12 @@ function Initialize-PasswordResetTool {
         try {
             $Script:PwReset_UI.Grid.UnselectAll()
         } catch { Write-Log "BtnSelectNone click error: $_" 'ERROR' }
+    })
+
+    # Select the loaded rows named in a pasted list or CSV
+    $Script:PwReset_UI.BtnImport.Add_Click({
+        try { Select-PwRowsFromList }
+        catch { Write-Log "BtnImport click error: $_" 'ERROR' }
     })
 
     # Run-mode toggle
@@ -590,6 +629,7 @@ function Initialize-PasswordResetTool {
             Write-Log "PwReset: $($students.Count) students loaded for group $selGroup" 'INFO'
             $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $true
             $Script:PwReset_UI.BtnSelectNone.IsEnabled = $true
+            $Script:PwReset_UI.BtnImport.IsEnabled     = $true
             $Script:PwReset_UI.BtnExport.IsEnabled     = $false
             $Script:PwReset_UI.PnlStats.Visibility     = 'Collapsed'
             if ($Script:PwReset_UI.RbLive.IsChecked) {
@@ -656,6 +696,7 @@ function Initialize-PasswordResetTool {
             $Script:PwReset_UI.BtnLoad.IsEnabled       = $false
             $Script:PwReset_UI.BtnExport.IsEnabled     = $false
             $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $false
+            $Script:PwReset_UI.BtnImport.IsEnabled     = $false
             $Script:PwReset_UI.BtnSelectNone.IsEnabled = $false
             $Script:PwReset_UI.Progress.Visibility     = 'Visible'
             $Script:PwReset_UI.Progress.Maximum        = $work.Count
@@ -678,6 +719,7 @@ function Initialize-PasswordResetTool {
                 $Script:PwReset_UI.BtnExport.IsEnabled     = $true
                 $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $true
                 $Script:PwReset_UI.BtnSelectNone.IsEnabled = $true
+                $Script:PwReset_UI.BtnImport.IsEnabled     = $true
                 $Script:PwReset_UI.BtnStop.Visibility      = 'Collapsed'
                 $Script:PwReset_UI.PnlStats.Visibility     = 'Visible'
                 $Script:PwReset_UI.LblTotal.Text           = "Total  $ok"
@@ -743,6 +785,7 @@ function Initialize-PasswordResetTool {
                         $Script:PwReset_UI.BtnExport.IsEnabled     = $true
                         $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $true
                         $Script:PwReset_UI.BtnSelectNone.IsEnabled = $true
+                        $Script:PwReset_UI.BtnImport.IsEnabled     = $true
                         $Script:PwReset_UI.BtnStop.Visibility      = 'Collapsed'
                         $Script:PwReset_UI.PnlStats.Visibility     = 'Visible'
                         $Script:PwReset_UI.LblTotal.Text           = "Total  $($ok + $fail)"
@@ -811,6 +854,7 @@ function Initialize-PasswordResetTool {
         $Script:PwReset_UI.BtnExport.IsEnabled      = $false
         $Script:PwReset_UI.BtnSelectAll.IsEnabled   = $false
         $Script:PwReset_UI.BtnSelectNone.IsEnabled  = $false
+        $Script:PwReset_UI.BtnImport.IsEnabled      = $false
         $Script:PwReset_UI.LblSelection.Text        = ''
         $Script:PwReset_UI.PnlStats.Visibility      = 'Collapsed'
     })
