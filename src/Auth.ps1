@@ -833,9 +833,16 @@ function Invoke-ThemeXaml([string]$Xaml) {
     $shared = -join @(foreach ($marker in $Script:ThemeSharedStyles.Keys) {
         if (-not $Xaml.Contains($marker)) { $Script:ThemeSharedStyles[$marker] }
     })
+    # Only the outermost dictionary — the first one to close. A document can
+    # hold nested Grid.Resources (the main window's help overlay does), and
+    # adding the same keys to each of them is at best redundant.
     if ($shared) {
-        $Xaml = $Xaml.Replace('</Grid.Resources>',   "$shared</Grid.Resources>")
-        $Xaml = $Xaml.Replace('</Window.Resources>', "$shared</Window.Resources>")
+        $close = @('</Window.Resources>', '</Grid.Resources>') |
+            ForEach-Object { [pscustomobject]@{ Tag = $_; At = $Xaml.IndexOf($_) } } |
+            Where-Object { $_.At -ge 0 } | Sort-Object At | Select-Object -First 1
+        if ($close) {
+            $Xaml = $Xaml.Remove($close.At, $close.Tag.Length).Insert($close.At, "$shared$($close.Tag)")
+        }
     }
     $Xaml = $Xaml.Replace('<Style TargetType="ListBox">', "<Style TargetType=`"ListBox`">$Script:ThemeListBoxTemplate")
     $Xaml

@@ -23,6 +23,7 @@ try {
     Assert ($parseErrors.Count -eq 0) "all application scripts parse ($($parseErrors -join '; '))"
     . "$root/src/Auth.ps1"
 
+    . "$root/src/Import.ps1"
     . "$root/src/Tools/PasswordReset.ps1"
     $passwords = @(1..1000 | ForEach-Object { New-Password })
     Assert (@($passwords | Where-Object { $_ -notmatch '^[a-z]{3}\.[a-z]{3}\.[a-z]{3}[1-9][0-9]!$' }).Count -eq 0) 'classroom password format is preserved'
@@ -40,7 +41,14 @@ try {
             if ($name -like 'Start-*Demo' -and -not (Get-Command $name -ErrorAction SilentlyContinue)) { $missing += $name }
         }
         foreach ($node in $ast.FindAll({ param($a) $a -is [Management.Automation.Language.StringConstantExpressionAst] -and $a.Value -match '^<(Grid|Window)\s+xmlns=' }, $true)) {
-            $null = [xml](Invoke-ThemeXaml $node.Value)
+            $themed = Invoke-ThemeXaml $node.Value
+            $null = [xml]$themed
+            # Shared styles are appended only when absent; a duplicate key here
+            # would still be valid XML but would fail at XamlReader.Load.
+            $dupes = @([regex]::Matches($themed, 'x:Key="([^"]+)"') |
+                ForEach-Object { $_.Groups[1].Value } |
+                Group-Object | Where-Object Count -gt 1)
+            if ($dupes) { throw "$($file.Name): duplicate resource key $($dupes[0].Name)" }
             $xamlCount++
         }
     }
@@ -74,6 +82,45 @@ try {
         Assert ($Script:UPR_UI.PromptStatus.Text -eq 'New user status') 'late profile reads cannot overwrite a different selected user'
     }
 
+
+    # ── Shared style injection ────────────────────────────────────────────────
+    $bare = Invoke-ThemeXaml '<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"><Grid.Resources></Grid.Resources></Grid>'
+    Assert ($bare -like '*TargetType="DataGrid"*' -and $bare -like '*x:Key="DgRow"*') 'a document without its own grid styles is given the shared ones'
+    $owned = Invoke-ThemeXaml '<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"><Grid.Resources><Style TargetType="DataGrid"><Setter Property="RowHeight" Value="99"/></Style></Grid.Resources></Grid>'
+    Assert (([regex]::Matches($owned, '<Style TargetType="DataGrid">')).Count -eq 1) 'a tool that declares its own style is not given a competing copy'
+    Assert ($owned -like '*Value="99"*') 'the tool keeps its own values'
+
+    # ── User list import ──────────────────────────────────────────────────────
+    $parsed = @(Get-EtbUpnsFromText "a@school.test`r`nB@SCHOOL.TEST`na@school.test`nnot-a-upn`n`n")
+    Assert ($parsed.Count -eq 2) 'pasted usernames are de-duplicated case-insensitively and junk is dropped'
+    $row = @(Get-EtbUpnsFromText '"Smith, John",jsmith@school.test,Year 7')
+    Assert ($row.Count -eq 1 -and $row[0] -eq 'jsmith@school.test') 'a whole spreadsheet row yields just its username'
+    $csvPath = Join-Path $Global:AppRoot 'import.csv'
+    'Name,Email' | Set-Content $csvPath
+    'Ann,ann@school.test' | Add-Content $csvPath
+    Assert ((@(Get-EtbUpnsFromCsv -Path $csvPath))[0] -eq 'ann@school.test') 'CSV import finds the username column whatever it is called'
+    $lookup = Select-EtbUsersByUpn -Users @([pscustomobject]@{ userPrincipalName = 'ann@school.test'; id = '1' }) -Upns @('ANN@school.test', 'gone@school.test')
+    Assert ($lookup.Matched.Count -eq 1 -and $lookup.Missing -eq 'gone@school.test') 'unmatched names are reported rather than silently dropped'
+
+    # ── Change record ─────────────────────────────────────────────────────────
+    $Script:CurrentTenantId   = 'tenant-under-test'
+    $Script:CurrentAccountUPN = 'admin@school.test'
+    $Script:DemoMode = $false
+    Write-EtbAudit -Tool 'Year Group Passwords' -Action 'Reset password' -Target 'pupil@school.test'
+    $auditPath = Get-EtbAuditPath
+    $logged = @(Import-Csv $auditPath)
+    Assert ($logged.Count -eq 1 -and $logged[0].Target -eq 'pupil@school.test' -and $logged[0].Operator -eq 'admin@school.test') 'a live change is recorded with its operator and target'
+    Assert (($logged[0].PSObject.Properties.Name -notcontains 'Password')) 'the change record has no password column'
+    $Script:DemoMode = $true
+    Write-EtbAudit -Tool 'Year Group Passwords' -Action 'Reset password' -Target 'demo@school.test'
+    $Script:DemoMode = $false
+    Assert ((@(Import-Csv $auditPath)).Count -eq 1) 'demo mode records nothing'
+    $Script:CurrentTenantId = $null
+
+    # ── Mid-batch token refresh ───────────────────────────────────────────────
+    $Ref = @{ Token = 'REFRESHED' }
+    Assert-Throws { Invoke-RestMethod -Uri 'https://graph.microsoft.com/v1.0/users' -Headers @{ Authorization = 'Bearer DEMO' } } 'Demo mode'
+    $Ref = $null
     $Script:AppFont = 'Font & "quoted"'
     $fontXaml = Invoke-ThemeXaml '<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"><TextBlock FontFamily="Segoe UI"/></Grid>'
     $null = [xml]$fontXaml
@@ -116,6 +163,31 @@ try {
     Wait-JobCleanup $job
     Assert ($Script:AccessToken -eq 'NEW TENANT') 'late refresh cannot overwrite a different tenant token'
     Assert ($Script:AsyncJobs.Count -eq 0) 'worker registry returns to zero'
+
+    # A stopped batch must still reach OnComplete, or the tool is left disabled
+    # with no idea how far it got.
+    $Script:CancelDone = $null
+    $job = Start-AsyncWork -RefSeed @{ Processed = 0 } -Script {
+        for ($i = 0; $i -lt 200; $i++) {
+            if ($Ref['CancelRequested']) { break }
+            $Ref['Processed']++
+            Start-Sleep -Milliseconds 10
+        }
+    } -OnComplete { param($ref) $Script:CancelDone = $ref['Processed'] }
+    Start-Sleep -Milliseconds 150
+    Request-EtbAsyncCancel $job
+    Wait-JobCleanup $job
+    Assert ($null -ne $Script:CancelDone -and $Script:CancelDone -lt 200) 'a cancelled batch stops early and still reports its progress'
+
+    # Long batches outlive the token they captured at launch.
+    $Script:AccessToken = 'ORIGINAL'
+    $job = Start-AsyncWork -Script { Start-Sleep -Milliseconds 400 } -OnComplete { }
+    Assert ($job.Tag.Ref['Token'] -eq 'ORIGINAL') 'a worker starts with the current token'
+    $Script:AccessToken = 'REFRESHED'
+    Publish-EtbWorkerToken
+    Assert ($job.Tag.Ref['Token'] -eq 'REFRESHED') 'a silent refresh reaches workers already running'
+    Wait-JobCleanup $job
+    $Script:AccessToken = $null
     $job = Start-AsyncWork -Script { Get-Item '/etb-missing-path-974397' } -OnComplete { param($ref) $Script:WorkerError = $ref.Error }
     Wait-JobCleanup $job
     Assert ([bool]$Script:WorkerError) 'worker cmdlet failures cannot be reported as success'
