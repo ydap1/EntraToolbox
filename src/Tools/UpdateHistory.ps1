@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.21.2'
+        Date    = '2026-09-07'
+        Changes = @(
+            'Boxed navigation tools with persistent borders and an accent outline for the selected tool'
+            'Teams Provisioning owner checkboxes show a contrasting tick and toggle with a single click'
+        )
+    }
+    @{
         Version = '0.21.1'
         Date    = '2026-09-07'
         Changes = @(

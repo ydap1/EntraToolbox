@@ -148,8 +148,8 @@ function Set-NavSelection {
             $Script:MainUI.ToolTitle.Text = $item.Title
             $Script:MainUI.ToolDescription.Text = $item.Subtitle
         } else {
-            $item.Border.Background  = [System.Windows.Media.Brushes]::Transparent
-            $item.Border.BorderBrush = [System.Windows.Media.Brushes]::Transparent
+            $item.Border.Background  = New-SolidBrush 'Card'
+            $item.Border.BorderBrush = New-SolidBrush 'Border'
             $item.TitleTb.Foreground = $dimBrush
         }
     }
@@ -190,13 +190,13 @@ $Script:MainXaml = @'
     </Style>
 
     <Style x:Key="NavButton" TargetType="Button">
-      <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="BorderBrush" Value="Transparent"/>
-      <Setter Property="BorderThickness" Value="3,0,0,0"/>
+      <Setter Property="Background" Value="#242436"/>
+      <Setter Property="BorderBrush" Value="#3C3C5A"/>
+      <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="Foreground" Value="#7878A0"/>
       <Setter Property="FontSize" Value="13"/>
       <Setter Property="FontWeight" Value="Medium"/>
-      <Setter Property="Margin" Value="8,1"/>
+      <Setter Property="Margin" Value="10,3"/>
       <Setter Property="Padding" Value="12,9"/>
       <Setter Property="Cursor" Value="Hand"/>
       <Setter Property="HorizontalContentAlignment" Value="Left"/>

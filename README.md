@@ -18,7 +18,7 @@ WPF PowerShell GUI for Entra ID (Azure AD) tenant management. Requires Windows a
 | **Device Compliance** | Devices | Overview of all Intune-managed device compliance states, filterable by state and by name. Selecting a non-compliant device shows which policies are failing and how many settings are out of compliance. |
 | **Sign-In Logs** | Audit | Last 50 sign-ins for any user — app, result, IP, location, device. |
 | **Group Copy** | Groups & Teams | Copy all group memberships from one user to another. Skips existing memberships, dynamic groups, and role-assignable groups. |
-| **Teams Provisioning** | Groups & Teams | Create a Class or Standard team, populate members from a year group or direct user search, assign per-person Owner roles. |
+| **Teams Provisioning** | Groups & Teams | Create a Class or Standard team, populate members from a year group or direct user search, assign per-person Owner roles with visible, single-click checkboxes. |
 | **Secure Score** | Security | Microsoft Secure Score percentage headline with per-control breakdown table. |
 | **Appearance** | App | Theme presets (Slate & Amber, Indigo Night, Ocean, Forest, Rose) and UI font picker with per-font preview. |
 
@@ -31,6 +31,8 @@ The Leaver Workflow additionally writes the group memberships it removes to `con
 Multi-tenant. Profiles saved locally, token cache persisted across sessions — no re-authentication unless the refresh token expires. Access tokens are refreshed silently in the background during long sessions, and Graph requests honor throttling delays. Read requests retry transient server errors; writes are not replayed after ambiguous server failures. Switching tenants cancels outstanding work and discards stale results.
 
 ## Usage
+
+Tools in the navigation sidebar have individual bordered cards; the selected tool has an accent outline.
 
 ```batch
 Launch.cmd

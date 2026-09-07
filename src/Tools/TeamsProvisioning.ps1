@@ -53,6 +53,38 @@ $Script:TpXaml = @'
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       Background="#12121C">
   <Grid.Resources>
+    <Style x:Key="OwnerCheckBox" TargetType="CheckBox">
+      <Setter Property="HorizontalAlignment" Value="Center"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="CheckBox">
+            <Border Background="Transparent" Padding="5,3">
+              <Border x:Name="Box" Width="18" Height="18" CornerRadius="3"
+                      Background="#242436" BorderBrush="#7878A0" BorderThickness="1">
+                <Path x:Name="Check" Data="M 2,7 L 6,11 L 13,3" Stroke="#E2E2F0"
+                      StrokeThickness="2.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                      Margin="1" Visibility="Collapsed"/>
+              </Border>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
+                <Setter TargetName="Box" Property="BorderBrush" Value="#6366F1"/>
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Box" Property="BorderThickness" Value="2"/>
+                <Setter TargetName="Box" Property="BorderBrush" Value="#6366F1"/>
+              </Trigger>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Box" Property="BorderBrush" Value="#6366F1"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
 
     <Style x:Key="PrimaryBtn" TargetType="Button">
       <Setter Property="Foreground"      Value="White"/>
@@ -368,7 +400,15 @@ $Script:TpXaml = @'
           <DataGridTextColumn Header="Display Name"   Binding="{Binding DisplayName}" Width="*"    IsReadOnly="True" SortMemberPath="DisplayName"/>
           <DataGridTextColumn Header="Username (UPN)" Binding="{Binding UPN}"         Width="1.4*" IsReadOnly="True" SortMemberPath="UPN"/>
           <DataGridTextColumn Header="Department"     Binding="{Binding Department}"  Width="80"   IsReadOnly="True" SortMemberPath="Department"/>
-          <DataGridCheckBoxColumn Header="Owner" Binding="{Binding IsOwner}" Width="70"/>
+          <DataGridTemplateColumn Header="Owner" Width="70" SortMemberPath="IsOwner">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate>
+                <CheckBox Style="{StaticResource OwnerCheckBox}"
+                          AutomationProperties.Name="Team owner"
+                          IsChecked="{Binding IsOwner, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+              </DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
         </DataGrid.Columns>
       </DataGrid>
     </TabItem>
