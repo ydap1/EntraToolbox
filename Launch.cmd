@@ -14,6 +14,8 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
-pwsh.exe -NoProfile -STA -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\Start.ps1" %*
-
-endlocal
+rem Parse the final block before an update can replace this batch file.
+(
+    pwsh.exe -NoProfile -STA -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\Update.ps1" %*
+    goto :eof
+)

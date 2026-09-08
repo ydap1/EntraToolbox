@@ -15,7 +15,7 @@ function Assert-Throws([scriptblock]$Action, [string]$Pattern) {
 }
 try {
     $parseErrors = @()
-    foreach ($file in @(Get-ChildItem $root/src -Recurse -Filter *.ps1) + @(Get-Item $root/Start.ps1)) {
+    foreach ($file in @(Get-ChildItem $root/src -Recurse -Filter *.ps1) + @(Get-Item $root/Start.ps1, $root/Update.ps1)) {
         $e = $null
         $null = [Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$e)
         $parseErrors += $e

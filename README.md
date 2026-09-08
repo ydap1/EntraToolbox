@@ -45,6 +45,10 @@ Launch.cmd
 
 Downloads the pinned `MSAL.PS` version `4.37.0.0` automatically on first run. No admin rights required.
 
+On launch, the console checks GitHub for a newer version and prints its latest **Update History** description before asking **Update now? Yes/No [No]**. Enter **Yes** to update and open the new version; **No** or Enter opens the installed version. If the check is unavailable or offline, the app still opens. Checks use bounded network timeouts, so an offline launch may take a few seconds longer.
+
+Automatic installation requires Git and a clean clone on `main` with `origin` pointing to this repository. It uses a [fast-forward-only update](https://git-scm.com/docs/git-merge), preserves ignored settings in `config/` and cached modules, and refuses local edits, untracked files or divergent history. No branches are switched and no files are forcibly reset. If an accepted update fails, startup stops and explains the error; resolve it and relaunch, or choose No to open the installed copy. ZIP downloads need to be updated manually. The first installation of this startup updater still requires your usual `git pull`.
+
 Add a tenant with the **+** button — enter a Tenant ID, a verified domain, or a global admin UPN (domains and UPNs are resolved to the tenant automatically), sign in interactively, done. Subsequent launches connect silently.
 
 Use **Dry Run** in the tenant bar to preview destructive actions (password resets, UPN changes, ID assignments) without executing them. It applies to new actions; a request already submitted to Graph cannot be undone. Passwords remain visible in the results and explicit CSV exports, but are excluded from the activity log. CSV exports neutralize spreadsheet formula prefixes.
@@ -103,6 +107,6 @@ MIT
 
 ## Development checks
 
-Run `pwsh -NoProfile -File tests/Review.Tests.ps1` for offline parser, worker lifecycle and HTTP regression checks. These run on Windows or Linux without tenant credentials. On Windows, run `pwsh -NoProfile -STA -File tests/Windows.Smoke.ps1` to construct all themed XAML and initialize every tool with demo data. Interactive testing of resizing, scrolling, focus and live Graph operations is still required.
+Run `pwsh -NoProfile -File tests/Review.Tests.ps1` for offline parser, worker lifecycle and HTTP regression checks. Run `pwsh -NoProfile -File tests/Update.Tests.ps1` for startup prompt, release-note parsing and safe-update checks using temporary Git repositories (requires Git). These run on Windows or Linux without tenant credentials. On Windows, run `pwsh -NoProfile -STA -File tests/Windows.Smoke.ps1` to construct all themed XAML and initialize every tool with demo data. Interactive testing of resizing, scrolling, focus and live Graph operations is still required.
 
 See [REVIEW.md](REVIEW.md) for the code review, validation results and remaining limitations.

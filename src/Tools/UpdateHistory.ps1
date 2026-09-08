@@ -10,6 +10,15 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.27.0'
+        Date    = '2026-09-08'
+        Changes = @(
+            'Launch.cmd checks for updates before opening the app, displays the latest change description and asks Yes/No'
+            'Yes updates a clean main Git checkout to the reviewed revision; No or an unavailable update check opens the installed version'
+            'Updates preserve tenant configuration and refuse local edits, other branches and non-fast-forward changes'
+        )
+    }
+    @{
         Version = '0.26.0'
         Date    = '2026-09-08'
         Changes = @(
