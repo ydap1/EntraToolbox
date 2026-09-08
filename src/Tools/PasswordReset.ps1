@@ -33,6 +33,7 @@ $Script:PwReset_Running    = $false
 function Update-PwSelectionLabel {
     $sel   = $Script:PwReset_UI.Grid.SelectedItems.Count
     $total = $Script:PwReset_Rows.Count
+    $Script:PwReset_UI.BtnClear.IsEnabled = ($total -gt 0 -and -not $Script:PwReset_Running)
     if ($total -gt 0) {
         $Script:PwReset_UI.LblSelection.Text = "$sel of $total selected"
     } else {
@@ -44,6 +45,17 @@ function Update-PwSelectionLabel {
 }
 
 # ── Log helper ─────────────────────────────────────────────────────────────────
+function Clear-PwUsers {
+    if ($Script:PwReset_Running) { return }
+    $Script:PwReset_Rows.Clear()
+    foreach ($key in 'BtnSelectAll', 'BtnSelectNone', 'BtnImport', 'BtnExport', 'BtnPrint') {
+        $Script:PwReset_UI[$key].IsEnabled = $false
+    }
+    $Script:PwReset_UI.PnlStats.Visibility = 'Collapsed'
+    Update-PwSelectionLabel
+    Set-MainStatus 'User list cleared. Load a year group or department to start again.' 'TextDim'
+}
+
 function Write-PwLog {
     param([string]$Msg, [string]$Color = 'TextDim')
     Write-AppLog $Msg $Color
@@ -432,6 +444,10 @@ $Script:PwResetXaml = @'
                   Style="{StaticResource PrimaryBtn}" Background="#242436"
                   Foreground="#7878A0" Padding="8,4" FontSize="11" IsEnabled="False"/>
         </Grid>
+        <Button x:Name="PwBtnClear" Content="Clear all" IsEnabled="False"
+                Style="{StaticResource PrimaryBtn}" Background="#242436"
+                Foreground="#7878A0" Padding="0,8" Margin="0,8,0,0"
+                ToolTip="Clear loaded users and generated results; completed password resets are not undone"/>
 
         <Border Background="#3C3C5A" Height="1" Margin="0,14"/>
 
@@ -653,6 +669,7 @@ function Initialize-PasswordResetTool {
         LblSelection   = $content.FindName('PwLblSelection')
         BtnSelectAll   = $content.FindName('PwBtnSelectAll')
         BtnSelectNone  = $content.FindName('PwBtnSelectNone')
+        BtnClear       = $content.FindName('PwBtnClear')
         RbDry          = $content.FindName('PwRbDry')
         RbLive         = $content.FindName('PwRbLive')
         PnlWarn        = $content.FindName('PwPnlWarn')
@@ -688,6 +705,9 @@ function Initialize-PasswordResetTool {
         try {
             $Script:PwReset_UI.Grid.UnselectAll()
         } catch { Write-Log "BtnSelectNone click error: $_" 'ERROR' }
+    })
+    $Script:PwReset_UI.BtnClear.Add_Click({
+        try { Clear-PwUsers } catch { Write-Log "Clear users error: $_" 'ERROR' }
     })
 
     # Select the loaded rows named in a pasted list or CSV
@@ -775,6 +795,7 @@ function Initialize-PasswordResetTool {
             # Live run — lock UI
             $Script:PwReset_Running                    = $true
             $Script:PwReset_UI.BtnRun.IsEnabled        = $false
+            $Script:PwReset_UI.BtnClear.IsEnabled      = $false
             $Script:PwReset_UI.BtnLoad.IsEnabled       = $false
             $Script:PwReset_UI.BtnLoadDept.IsEnabled   = $false
             $Script:PwReset_UI.BtnExport.IsEnabled     = $false
@@ -947,6 +968,7 @@ function Initialize-PasswordResetTool {
         $Script:PwReset_UI.BtnLoadDept.IsEnabled    = $false
         $Script:PwReset_UI.BtnLoad.IsEnabled        = $false
         $Script:PwReset_UI.BtnRun.IsEnabled         = $false
+        $Script:PwReset_UI.BtnClear.IsEnabled       = $false
         $Script:PwReset_UI.BtnExport.IsEnabled      = $false
         $Script:PwReset_UI.BtnPrint.IsEnabled       = $false
         $Script:PwReset_UI.BtnSelectAll.IsEnabled   = $false

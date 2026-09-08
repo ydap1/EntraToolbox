@@ -109,6 +109,17 @@ try {
             if (($expected -join ',') -ne ($actual -join ',')) { throw "$($tool.Nav): $($source[0]) loaded the wrong users." }
             if ($tool.UI.Grid.SelectedItems.Count -ne $actual.Count) { throw "$($tool.Nav): loaded users were not selected." }
         }
+        if ($tool.Nav -eq 'Teams') { $tool.UI.TeamName.Text = 'Keep this team name' }
+        $yearChoice = $tool.UI.CboYear.SelectedItem
+        $deptChoice = $tool.UI.CboDept.SelectedItem
+        $tool.UI.BtnClear.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
+        if ($tool.Rows.Count -ne 0 -or $tool.UI.BtnClear.IsEnabled -or $tool.UI.CboYear.SelectedItem -ne $yearChoice -or $tool.UI.CboDept.SelectedItem -ne $deptChoice) {
+            throw "$($tool.Nav): Clear all failed to empty the list and preserve dropdown choices."
+        }
+        if ($tool.Nav -eq 'Teams' -and $tool.UI.TeamName.Text -ne 'Keep this team name') { throw 'Clear all lost the team name.' }
+        if ($tool.Nav -eq 'YearGroup' -and ($tool.UI.BtnExport.IsEnabled -or $tool.UI.BtnPrint.IsEnabled -or $tool.UI.BtnRun.IsEnabled)) {
+            throw 'Password actions remain enabled after clearing users.'
+        }
     }
     Set-NavSelection 'BulkUpn'
     $Script:BUC_UI.YearCombo.SelectedIndex = 0
@@ -129,7 +140,11 @@ try {
     $Script:SG_UI.Years.SelectedIndex = 0
     $Script:SG_UI.AddYear.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
     if ($Script:SG_Rows.Count -ne $Script:SG_UI.Years.SelectedItem.Users.Count) { throw 'Security group year selection failed.' }
-    $Script:SG_Rows.Clear()
+    $Script:SG_UI.Description.Text = 'Keep this description'
+    $Script:SG_UI.Clear.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
+    if ($Script:SG_Rows.Count -ne 0 -or $Script:SG_UI.Clear.IsEnabled -or $Script:SG_UI.Name.Text -ne 'Demo security group' -or $Script:SG_UI.Description.Text -ne 'Keep this description') {
+        throw 'Security group Clear all did not preserve the group details.'
+    }
     $Script:SG_UI.Departments.SelectedIndex = 0
     $Script:SG_UI.AddDepartment.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
     if ($Script:SG_Rows.Count -eq 0 -or -not $Script:SG_UI.Create.IsEnabled) { throw 'Security group department selection failed.' }

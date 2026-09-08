@@ -80,7 +80,9 @@ $Script:SgXaml = @'
     <StackPanel Grid.Row="3" Margin="0,10,0,0">
       <WrapPanel>
         <Button x:Name="SgRemove" Content="Remove selected" Style="{StaticResource SgButton}" Margin="0,0,8,0"/>
-        <Button x:Name="SgNew" Content="New group / clear" Style="{StaticResource SgButton}" Margin="0"/>
+        <Button x:Name="SgClear" Content="Clear all" Style="{StaticResource SgButton}" Margin="0,0,8,0" IsEnabled="False"
+                ToolTip="Empty the member list; keep the group name and description"/>
+        <Button x:Name="SgNew" Content="New group" Style="{StaticResource SgButton}" Margin="0"/>
       </WrapPanel>
       <TextBlock x:Name="SgStatus" Text="Connect to a tenant to load users." Foreground="#7878A0" TextWrapping="Wrap" Margin="0,12,0,0"/>
     </StackPanel>
@@ -92,6 +94,7 @@ function Update-SgControls {
     $editable = -not $Script:SG_Busy -and -not $Script:SG_GroupId
     $Script:SG_UI.Editor.IsEnabled = $editable
     $Script:SG_UI.Remove.IsEnabled = $editable
+    $Script:SG_UI.Clear.IsEnabled = $editable -and $Script:SG_Rows.Count -gt 0
     $Script:SG_UI.New.IsEnabled = -not $Script:SG_Busy
     $Script:SG_UI.Create.IsEnabled = $editable -and [bool]$Script:AccessToken -and
         -not [string]::IsNullOrWhiteSpace($Script:SG_UI.Name.Text)
@@ -216,6 +219,13 @@ function Start-SgCreate {
     }
 }
 
+function Clear-SgMembers {
+    if ($Script:SG_Busy -or $Script:SG_GroupId) { return }
+    $Script:SG_Rows.Clear()
+    $Script:SG_UI.Status.Text = 'Member list cleared. Add users to start again.'
+    Update-SgControls
+}
+
 function Reset-SgForm {
     $Script:SG_GroupId = $null
     $Script:SG_Rows.Clear()
@@ -230,7 +240,7 @@ function Initialize-SecurityGroupCreatorTool {
     $reader = [Xml.XmlReader]::Create([IO.StringReader]::new((Invoke-ThemeXaml $Script:SgXaml)))
     try { $content = [Windows.Markup.XamlReader]::Load($reader) } finally { $reader.Close() }
     $Script:SG_UI = @{}
-    foreach ($key in 'Editor','Name','Description','Years','AddYear','Departments','AddDepartment','Search','Matches','AddUsers','Import','Create','Count','Grid','Remove','New','Status') {
+    foreach ($key in 'Editor','Name','Description','Years','AddYear','Departments','AddDepartment','Search','Matches','AddUsers','Import','Create','Count','Grid','Remove','Clear','New','Status') {
         $Script:SG_UI[$key] = $content.FindName("Sg$key")
     }
     $Script:SG_UI.Grid.ItemsSource = $Script:SG_Rows
@@ -260,6 +270,7 @@ function Initialize-SecurityGroupCreatorTool {
         Update-SgControls
     })
     $Script:SG_UI.New.Add_Click({ Reset-SgForm })
+    $Script:SG_UI.Clear.Add_Click({ Clear-SgMembers })
     $Script:SG_UI.Create.Add_Click({ Start-SgCreate })
     Register-ConnectCallback 'Start-SgUserLoad'
     $Script:ResetCallbacks.Add({

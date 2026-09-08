@@ -460,6 +460,7 @@ function Start-TpUserLoadDemo {
 function Start-TpCreateDemo {
     $Script:TP_Creating                    = $true
     $Script:TP_UI.BtnCreate.IsEnabled      = $false
+    $Script:TP_UI.BtnClear.IsEnabled       = $false
     $Script:TP_UI.BtnLoad.IsEnabled        = $false
     $Script:TP_UI.BtnSelectAll.IsEnabled   = $false
     $Script:TP_UI.BtnSelectNone.IsEnabled  = $false

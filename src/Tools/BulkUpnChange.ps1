@@ -618,7 +618,7 @@ $Script:BucXaml = @'
                 Style="{StaticResource PrimaryBtn}" Background="#3C3C5A"
                 Padding="14,8" IsEnabled="False"
                 ToolTip="Remove selected rows from the preview"/>
-        <Button x:Name="BucBtnClear" Grid.Column="5" Content="Clear All"
+        <Button x:Name="BucBtnClear" Grid.Column="5" Content="Clear all"
                 Style="{StaticResource PrimaryBtn}" Background="#3C3C5A"
                 Padding="14,8" IsEnabled="False"
                 ToolTip="Remove all pending rows"/>

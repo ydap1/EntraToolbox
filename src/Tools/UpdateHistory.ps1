@@ -10,6 +10,15 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.25.0'
+        Date    = '2026-09-08'
+        Changes = @(
+            'Clear all empties loaded users in Teams Provisioning, Year Group Passwords and Security Group Creator'
+            'Keep names, settings and dropdown choices when clearing a list; clear buttons are disabled during active runs'
+            'Security Group Creator separates Clear all members from New group, which resets the whole form'
+        )
+    }
+    @{
         Version = '0.24.0'
         Date    = '2026-09-07'
         Changes = @(

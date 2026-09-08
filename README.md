@@ -37,6 +37,8 @@ Tools in the navigation sidebar have individual bordered cards; the selected too
 
 Teams Provisioning, Year Group Passwords, Bulk UPN Change and Security Group Creator share year-group and department dropdowns with user counts. Year groups combine class codes such as `7A` and `7B`; department selection preserves the full department name. Names such as `Year 7` are also recognised. Teams and password-reset load buttons replace the current list; Bulk UPN Change and Security Group Creator add to it without duplicating users. Counts reflect each tool's eligible users, including the cloud-only restriction in Bulk UPN Change.
 
+Use **Clear all** in these tools to empty the loaded-user list and start over while keeping names, settings and dropdown choices. In Year Group Passwords this also clears generated results from the table; it does not undo completed tenant changes. Security Group Creator's separate **New group** button resets the entire form.
+
 ```batch
 Launch.cmd
 ```

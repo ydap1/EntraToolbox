@@ -19,6 +19,19 @@ function Update-TpCreateButton {
     $nameOk  = -not [string]::IsNullOrWhiteSpace($Script:TP_UI.TeamName.Text)
     $hasRows = $Script:TP_Rows.Count -gt 0
     $Script:TP_UI.BtnCreate.IsEnabled = ($nameOk -and $hasRows -and -not $Script:TP_Creating)
+    $Script:TP_UI.BtnClear.IsEnabled = ($hasRows -and -not $Script:TP_Creating)
+}
+
+function Clear-TpMembers {
+    if ($Script:TP_Creating) { return }
+    $Script:TP_Rows.Clear()
+    $Script:TP_UI.BtnSelectAll.IsEnabled = $false
+    $Script:TP_UI.BtnSelectNone.IsEnabled = $false
+    $Script:TP_UI.PnlStats.Visibility = 'Collapsed'
+    Update-TpSelectionLabel
+    Update-TpCreateButton
+    Update-TpSearchFilter
+    Set-MainStatus 'Member list cleared. Add users to start again.' 'TextDim'
 }
 
 function Update-TpSelectionLabel {
@@ -389,6 +402,10 @@ $Script:TpXaml = @'
                   Style="{StaticResource PrimaryBtn}" Background="#242436"
                   Foreground="#7878A0" Padding="8,4" FontSize="11" IsEnabled="False"/>
         </Grid>
+        <Button x:Name="TpBtnClear" Content="Clear all" IsEnabled="False"
+                Style="{StaticResource PrimaryBtn}" Background="#242436"
+                Foreground="#7878A0" Padding="0,8" Margin="0,8,0,0"
+                ToolTip="Empty the member list; keep the team name and settings"/>
 
         <Border Background="#3C3C5A" Height="1" Margin="0,14"/>
 
@@ -524,6 +541,7 @@ function Start-TpCreateTeam {
 
     $Script:TP_Creating                    = $true
     $Script:TP_UI.BtnCreate.IsEnabled      = $false
+    $Script:TP_UI.BtnClear.IsEnabled       = $false
     $Script:TP_UI.BtnLoad.IsEnabled        = $false
     $Script:TP_UI.BtnLoadDept.IsEnabled    = $false
     $Script:TP_UI.BtnSelectAll.IsEnabled   = $false
@@ -724,6 +742,7 @@ function Initialize-TeamsProvisioningTool {
         LblSelection  = $content.FindName('TpLblSelection')
         BtnSelectAll  = $content.FindName('TpBtnSelectAll')
         BtnSelectNone = $content.FindName('TpBtnSelectNone')
+        BtnClear      = $content.FindName('TpBtnClear')
         BtnCreate     = $content.FindName('TpBtnCreate')
         PnlStats      = $content.FindName('TpPnlStats')
         LblTeamStatus = $content.FindName('TpLblTeamStatus')
@@ -810,6 +829,9 @@ function Initialize-TeamsProvisioningTool {
     $Script:TP_UI.BtnSelectNone.Add_Click({
         try { $Script:TP_UI.Grid.UnselectAll() } catch { Write-Log "TP BtnSelectNone error: $_" 'ERROR' }
     })
+    $Script:TP_UI.BtnClear.Add_Click({
+        try { Clear-TpMembers } catch { Write-Log "TP clear members error: $_" 'ERROR' }
+    })
 
     # Grid selection -> update label
     $Script:TP_UI.Grid.Add_SelectionChanged({
@@ -831,6 +853,7 @@ function Initialize-TeamsProvisioningTool {
         $Script:TP_UI.BtnLoadDept.IsEnabled    = $false
         $Script:TP_UI.BtnLoad.IsEnabled        = $false
         $Script:TP_UI.BtnCreate.IsEnabled      = $false
+        $Script:TP_UI.BtnClear.IsEnabled       = $false
         $Script:TP_UI.BtnSelectAll.IsEnabled   = $false
         $Script:TP_UI.BtnSelectNone.IsEnabled  = $false
         $Script:TP_UI.LblSelection.Text        = ''

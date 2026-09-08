@@ -66,7 +66,7 @@ try {
             $grid = [pscustomobject]@{ ItemsSource = $rows; SelectedItems = @() }
             $grid | Add-Member ScriptMethod SelectAll { $this.SelectedItems = @($this.ItemsSource) }
             $ui = @{ Grid = $grid; RbLive = [pscustomobject]@{ IsChecked = $false }; TeamName = [pscustomobject]@{ Text = 'Test' } }
-            foreach ($name in 'BtnSelectAll','BtnSelectNone','BtnImport','BtnExport','BtnPrint','PnlStats','BtnRun','BtnCreate','LblSelection') {
+            foreach ($name in 'BtnSelectAll','BtnSelectNone','BtnImport','BtnExport','BtnPrint','PnlStats','BtnRun','BtnCreate','BtnClear','LblSelection') {
                 $ui[$name] = [pscustomobject]@{ IsEnabled = $false; Visibility = ''; Content = ''; Background = ''; Text = '' }
             }
             Set-Variable "${tool}_UI" -Scope Script -Value $ui
@@ -137,6 +137,7 @@ try {
         $Script:SG_UI = @{
             Editor = [pscustomobject]@{ IsEnabled = $true }; Remove = [pscustomobject]@{ IsEnabled = $true }
             New = [pscustomobject]@{ IsEnabled = $true }; Create = [pscustomobject]@{ IsEnabled = $false }
+            Clear = [pscustomobject]@{ IsEnabled = $false }
             Name = [pscustomobject]@{ Text = 'Classroom access' }; Count = [pscustomobject]@{ Text = '' }
             Status = [pscustomobject]@{ Text = '' }
         }
