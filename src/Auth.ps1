@@ -915,6 +915,7 @@ $Script:GraphScopes = @(
     'https://graph.microsoft.com/User.ReadWrite.All',
     'https://graph.microsoft.com/User-PasswordProfile.ReadWrite.All',
     'https://graph.microsoft.com/User.RevokeSessions.All',
+    'https://graph.microsoft.com/Device.Read.All',
     'https://graph.microsoft.com/DeviceManagementManagedDevices.Read.All',
     'https://graph.microsoft.com/DeviceManagementManagedDevices.PrivilegedOperations.All',
     'https://graph.microsoft.com/DeviceManagementConfiguration.Read.All',

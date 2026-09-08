@@ -7,6 +7,13 @@
 
 $Script:DemoMode = $false
 
+# Entra directory objects, distinct from Intune managed-device IDs below.
+$Script:Demo_DirectoryDevices = @(
+    [pscustomobject]@{ id='entra-lt-001'; deviceId='device-lt-001'; displayName='CTX-LT-001'; operatingSystem='Windows' }
+    [pscustomobject]@{ id='entra-lt-002'; deviceId='device-lt-002'; displayName='CTX-LT-002'; operatingSystem='Windows' }
+    [pscustomobject]@{ id='entra-mac-001'; deviceId='device-mac-001'; displayName='CTX-MAC-001'; operatingSystem='macOS' }
+)
+
 # ── Fake users ─────────────────────────────────────────────────────────────────
 $Script:Demo_Users = @(
     # Year 10

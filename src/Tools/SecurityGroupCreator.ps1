@@ -1,6 +1,8 @@
 # Assigned-membership security groups; all directory writes run in a worker.
 $Script:SG_UI = $null
 $Script:SG_Users = @()
+$Script:SG_Devices = @()
+$Script:SG_DeviceTimer = $null
 $Script:SG_Rows = [System.Collections.ObjectModel.ObservableCollection[PSObject]]::new()
 $Script:SG_Busy = $false
 $Script:SG_GroupId = $null
@@ -58,8 +60,20 @@ $Script:SgXaml = @'
         <TextBox x:Name="SgSearch" AutomationProperties.Name="Search by name or username"/>
         <ListBox x:Name="SgMatches" Height="110" Margin="0,6,0,0" SelectionMode="Extended" DisplayMemberPath="userPrincipalName" AutomationProperties.Name="Matching users"/>
         <Button x:Name="SgAddUsers" Content="Add selected users" Style="{StaticResource SgButton}"/>
-        <Button x:Name="SgImport" Content="Paste list / import CSV…" Style="{StaticResource SgButton}" Margin="0,14,0,0"/>
-        <TextBlock Text="Combine sources. Duplicate users are only added once." TextWrapping="Wrap" Foreground="#7878A0" FontSize="11" Margin="0,8,0,0"/>
+        <Button x:Name="SgImport" Content="Paste users / import CSV…" Style="{StaticResource SgButton}" Margin="0,14,0,0"/>
+        <TextBlock Text="Find Entra devices" Style="{StaticResource SgLabel}"/>
+        <TextBox x:Name="SgDeviceSearch" ToolTip="Search by name, device ID or Entra object ID" AutomationProperties.Name="Search devices by name, device ID or object ID"/>
+        <ListBox x:Name="SgDeviceMatches" Height="130" Margin="0,6,0,0" SelectionMode="Extended" AutomationProperties.Name="Matching devices">
+          <ListBox.ItemTemplate><DataTemplate><StackPanel>
+            <TextBlock Text="{Binding displayName}" FontWeight="SemiBold"/>
+            <TextBlock Text="{Binding operatingSystem}" FontSize="11"/>
+            <TextBlock Text="{Binding id}" FontSize="10" ToolTip="Entra object ID"/>
+          </StackPanel></DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+        <TextBlock x:Name="SgDeviceStatus" Text="Connect to load devices." TextWrapping="Wrap" Foreground="#7878A0" FontSize="11" Margin="0,6,0,0"/>
+        <Button x:Name="SgAddDevices" Content="Add selected devices" Style="{StaticResource SgButton}"/>
+        <Button x:Name="SgReloadDevices" Content="Reload devices" Style="{StaticResource SgButton}" IsEnabled="False"/>
+        <TextBlock Text="Ctrl/Shift selects multiple devices. Combine users and devices, or add devices only. Duplicates are skipped. Up to 50 device matches are shown; narrow your search if needed." TextWrapping="Wrap" Foreground="#7878A0" FontSize="11" Margin="0,8,0,0"/>
         <Button x:Name="SgCreate" Content="Create security group" Style="{StaticResource SgButton}" Background="#6366F1" FontWeight="SemiBold" Margin="0,20,0,0" IsEnabled="False"/>
       </StackPanel>
     </ScrollViewer>
@@ -72,8 +86,9 @@ $Script:SgXaml = @'
               RowStyle="{StaticResource DgRow}" CellStyle="{StaticResource DgCell}">
       <DataGrid.Columns>
         <DataGridTextColumn Header="Name" Binding="{Binding DisplayName}" Width="*"/>
-        <DataGridTextColumn Header="Username" Binding="{Binding UPN}" Width="1.3*"/>
-        <DataGridTextColumn Header="Department" Binding="{Binding Department}" Width="*"/>
+        <DataGridTextColumn Header="Type" Binding="{Binding MemberType}" Width="70"/>
+        <DataGridTextColumn Header="Username / device ID" Binding="{Binding Identifier}" Width="1.3*"/>
+        <DataGridTextColumn Header="Department / OS" Binding="{Binding Department}" Width="*"/>
         <DataGridTextColumn Header="Result" Binding="{Binding Result}" Width="100"/>
       </DataGrid.Columns>
     </DataGrid>
@@ -101,20 +116,74 @@ function Update-SgControls {
     $Script:SG_UI.Count.Text = "$($Script:SG_Rows.Count) members"
 }
 
-function Add-SgUsers {
-    param([object[]]$Users)
+function Add-SgMembers {
+    param([object[]]$Members, [ValidateSet('User', 'Device')][string]$MemberType)
     if ($Script:SG_Busy -or $Script:SG_GroupId) { return }
     $ids = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     foreach ($row in $Script:SG_Rows) { [void]$ids.Add($row.Id) }
-    foreach ($user in $Users) {
-        if ($user.id -and $ids.Add($user.id)) {
+    foreach ($member in $Members) {
+        if ($member.id -and $ids.Add($member.id)) {
             $Script:SG_Rows.Add([pscustomobject]@{
-                Id = $user.id; DisplayName = $user.displayName; UPN = $user.userPrincipalName
-                Department = $user.department; Result = 'Pending'
+                Id = $member.id; DisplayName = $member.displayName; MemberType = $MemberType
+                Identifier = if ($MemberType -eq 'Device') { $member.deviceId } else { $member.userPrincipalName }
+                Department = if ($MemberType -eq 'Device') { $member.operatingSystem } else { $member.department }
+                Result = 'Pending'
             })
         }
     }
     Update-SgControls
+}
+
+function Add-SgUsers {
+    param([object[]]$Users)
+    Add-SgMembers -Members $Users -MemberType User
+}
+
+function Add-SgDevices {
+    param([object[]]$Devices)
+    Add-SgMembers -Members $Devices -MemberType Device
+}
+
+function Update-SgDeviceSearch {
+    if (-not $Script:SG_UI) { return }
+    $query = $Script:SG_UI.DeviceSearch.Text.Trim()
+    $Script:SG_UI.DeviceMatches.ItemsSource = @($Script:SG_Devices | Where-Object {
+        -not $query -or
+        ([string]$_.displayName).IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+        ([string]$_.deviceId).IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+        ([string]$_.id).IndexOf($query, [StringComparison]::OrdinalIgnoreCase) -ge 0
+    } | Select-Object -First 50)
+}
+
+$Script:SgDeviceLoadWork = {
+    $Ref['Devices'] = @(Get-EtbGraphCollection -Uri 'https://graph.microsoft.com/v1.0/devices?$select=id,deviceId,displayName,operatingSystem' -Headers @{ Authorization = "Bearer $Token" })
+}
+
+function Start-SgDeviceLoad {
+    if ($Script:SG_DeviceTimer -or -not $Script:AccessToken) { return }
+    $Script:SG_Devices = @()
+    Update-SgDeviceSearch
+    if ($Script:DemoMode) {
+        $Script:SG_Devices = @($Script:Demo_DirectoryDevices)
+        $Script:SG_UI.DeviceStatus.Text = "$($Script:SG_Devices.Count) demo devices loaded."
+        $Script:SG_UI.ReloadDevices.IsEnabled = $true
+        Update-SgDeviceSearch
+        return
+    }
+    $Script:SG_UI.ReloadDevices.IsEnabled = $false
+    $Script:SG_UI.DeviceStatus.Text = 'Loading Entra devices…'
+    $Script:SG_DeviceTimer = Start-AsyncWork -RefSeed @{ Devices = @() } -Script $Script:SgDeviceLoadWork -OnComplete {
+        param($ref)
+        $Script:SG_DeviceTimer = $null
+        $Script:SG_UI.ReloadDevices.IsEnabled = $true
+        if ($ref['Error']) {
+            $Script:SG_UI.DeviceStatus.Text = "Could not load devices: $($ref['Error']). Check Device.Read.All consent and reload. User selection is still available."
+        } else {
+            $Script:SG_Devices = @($ref['Devices'])
+            $Script:SG_UI.DeviceStatus.Text = "$($Script:SG_Devices.Count) Entra devices loaded."
+        }
+        Update-SgDeviceSearch
+    }
 }
 
 function Update-SgSearch {
@@ -146,6 +215,7 @@ function Complete-SgUserLoad {
 }
 
 function Start-SgUserLoad {
+    Start-SgDeviceLoad
     if ($Script:DemoMode) { Complete-SgUserLoad; return }
     $Script:SG_UI.Status.Text = 'Loading directory users…'
     Request-EtbUsers -OnReady 'Complete-SgUserLoad'
@@ -166,9 +236,9 @@ $Script:SgCreateWork = {
         try {
             $body = @{ '@odata.id' = "https://graph.microsoft.com/v1.0/directoryObjects/$($member.Id)" } | ConvertTo-Json
             $null = Invoke-RestMethod -Uri "https://graph.microsoft.com/v1.0/groups/$($group.id)/members/`$ref" -Method POST -Headers $headers -Body $body -ContentType 'application/json'
-            $Ref['Results'] += [pscustomobject]@{ Id = $member.Id; UPN = $member.UPN; Result = 'Added'; Error = '' }
+            $Ref['Results'] += [pscustomobject]@{ Id = $member.Id; Target = $member.Target; Result = 'Added'; Error = '' }
         } catch {
-            $Ref['Results'] += [pscustomobject]@{ Id = $member.Id; UPN = $member.UPN; Result = 'Failed'; Error = $_.Exception.Message }
+            $Ref['Results'] += [pscustomobject]@{ Id = $member.Id; Target = $member.Target; Result = 'Failed'; Error = $_.Exception.Message }
         }
     }
 }
@@ -190,7 +260,9 @@ function Start-SgCreate {
     $Script:SG_UI.Status.Text = "Creating '$name' and adding members…"
     $Script:SG_Timer = Start-AsyncWork -Vars @{
         GroupName = $name; Description = $Script:SG_UI.Description.Text.Trim()
-        Members = @($Script:SG_Rows | ForEach-Object { [pscustomobject]@{ Id = $_.Id; UPN = $_.UPN } })
+        Members = @($Script:SG_Rows | ForEach-Object { [pscustomobject]@{
+            Id = $_.Id; Target = "$($_.MemberType): $($_.DisplayName) [$($_.Identifier)] (object $($_.Id))"
+        } })
     } -RefSeed @{ GroupName = $name; GroupId = $null; Results = @() } -Script $Script:SgCreateWork -OnComplete {
         param($ref)
         $Script:SG_Busy = $false
@@ -198,8 +270,8 @@ function Start-SgCreate {
         foreach ($result in $ref['Results']) {
             $row = $Script:SG_Rows | Where-Object Id -eq $result.Id | Select-Object -First 1
             if ($row) { $row.Result = $result.Result }
-            if ($result.Error) { Write-AppLog "$($result.UPN): $($result.Error)" 'Danger' }
-            Write-EtbAudit -Tool 'Security Group Creator' -Action 'Add member' -Target $result.UPN -Result $result.Result -Detail "Group $($ref['GroupId']). $($result.Error)"
+            if ($result.Error) { Write-AppLog "$($result.Target): $($result.Error)" 'Danger' }
+            Write-EtbAudit -Tool 'Security Group Creator' -Action 'Add member' -Target $result.Target -Result $result.Result -Detail "Group $($ref['GroupId']). $($result.Error)"
         }
         $Script:SG_UI.Grid.Items.Refresh()
         $added = @($ref['Results'] | Where-Object Result -eq 'Added').Count
@@ -222,7 +294,7 @@ function Start-SgCreate {
 function Clear-SgMembers {
     if ($Script:SG_Busy -or $Script:SG_GroupId) { return }
     $Script:SG_Rows.Clear()
-    $Script:SG_UI.Status.Text = 'Member list cleared. Add users to start again.'
+    $Script:SG_UI.Status.Text = 'Member list cleared. Add users or devices to start again.'
     Update-SgControls
 }
 
@@ -232,6 +304,8 @@ function Reset-SgForm {
     $Script:SG_UI.Name.Clear()
     $Script:SG_UI.Description.Clear()
     $Script:SG_UI.Search.Clear()
+    $Script:SG_UI.DeviceSearch.Clear()
+    $Script:SG_UI.DeviceMatches.UnselectAll()
     $Script:SG_UI.Status.Text = 'Add members and enter a group name.'
     Update-SgControls
 }
@@ -240,12 +314,15 @@ function Initialize-SecurityGroupCreatorTool {
     $reader = [Xml.XmlReader]::Create([IO.StringReader]::new((Invoke-ThemeXaml $Script:SgXaml)))
     try { $content = [Windows.Markup.XamlReader]::Load($reader) } finally { $reader.Close() }
     $Script:SG_UI = @{}
-    foreach ($key in 'Editor','Name','Description','Years','AddYear','Departments','AddDepartment','Search','Matches','AddUsers','Import','Create','Count','Grid','Remove','Clear','New','Status') {
+    foreach ($key in 'Editor','Name','Description','Years','AddYear','Departments','AddDepartment','Search','Matches','AddUsers','Import','DeviceSearch','DeviceMatches','DeviceStatus','AddDevices','ReloadDevices','Create','Count','Grid','Remove','Clear','New','Status') {
         $Script:SG_UI[$key] = $content.FindName("Sg$key")
     }
     $Script:SG_UI.Grid.ItemsSource = $Script:SG_Rows
     $Script:SG_UI.Name.Add_TextChanged({ Update-SgControls })
     $Script:SG_UI.Search.Add_TextChanged({ Invoke-EtbDebounced -Key 'SG_Search' -Command 'Update-SgSearch' })
+    $Script:SG_UI.DeviceSearch.Add_TextChanged({ Invoke-EtbDebounced -Key 'SG_DeviceSearch' -Command 'Update-SgDeviceSearch' })
+    $Script:SG_UI.AddDevices.Add_Click({ Add-SgDevices @($Script:SG_UI.DeviceMatches.SelectedItems) })
+    $Script:SG_UI.ReloadDevices.Add_Click({ Start-SgDeviceLoad })
     $Script:SG_UI.Years.Add_SelectionChanged({ $Script:SG_UI.AddYear.IsEnabled = $null -ne $Script:SG_UI.Years.SelectedItem })
     $Script:SG_UI.Departments.Add_SelectionChanged({ $Script:SG_UI.AddDepartment.IsEnabled = $null -ne $Script:SG_UI.Departments.SelectedItem })
     $Script:SG_UI.AddYear.Add_Click({
@@ -275,8 +352,13 @@ function Initialize-SecurityGroupCreatorTool {
     Register-ConnectCallback 'Start-SgUserLoad'
     $Script:ResetCallbacks.Add({
         if ($Script:SG_Timer) { $Script:SG_Timer.Stop(); $Script:SG_Timer = $null }
+        if ($Script:SG_DeviceTimer) { $Script:SG_DeviceTimer.Stop(); $Script:SG_DeviceTimer = $null }
         $Script:SG_Busy = $false
         $Script:SG_Users = @()
+        $Script:SG_Devices = @()
+        $Script:SG_UI.DeviceMatches.ItemsSource = @()
+        $Script:SG_UI.DeviceStatus.Text = 'Connect to load devices.'
+        $Script:SG_UI.ReloadDevices.IsEnabled = $false
         $Script:SG_UI.Years.ItemsSource = @()
         $Script:SG_UI.Departments.ItemsSource = @()
         $Script:SG_UI.Matches.ItemsSource = @()

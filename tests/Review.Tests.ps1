@@ -111,11 +111,11 @@ try {
             $payload = $Body | ConvertFrom-Json
             $calls.Add([pscustomobject]@{ Uri = $Uri; Method = $Method; Body = $payload })
             if ($Uri -eq 'https://graph.microsoft.com/v1.0/groups') { return @{ id = 'created-group' } }
-            if ($payload.'@odata.id' -like '*/user-2') { throw 'Membership denied' }
+            if ($payload.'@odata.id' -like '*/user-2' -or $payload.'@odata.id' -like '*/device-denied') { throw 'Membership denied' }
         }
         $GroupName = 'Year 7 resources'
         $Description = 'Classroom access'
-        $Members = @(1..25 | ForEach-Object { [pscustomobject]@{ Id = "user-$_"; UPN = "user$_@school.test" } })
+        $Members = @(1..25 | ForEach-Object { [pscustomobject]@{ Id = "user-$_"; Target = "user$_@school.test" } })
         $Token = 'test'
         $Ref = @{ GroupId = $null; Results = @() }
         & $Script:SgCreateWork
@@ -123,6 +123,25 @@ try {
         Assert ($calls[0].Body.displayName -eq $GroupName -and $calls[0].Body.description -eq $Description -and $calls[0].Body.mailNickname) 'group request carries the entered details and a mail nickname'
         Assert ($calls[25].Uri -eq 'https://graph.microsoft.com/v1.0/groups/created-group/members/$ref' -and $calls[25].Body.'@odata.id' -like '*/user-25') 'member requests support lists larger than 20 users'
         Assert ($Ref.GroupId -eq 'created-group' -and @($Ref.Results | Where-Object Result -eq 'Added').Count -eq 24 -and $Ref.Results[1].Error -eq 'Membership denied') 'failed membership is reported and later users are still added'
+        $calls.Clear()
+        $Members = @(
+            [pscustomobject]@{ Id = 'user-2'; Target = 'User: denied@school.test' }
+            [pscustomobject]@{ Id = 'entra-object-1'; Target = 'Device: Classroom PC [device-id-1]' }
+        )
+        $Ref = @{ GroupId = $null; Results = @() }
+        & $Script:SgCreateWork
+        Assert ($calls[2].Body.'@odata.id' -eq 'https://graph.microsoft.com/v1.0/directoryObjects/entra-object-1') 'mixed membership uses the Entra object ID, not the device registration ID'
+        Assert ($Ref.Results[0].Result -eq 'Failed' -and $Ref.Results[1].Result -eq 'Added' -and $Ref.Results[1].Target -eq $Members[1].Target) 'device results retain an audit target and proceed after a failed user'
+        $calls.Clear()
+        $Members = @($Members[1])
+        $Ref = @{ GroupId = $null; Results = @() }
+        & $Script:SgCreateWork
+        Assert ($calls.Count -eq 2 -and $Ref.Results[0].Result -eq 'Added') 'device-only group creation does not require users'
+        $calls.Clear()
+        $Members = @([pscustomobject]@{ Id = 'device-denied'; Target = 'Device: Restricted PC' }, $Members[0])
+        $Ref = @{ GroupId = $null; Results = @() }
+        & $Script:SgCreateWork
+        Assert ($Ref.Results[0].Error -eq 'Membership denied' -and $Ref.Results[1].Result -eq 'Added' -and $Ref.GroupId -eq 'created-group') 'failed devices are reported individually without discarding the group or skipping later devices'
         $calls.Clear()
         $Members = @()
         $Ref = @{ GroupId = $null; Results = @() }
@@ -140,6 +159,8 @@ try {
             Clear = [pscustomobject]@{ IsEnabled = $false }
             Name = [pscustomobject]@{ Text = 'Classroom access' }; Count = [pscustomobject]@{ Text = '' }
             Status = [pscustomobject]@{ Text = '' }
+            DeviceSearch = [pscustomobject]@{ Text = '' }; DeviceMatches = [pscustomobject]@{ ItemsSource = @() }
+            DeviceStatus = [pscustomobject]@{ Text = '' }; ReloadDevices = [pscustomobject]@{ IsEnabled = $false }
         }
         $user = [pscustomobject]@{ id = 'pupil'; displayName = 'Pupil'; userPrincipalName = 'pupil@school.test'; department = 'Year 7' }
         Add-SgUsers @($user, $user)
@@ -153,6 +174,33 @@ try {
         Add-SgUsers @(Get-EtbPopulationChoices -Users $users -Mode YearGroup)[0].Users
         Add-SgUsers @(Get-EtbPopulationChoices -Users $users -Mode Department)[0].Users
         Assert ($Script:SG_Rows.Count -eq 2) 'adding a department after its year group does not duplicate pupils'
+        $device = [pscustomobject]@{ id = 'entra-object-1'; deviceId = 'registration-1'; displayName = 'Classroom PC'; operatingSystem = 'Windows' }
+        Add-SgDevices @($device, $device)
+        Add-SgDevices @($device)
+        Assert ($Script:SG_Rows.Count -eq 3 -and $Script:SG_Rows[2].MemberType -eq 'Device' -and $Script:SG_Rows[2].Id -eq 'entra-object-1' -and $Script:SG_Rows[2].Identifier -eq 'registration-1') 'device additions deduplicate by object ID and preserve the separate device ID'
+        Assert ($Script:SG_Rows[0].MemberType -eq 'User' -and $Script:SG_Rows[0].Identifier -eq 'ann@school.test') 'mixed preview retains user identity and type'
+        $Script:SG_Busy = $true
+        Add-SgDevices @([pscustomobject]@{ id = 'blocked' })
+        Clear-SgMembers
+        $Script:SG_Busy = $false
+        $Script:SG_GroupId = 'created-group'
+        Add-SgDevices @([pscustomobject]@{ id = 'blocked' })
+        Clear-SgMembers
+        Assert ($Script:SG_Rows.Count -eq 3) 'member editing is blocked during creation and after a group is created'
+        $Script:SG_GroupId = $null
+        $Script:SG_Devices = @($device)
+        foreach ($query in 'classROOM', 'registration-1', 'entra-object-1') {
+            $Script:SG_UI.DeviceSearch.Text = $query
+            Update-SgDeviceSearch
+            Assert ($Script:SG_UI.DeviceMatches.ItemsSource.Count -eq 1) 'device search matches name, device ID and object ID'
+        }
+        $Script:SG_UI.DeviceSearch.Text = 'absent'
+        Update-SgDeviceSearch
+        Assert ($Script:SG_UI.DeviceMatches.ItemsSource.Count -eq 0) 'device search clears old matches when nothing matches'
+        $Script:SG_UI.DeviceSearch.Text = ''
+        $Script:SG_Devices = @(1..60 | ForEach-Object { [pscustomobject]@{ id = "entra-$_" } })
+        Update-SgDeviceSearch
+        Assert ($Script:SG_UI.DeviceMatches.ItemsSource.Count -eq 50) 'device picker caps visible search results'
         function Start-AsyncWork { throw 'Preview must not start a worker' }
         function Write-AppLog { param($Message, $Color) }
         $Script:AccessToken = 'test'
@@ -161,12 +209,48 @@ try {
         Assert ($Script:SG_UI.Status.Text -like '[[]DRY[]]*No changes made*' -and -not $Script:SG_GroupId) 'security group dry run leaves the directory unchanged'
         $Script:DryMode = $false
         $Script:DemoMode = $true
+        Start-SgDeviceLoad
+        Assert ($Script:SG_Devices.Count -eq $Script:Demo_DirectoryDevices.Count -and $Script:SG_Devices.Count -gt 0) 'device demo loads Entra-shaped records without a network worker'
         Start-SgCreate
         Assert ($Script:SG_UI.Status.Text -like '[[]DEMO[]]*No changes made*') 'security group demo never starts a network worker'
         $Script:DemoMode = $false
+        Clear-SgMembers
+        Assert ($Script:SG_Rows.Count -eq 0 -and $Script:SG_UI.Name.Text -eq 'Classroom access') 'Clear all removes mixed members but keeps group details'
+        function Start-AsyncWork {
+            param($RefSeed, $Script, $OnComplete)
+            $script:deviceCompletion = $OnComplete
+            [pscustomobject]@{ Active = $true }
+        }
+        $Script:SG_Users = $users
+        Start-SgDeviceLoad
+        Assert ($Script:SG_DeviceTimer -and -not $Script:SG_UI.ReloadDevices.IsEnabled -and $Script:SG_Devices.Count -eq 0) 'device refresh disables reload and clears stale search data'
+        & $script:deviceCompletion @{ Error = 'Forbidden'; Devices = @() }
+        Assert (-not $Script:SG_DeviceTimer -and $Script:SG_UI.ReloadDevices.IsEnabled -and $Script:SG_UI.DeviceStatus.Text -like '*Device.Read.All*' -and $Script:SG_Users.Count -eq 2) 'device load failure offers consent guidance and retry without losing users'
+        Start-SgDeviceLoad
+        & $script:deviceCompletion @{ Error = $null; Devices = @($device) }
+        Assert ($Script:SG_Devices.Count -eq 1 -and $Script:SG_UI.DeviceMatches.ItemsSource.Count -eq 1) 'device reload recovers after an error'
         $Script:AccessToken = $null
+        $Script:SG_Users = @()
+        $Script:SG_Devices = @()
         $Script:SG_Rows.Clear()
         $Script:SG_UI = $null
+    }
+    & {
+        $calls = [Collections.Generic.List[string]]::new()
+        function Invoke-RestMethod {
+            param($Uri, $Headers, $Method)
+            $calls.Add($Uri)
+            Assert ($Method -eq 'GET' -and $Headers.Authorization -eq 'Bearer test') 'device discovery only reads directory data'
+            if ($calls.Count -eq 1) {
+                return @{ value = @(@{ id = 'object-1'; deviceId = 'registration-1' }); '@odata.nextLink' = 'https://graph.microsoft.com/v1.0/devices?$skiptoken=next' }
+            }
+            return @{ value = @(@{ id = 'object-2'; deviceId = 'registration-2' }) }
+        }
+        $Token = 'test'
+        $Ref = @{ Devices = @() }
+        & $Script:SgDeviceLoadWork
+        Assert ($calls.Count -eq 2 -and $calls[0] -eq 'https://graph.microsoft.com/v1.0/devices?$select=id,deviceId,displayName,operatingSystem' -and $Ref.Devices.Count -eq 2) 'device discovery uses Entra directory devices and follows pagination'
+        Assert ($Script:GraphScopes -contains 'https://graph.microsoft.com/Device.Read.All') 'device membership requests the delegated device read permission'
     }
     $missing = @()
     $xamlCount = 0

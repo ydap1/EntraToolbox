@@ -10,6 +10,15 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.26.0'
+        Date    = '2026-09-08'
+        Changes = @(
+            'Security Group Creator: search Entra devices by name or ID and add multiple selected devices'
+            'Create device-only or mixed user/device groups, with member types, duplicate prevention and per-member results'
+            'Device loading runs in the background and requires Device.Read.All consent; includes offline demo devices'
+        )
+    }
+    @{
         Version = '0.25.0'
         Date    = '2026-09-08'
         Changes = @(

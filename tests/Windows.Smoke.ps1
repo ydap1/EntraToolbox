@@ -148,8 +148,26 @@ try {
     $Script:SG_UI.Departments.SelectedIndex = 0
     $Script:SG_UI.AddDepartment.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
     if ($Script:SG_Rows.Count -eq 0 -or -not $Script:SG_UI.Create.IsEnabled) { throw 'Security group department selection failed.' }
+    $userCount = $Script:SG_Rows.Count
+    $Script:SG_UI.DeviceSearch.Text = 'ctx-lt'
+    Update-SgDeviceSearch
+    if ($Script:SG_UI.DeviceMatches.Items.Count -ne 2) { throw 'Security group device search failed.' }
+    $Script:SG_UI.DeviceMatches.SelectAll()
+    $Script:SG_UI.AddDevices.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
+    $Script:SG_UI.AddDevices.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
+    if ($Script:SG_Rows.Count -ne ($userCount + 2) -or @($Script:SG_Rows | Where-Object MemberType -eq 'Device').Count -ne 2) { throw 'Mixed group device selection or deduplication failed.' }
     $Script:SG_UI.Create.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
     if ($Script:SG_UI.Status.Text -notlike '*No changes made*') { throw 'Security group demo creation failed.' }
+    $Script:SG_UI.Clear.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
+    if ($Script:SG_Rows.Count) { throw 'Clear all did not remove mixed members.' }
+    $Script:SG_UI.AddDevices.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
+    if ($Script:SG_Rows.Count -ne 2) { throw 'Device-only group selection failed.' }
+    $Script:SG_UI.Create.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
+    if ($Script:SG_UI.Status.Text -notlike '*2 members*No changes made*') { throw 'Device-only group preview failed.' }
+    $Script:SG_UI.New.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
+    if ($Script:SG_UI.DeviceSearch.Text -or $Script:SG_Rows.Count -or $Script:SG_UI.DeviceMatches.SelectedItems.Count) { throw 'New group did not reset device selection.' }
+    foreach ($callback in $Script:ResetCallbacks) { & $callback }
+    if ($Script:SG_Devices.Count -or $Script:SG_UI.DeviceMatches.Items.Count -or $Script:SG_UI.ReloadDevices.IsEnabled -or $Script:SG_DeviceTimer) { throw 'Tenant reset did not clear device state.' }
     if ($Script:SmokeErrors.Count) { throw ($Script:SmokeErrors -join "`n") }
     if ($Script:AsyncJobs.Count) { throw 'Demo navigation unexpectedly started network workers.' }
     Write-Host "PASS: $($documents.Count) XAML documents, $($Script:ThemePresets.Count) themes, $($Script:NavContents.Count) demo panels at three widths."
