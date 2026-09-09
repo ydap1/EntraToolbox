@@ -1081,6 +1081,7 @@ function Show-MainWindow {
         'GroupCopy'   = 'Initialize-GroupCopyTool'
         'Teams'       = 'Initialize-TeamsProvisioningTool'
         'SecurityGroup' = 'Initialize-SecurityGroupCreatorTool'
+        'BulkResults' = 'Initialize-BulkResultsTool'
         'Changelog'   = 'Initialize-UpdateHistoryTool'
         'Appearance'  = 'Initialize-AppearanceTool'
         'SecureScore' = 'Initialize-SecureScoreTool'
@@ -1098,6 +1099,7 @@ function Show-MainWindow {
         'GroupCopy'   = @('Start-GcUserLoad')
         'Teams'       = @('Start-TpUserLoad')
         'SecurityGroup' = @('Start-SgUserLoad')
+        'BulkResults' = @()
         'Changelog'   = @()
         'Appearance'  = @()
         'SecureScore' = @('Start-SsLoad')
@@ -1117,6 +1119,7 @@ function Show-MainWindow {
         @{ Type = 'tool'; Name = 'LastDevice';  Title = 'Last Device';          Desc = 'Login history and stale device detection' }
         @{ Type = 'tool'; Name = 'DevComp';     Title = 'Device Compliance';    Desc = 'Compliance overview with failure reasons' }
         @{ Type = 'cat';  Label = 'AUDIT' }
+        @{ Type = 'tool'; Name = 'BulkResults'; Title = 'Bulk Results'; Desc = 'Progress, stop, export and recover bulk operations' }
         @{ Type = 'tool'; Name = 'SignIn';       Title = 'Sign-In Logs';        Desc = 'Browse Entra ID sign-in events' }
         @{ Type = 'cat';  Label = 'GROUPS & TEAMS' }
         @{ Type = 'tool'; Name = 'GroupCopy';   Title = 'Group Copy';           Desc = 'Copy memberships from one user to another' }

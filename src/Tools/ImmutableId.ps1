@@ -414,7 +414,7 @@ Type YES (all capitals) to confirm.
     $workItems = @($toAssign | ForEach-Object { @{ Id = $_.Id; Name = $_.Name; NewId = $_.NewId } })
 
     if ($Script:IID_ApplyTimer) { $Script:IID_ApplyTimer.Stop() }
-    $Script:IID_ApplyTimer = Start-AsyncWork -RefSeed @{ Results = @() } -Vars @{ Pending = $workItems } -Script {
+    $Script:IID_ApplyTimer = Start-AsyncWork -BulkName 'Immutable ID' -BulkTotal $workItems.Count -RefSeed @{ Results = @() } -Vars @{ Pending = $workItems } -Script {
         $out = [System.Collections.Generic.List[object]]::new()
         foreach ($item in $Pending) {
             if ($Ref['CancelRequested']) { break }
@@ -520,7 +520,7 @@ Type YES (all capitals) to confirm.
     $workItems = @($toRemove | ForEach-Object { @{ Id = $_.Id; Name = $_.Name } })
 
     if ($Script:IID_ApplyTimer) { $Script:IID_ApplyTimer.Stop() }
-    $Script:IID_ApplyTimer = Start-AsyncWork -RefSeed @{ Results = @() } -Vars @{ Pending = $workItems } -Script {
+    $Script:IID_ApplyTimer = Start-AsyncWork -BulkName 'Immutable ID' -BulkTotal $workItems.Count -RefSeed @{ Results = @() } -Vars @{ Pending = $workItems } -Script {
         $out = [System.Collections.Generic.List[object]]::new()
         foreach ($item in $Pending) {
             if ($Ref['CancelRequested']) { break }

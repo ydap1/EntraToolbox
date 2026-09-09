@@ -551,7 +551,7 @@ function Start-TpCreateTeam {
     Write-TpLog "Creating $template team: '$teamName'  ($($memberSnap.Count) members)" 'TextDim'
 
     if ($Script:TP_CreateTimer) { $Script:TP_CreateTimer.Stop() }
-    $Script:TP_CreateTimer = Start-AsyncWork `
+    $Script:TP_CreateTimer = Start-AsyncWork -BulkName 'Teams Provisioning' -BulkTotal ($memberSnap.Count + 1) `
         -IntervalMs 500 `
         -Vars @{
             TeamName   = $teamName

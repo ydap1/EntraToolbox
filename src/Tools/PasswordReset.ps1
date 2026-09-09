@@ -841,7 +841,7 @@ function Initialize-PasswordResetTool {
 
             # Real live run — async so the UI stays responsive
             if ($Script:PwResetTimer) { $Script:PwResetTimer.Stop() }
-            $Script:PwResetTimer = Start-AsyncWork `
+            $Script:PwResetTimer = Start-AsyncWork -BulkName 'Year Group Passwords' -BulkTotal $work.Count `
                 -RefSeed @{ Ok = 0; Fail = 0; Total = $work.Count; Queue = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new() } `
                 -Vars @{ Work = $work; Force = $force } `
                 -IntervalMs 300 `

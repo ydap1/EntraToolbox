@@ -233,6 +233,7 @@ $Script:SgCreateWork = {
     if (-not $group.id) { throw 'Group creation returned no ID. Check Entra before trying again.' }
     $Ref['GroupId'] = $group.id
     foreach ($member in $Members) {
+        if ($Ref['CancelRequested']) { break }
         try {
             $body = @{ '@odata.id' = "https://graph.microsoft.com/v1.0/directoryObjects/$($member.Id)" } | ConvertTo-Json
             $null = Invoke-RestMethod -Uri "https://graph.microsoft.com/v1.0/groups/$($group.id)/members/`$ref" -Method POST -Headers $headers -Body $body -ContentType 'application/json'
@@ -258,7 +259,7 @@ function Start-SgCreate {
     $Script:SG_Busy = $true
     Update-SgControls
     $Script:SG_UI.Status.Text = "Creating '$name' and adding members…"
-    $Script:SG_Timer = Start-AsyncWork -Vars @{
+    $Script:SG_Timer = Start-AsyncWork -BulkName 'Security Group Creator' -BulkTotal ($Script:SG_Rows.Count + 1) -Vars @{
         GroupName = $name; Description = $Script:SG_UI.Description.Text.Trim()
         Members = @($Script:SG_Rows | ForEach-Object { [pscustomobject]@{
             Id = $_.Id; Target = "$($_.MemberType): $($_.DisplayName) [$($_.Identifier)] (object $($_.Id))"

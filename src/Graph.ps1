@@ -63,6 +63,7 @@ function Invoke-RestMethod {
             if ($ResponseHeadersVariable) {
                 Set-Variable -Name $ResponseHeadersVariable -Value $responseHeaders -Scope 1
             }
+            if ($Method -notin 'GET','HEAD','OPTIONS') { Publish-EtbWriteResult $request 'Succeeded' }
             return $result
         } catch {
             $response = $_.Exception.Response
@@ -71,10 +72,45 @@ function Invoke-RestMethod {
             # an ambiguous gateway/server error (e.g. creating a second Team).
             $retryable = $status -eq 429 -or
                 ($Method -in 'GET', 'HEAD', 'OPTIONS' -and $status -in 502, 503, 504)
-            if (-not $retryable -or $attempt -ge 4) { throw }
+            if (-not $retryable -or $attempt -ge 4) {
+                if ($Method -notin 'GET','HEAD','OPTIONS') { Publish-EtbWriteResult $request (Get-EtbWriteResult $status) $_.Exception.Message }
+                throw
+            }
             $delay = Get-EtbRetryDelay -Response $response -Attempt $attempt
             # Do not shorten the server's Retry-After. Cancellation interrupts sleep.
             Start-Sleep -Seconds $delay
         }
     }
+}
+
+
+function Get-EtbWriteResult {
+    param([int]$Status)
+    if ($Status -in 400,401,403,404,405,409,412,422,429) { return 'Failed' }
+    return 'Uncertain'
+}
+
+function Publish-EtbWriteResult {
+    param($Request, [string]$Result, [string]$Detail = '')
+    if (-not $Ref -or -not $Ref['BulkQueue']) { return }
+    $uri = [uri]$Request.Uri
+    $retry = $null
+    $body = if ($Request.Body) { try { $Request.Body | ConvertFrom-Json -AsHashtable } catch { $null } }
+    # Keep only narrowly supported, non-secret requests for explicit recovery.
+    if ($Request.Method -eq 'PATCH' -and $uri.AbsolutePath -match '/users/[^/]+$' -and $body -and
+        @($body.Keys | Where-Object { $_ -notin 'userPrincipalName','onPremisesImmutableId','accountEnabled' }).Count -eq 0) {
+        $retry = @{ Uri = $uri.AbsoluteUri; Method = 'PATCH'; Body = $Request.Body }
+    } elseif ($uri.AbsolutePath -match '/groups/[^/]+/members/(?:[^/]+/)?\$ref$') {
+        $verify = if ($Request.Method -eq 'DELETE') { $uri.AbsoluteUri -replace '/\$ref$', '' }
+            elseif ($body['@odata.id']) { ($uri.AbsoluteUri -replace '/\$ref$', '/') + ($body['@odata.id'] -split '/')[-1] }
+        if ($verify) { $retry = @{ Uri = $uri.AbsoluteUri; Method = $Request.Method; Body = $Request.Body; VerifyUri = $verify } }
+    }
+    $target = $uri.AbsolutePath -replace '^/v1.0/', ''
+    if ($Ref['BulkLabels']) {
+        foreach ($segment in ($uri.AbsolutePath -split '/')) {
+            if ($Ref['BulkLabels'].ContainsKey($segment)) { $target = $target.Replace($segment, $Ref['BulkLabels'][$segment]) }
+        }
+    }
+    if ($body -and $body.ContainsKey('passwordProfile')) { $Detail = if ($Result -eq 'Succeeded') { '' } else { 'Password request failed or has an uncertain outcome; review the original tool.' } }
+    $Ref['BulkQueue'].Enqueue([pscustomobject]@{ Time = (Get-Date -Format HH:mm:ss); Target = $target; Action = $Request.Method; Result = $Result; Detail = $Detail; Retry = $retry })
 }

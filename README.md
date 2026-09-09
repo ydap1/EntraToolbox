@@ -23,6 +23,10 @@ WPF PowerShell GUI for Entra ID (Azure AD) tenant management. Requires Windows a
 | **Secure Score** | Security | Microsoft Secure Score percentage headline with per-control breakdown table. |
 | **Appearance** | App | Theme presets (Slate & Amber, Indigo Night, Ocean, Forest, Rose) and UI font picker with per-font preview. |
 
+### Bulk results
+
+**Bulk Results** lists live password, UPN, immutable-ID, group-copy, security-group and Teams runs. It shows per-request outcomes and progress, with cooperative **Stop**, result CSVs and failure-only exports. Confirmed failed UPN/immutable-ID changes and group membership requests can be retried explicitly. Uncertain readable changes can be checked against current state; an absent change remains uncertain. Passwords and object creation are never replayed there. Refresh the original tool after recovery. Session results clear on tenant switch; directory change records remain on disk.
+
 ### Record of changes
 
 Operations that alter the directory — password resets, UPN changes, immutable IDs, leaver steps, group copies, licence changes, team creation, device syncs — append a row to `config\audit\<tenant>-<month>.csv` naming the operator, target, result and time. Dry runs and demo mode change nothing and so are not recorded, and passwords never appear there; use the tool's own CSV export for those.

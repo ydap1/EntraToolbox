@@ -183,6 +183,7 @@ $Script:EtbWorkerPreamble = Get-Content (Join-Path $PSScriptRoot 'Graph.ps1') -R
 . (Join-Path $PSScriptRoot 'Graph.ps1')
 . (Join-Path $PSScriptRoot 'Data.ps1')
 . (Join-Path $PSScriptRoot 'Audit.ps1')
+. (Join-Path $PSScriptRoot 'Bulk.ps1')
 
 # ── WPF-safe async runspace + completion timer ────────────────────────────────
 # Runs $Script in a background Runspace with $Ref (synchronized hashtable), $Token
@@ -267,6 +268,9 @@ function Start-EtbWorkerCleanup {
 
 function Reset-EtbSessionWork {
     $Script:SessionGeneration++
+    $Script:BulkRuns.Clear()
+    $Script:BR_Busy = $false
+    Update-BrDisplay
     foreach ($job in $Script:AsyncJobs.ToArray()) {
         if (-not $job.Tag.Independent) { Stop-EtbAsyncWork $job }
     }
@@ -288,10 +292,17 @@ function Start-AsyncWork {
         [hashtable]$RefSeed  = @{},
         [int]$IntervalMs     = 300,
         [switch]$NoToken,
-        [switch]$SessionIndependent
+        [switch]$SessionIndependent,
+        [string]$BulkName,
+        [int]$BulkTotal = 0
     )
     $seed = @{ Done = $false; Error = $null; Cancelled = $false; CancelRequested = $false }
     foreach ($k in $RefSeed.Keys) { $seed[$k] = $RefSeed[$k] }
+    if ($BulkName) {
+        $seed['BulkQueue'] = [Collections.Concurrent.ConcurrentQueue[object]]::new()
+        $seed['BulkLabels'] = @{}
+        foreach ($u in $Script:UserCache.Users) { $seed['BulkLabels'][$u.id] = $u.userPrincipalName }
+    }
     $ref = [hashtable]::Synchronized($seed)
 
     $rs = New-BackgroundRunspace
@@ -347,6 +358,7 @@ function Start-AsyncWork {
             Stop-EtbAsyncWork $this
             return
         }
+        Update-EtbBulkRun $this.Tag.Ref
         if ($this.Tag.OnProgress) {
             try { Invoke-EtbScript $this.Tag.OnProgress @($this.Tag.Ref) }
             catch { Invoke-EtbScript { Write-Log "Async OnProgress error: $_" 'ERROR' } }
@@ -355,9 +367,11 @@ function Start-AsyncWork {
         $this.Stop()
         $state = $this.Tag
         Complete-EtbAsyncWork $this
+        Update-EtbBulkRun $state.Ref -Finished
         try { Invoke-EtbScript $state.OnComplete @($state.Ref) }
         catch { Write-Log "Async OnComplete error: $_" 'ERROR' }
     })
+    if ($BulkName) { Register-EtbBulkRun $timer $BulkName $BulkTotal }
     $Script:AsyncJobs.Add($timer)
     Start-EtbWorkerCleanup
     $timer.Start()
@@ -600,6 +614,24 @@ $Script:ThemeListBoxTemplate = @'
 #
 # Keyed on the exact opening tag used to detect a local declaration.
 $Script:ThemeSharedStyles = [ordered]@{
+    '<Style x:Key="EtbAction"' = @"
+    <Style x:Key="EtbAction" TargetType="Button">
+      <Setter Property="Foreground" Value="$($Script:Theme.Text)"/>
+      <Setter Property="Background" Value="$($Script:Theme.Card)"/>
+      <Setter Property="BorderBrush" Value="$($Script:Theme.Border)"/>
+      <Setter Property="Padding" Value="12,8"/>
+      <Setter Property="Margin" Value="0,0,8,8"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+        <Border x:Name="ActionSurface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+        <ControlTemplate.Triggers>
+          <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ActionSurface" Property="BorderBrush" Value="$($Script:Theme.Accent)"/></Trigger>
+          <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ActionSurface" Property="BorderBrush" Value="$($Script:Theme.Accent)"/></Trigger>
+          <Trigger Property="IsEnabled" Value="False"><Setter TargetName="ActionSurface" Property="Opacity" Value="0.4"/></Trigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+"@
+
     '<Style x:Key="EtbPopulationComboItem"' = @"
     <Style x:Key="EtbPopulationComboItem" TargetType="ComboBoxItem">
       <Setter Property="Foreground" Value="$($Script:Theme.Text)"/>

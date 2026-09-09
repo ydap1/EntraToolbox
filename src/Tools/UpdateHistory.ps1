@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.28.0'
+        Date    = '2026-09-09'
+        Changes = @(
+            'Shared Bulk Results shows progress, Stop and per-request result or failure exports'
+            'Explicit recovery separates confirmed failures from uncertain outcomes; secrets and object creation are never replayed'
+        )
+    }
+    @{
         Version = '0.27.0'
         Date    = '2026-09-08'
         Changes = @(

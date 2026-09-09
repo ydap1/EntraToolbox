@@ -276,7 +276,7 @@ function Start-BucApply {
     Write-BucLog "Changing UPN domain for $($pending.Count) user(s)..." 'TextDim'
 
     if ($Script:BUC_ApplyTimer) { $Script:BUC_ApplyTimer.Stop() }
-    $Script:BUC_ApplyTimer = Start-AsyncWork -RefSeed @{ Results = @() } -Vars @{ Pending = $work } -IntervalMs 500 -Script {
+    $Script:BUC_ApplyTimer = Start-AsyncWork -BulkName 'Bulk UPN Change' -BulkTotal $work.Count -RefSeed @{ Results = @() } -Vars @{ Pending = $work } -IntervalMs 500 -Script {
         $out = [System.Collections.Generic.List[object]]::new()
         foreach ($r in $Pending) {
             if ($Ref['CancelRequested']) { break }

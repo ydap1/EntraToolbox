@@ -200,7 +200,7 @@ function Start-GcCopy {
     Write-GcLog "Starting: '$($srcUser.displayName)' -> '$($tgtUser.displayName)'" 'TextDim'
 
     if ($Script:GC_CopyTimer) { $Script:GC_CopyTimer.Stop() }
-    $Script:GC_CopyTimer = Start-AsyncWork `
+    $Script:GC_CopyTimer = Start-AsyncWork -BulkName 'Group Copy' -BulkTotal $srcGroups.Count `
         -IntervalMs 500 `
         -Vars    @{ SrcGroups = $srcGroups; TgtUserId = $tgtUser.id } `
         -RefSeed @{
