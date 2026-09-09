@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.32.0'
+        Date    = '2026-09-09'
+        Changes = @(
+            'Group Manager compares existing groups with year groups, departments or imported user rosters'
+            'Preview add/remove/keep actions, preserve owners and non-user members, and reject stale membership plans'
+        )
+    }
+    @{
         Version = '0.31.0'
         Date    = '2026-09-09'
         Changes = @(

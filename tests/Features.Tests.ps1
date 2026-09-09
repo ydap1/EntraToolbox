@@ -74,6 +74,32 @@ try {
         & $Script:BlApplyWork
         Assert ($calls.Count -eq 0) 'stopped licence batches do not begin another user'
     }
+    $members = @(@{ id='owner'; userPrincipalName='owner@school.test' }, @{ id='old'; userPrincipalName='old@school.test' })
+    $desired = @(@{ id='new'; userPrincipalName='new@school.test' })
+    $owners = @(@{ id='owner' })
+    $plan = @(Get-GmPlan $members $desired $owners 'Match user roster')
+    Assert (@($plan | Where-Object Action -eq 'Remove')[0].Id -eq 'old' -and @($plan | Where-Object Id -eq 'owner')[0].Action -eq 'Keep') 'roster matching preserves owners and removes only surplus users'
+    Assert (@(Get-GmPlan $members $desired $owners 'Add missing' | Where-Object Action -eq 'Remove').Count -eq 0) 'add-missing mode never removes members'
+    foreach ($type in 'Dynamic','Synced','Role','Mail') {
+        $group=@{ id='g'; securityEnabled=$true; mailEnabled=$false; groupTypes=@() }
+        switch ($type) { Dynamic { $group.groupTypes=@('DynamicMembership') }; Synced { $group.onPremisesSyncEnabled=$true }; Role { $group.isAssignableToRole=$true }; Mail { $group.mailEnabled=$true } }
+        $rejected=$false
+        try { Assert-GmEditableGroup $group } catch { $rejected=$true }
+        Assert $rejected "$type groups are rejected before membership writes"
+    }
+    & {
+        $calls=[Collections.Generic.List[object]]::new()
+        function Get-GmSnapshot { param($GroupId,$Headers); @{ Members=$members; Owners=$owners } }
+        function Invoke-RestMethod { param($Uri,$Method,$Headers,$Body,$ContentType); $calls.Add(@{ Uri=$Uri; Method=$Method }) }
+        $GroupId='g'; $Desired=$desired; $Mode='Match user roster'; $Signature='stale'; $Token='fake'; $Ref=@{ Results=@() }
+        $rejected=$false
+        try { & $Script:GmApplyWork } catch { $rejected=$true }
+        Assert ($rejected -and $calls.Count -eq 0) 'a stale group preview cannot submit any membership changes'
+        $Signature=Get-GmPlanSignature $plan
+        & $Script:GmApplyWork
+        $deletes=@($calls | Where-Object Method -eq 'DELETE')
+        Assert ($calls.Count -eq 2 -and $deletes.Count -eq 1 -and $deletes[0].Uri -eq 'https://graph.microsoft.com/v1.0/groups/g/members/old/$ref') 'group matching deletes only the reviewed membership reference'
+    }
     Assert ((Get-EtbWriteResult 403) -eq 'Failed' -and (Get-EtbWriteResult 504) -eq 'Uncertain' -and (Get-EtbWriteResult 0) -eq 'Uncertain') 'write failures distinguish rejection from uncertain delivery'
     $Ref = @{ BulkQueue = [Collections.Concurrent.ConcurrentQueue[object]]::new(); BulkLabels = @{ user1 = 'pupil@school.test' } }
     Publish-EtbWriteResult @{ Uri = 'https://graph.microsoft.com/v1.0/users/user1'; Method = 'PATCH'; Body = '{"passwordProfile":{"password":"secret"}}' } 'Failed' 'secret echoed'

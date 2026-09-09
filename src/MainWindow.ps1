@@ -1084,6 +1084,7 @@ function Show-MainWindow {
         'LastDevice'  = 'Initialize-LastDeviceTool'
         'DevComp'     = 'Initialize-DeviceComplianceTool'
         'SignIn'      = 'Initialize-SignInLogsTool'
+        'GroupManager' = 'Initialize-GroupManagerTool'
         'GroupCopy'   = 'Initialize-GroupCopyTool'
         'Teams'       = 'Initialize-TeamsProvisioningTool'
         'SecurityGroup' = 'Initialize-SecurityGroupCreatorTool'
@@ -1104,6 +1105,7 @@ function Show-MainWindow {
         'LastDevice'  = @('Start-LdUserLoad', 'Start-LdAllDevicesLoad')
         'DevComp'     = @('Start-DcLoad')
         'SignIn'      = @('Start-SlUserLoad')
+        'GroupManager' = @('Start-GmUsers')
         'GroupCopy'   = @('Start-GcUserLoad')
         'Teams'       = @('Start-TpUserLoad')
         'SecurityGroup' = @('Start-SgUserLoad')
@@ -1132,6 +1134,7 @@ function Show-MainWindow {
         @{ Type = 'tool'; Name = 'BulkResults'; Title = 'Bulk Results'; Desc = 'Progress, stop, export and recover bulk operations' }
         @{ Type = 'tool'; Name = 'SignIn';       Title = 'Sign-In Logs';        Desc = 'Browse Entra ID sign-in events' }
         @{ Type = 'cat';  Label = 'GROUPS & TEAMS' }
+        @{ Type = 'tool'; Name = 'GroupManager'; Title = 'Group Manager'; Desc = 'Compare an existing group with a user roster and review membership changes' }
         @{ Type = 'tool'; Name = 'GroupCopy';   Title = 'Group Copy';           Desc = 'Copy memberships from one user to another' }
         @{ Type = 'tool'; Name = 'SecurityGroup'; Title = 'Security Group Creator'; Desc = 'Create a security group from year groups, departments, individual users or CSV' }
         @{ Type = 'tool'; Name = 'Teams';        Title = 'Teams Provisioning';  Desc = 'Create Teams from year groups, departments or individual users' }

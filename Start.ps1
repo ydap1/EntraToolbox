@@ -54,6 +54,7 @@ if (-not (Get-Module MSAL.PS -ErrorAction SilentlyContinue | Where-Object Versio
 . (Join-Path $PSScriptRoot 'src\Tools\LastDevice.ps1')
 . (Join-Path $PSScriptRoot 'src\Tools\SignInLogs.ps1')
 . (Join-Path $PSScriptRoot 'src\Tools\GroupCopy.ps1')
+. (Join-Path $PSScriptRoot 'src\Tools\GroupManager.ps1')
 . (Join-Path $PSScriptRoot 'src\Tools\TeamsProvisioning.ps1')
 . (Join-Path $PSScriptRoot 'src\Tools\SecurityGroupCreator.ps1')
 . (Join-Path $PSScriptRoot 'src\Tools\BulkUpnChange.ps1')

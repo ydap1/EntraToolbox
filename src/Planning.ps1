@@ -23,3 +23,44 @@ function Get-BlAvailableSeats {
     param($Sku)
     [math]::Max(0, [int64]$Sku.prepaidUnits.enabled - [int64]$Sku.consumedUnits)
 }
+
+function Assert-GmEditableGroup {
+    param($Group)
+    if (-not $Group.id -or $Group.groupTypes -contains 'DynamicMembership' -or $Group.isAssignableToRole -or $Group.onPremisesSyncEnabled -or
+        ($Group.groupTypes -notcontains 'Unified' -and (-not $Group.securityEnabled -or $Group.mailEnabled))) {
+        throw 'Choose a cloud-managed security or Microsoft 365 group with assigned membership. Synced, dynamic, role-assignable and mail-enabled security groups are not editable here.'
+    }
+}
+
+function Get-GmPlan {
+    param([object[]]$Current, [object[]]$Desired, [object[]]$Owners, [ValidateSet('Add missing','Match user roster')][string]$Mode)
+    $wanted=@{}; $existing=@{}; $ownerIds=@{}
+    foreach ($u in $Desired) { if ($u.id) { $wanted[$u.id]=$u } }
+    foreach ($u in $Current) { if ($u.id) { $existing[$u.id]=$u } }
+    foreach ($o in $Owners) { $ownerIds[$o.id]=$true }
+    foreach ($id in $wanted.Keys | Sort-Object) {
+        $u=$wanted[$id]
+        [pscustomobject]@{ Id=$id; Target=$u.userPrincipalName; Action= $(if ($existing.ContainsKey($id)) { 'Keep' } else { 'Add' }); Result='Preview'; Detail='' }
+    }
+    foreach ($id in $existing.Keys | Sort-Object) {
+        if ($wanted.ContainsKey($id)) { continue }
+        $u=$existing[$id]
+        $remove = $Mode -eq 'Match user roster' -and -not $ownerIds.ContainsKey($id)
+        [pscustomobject]@{ Id=$id; Target=$u.userPrincipalName; Action= $(if ($remove) { 'Remove' } else { 'Keep' }); Result='Preview'; Detail= $(if ($ownerIds.ContainsKey($id)) { 'Owner preserved.' } else { '' }) }
+    }
+}
+
+function Get-GmPlanSignature {
+    param([object[]]$Plan)
+    (@($Plan | ForEach-Object { "$($_.Id):$($_.Action):$($_.Detail)" } | Sort-Object) -join '|')
+}
+
+function Get-GmSnapshot {
+    param([string]$GroupId, $Headers)
+    $base = "https://graph.microsoft.com/v1.0/groups/$GroupId"
+    $group = Invoke-RestMethod -Uri ($base + '?$select=id,displayName,groupTypes,securityEnabled,mailEnabled,isAssignableToRole,onPremisesSyncEnabled') -Headers $Headers
+    Assert-GmEditableGroup $group
+    $members = @(Get-EtbGraphCollection -Uri ($base + '/members/microsoft.graph.user?$select=id,displayName,userPrincipalName&$top=999') -Headers $Headers)
+    $owners = @(Get-EtbGraphCollection -Uri ($base + '/owners?$select=id&$top=999') -Headers $Headers)
+    @{ Group=$group; Members=$members; Owners=$owners }
+}
