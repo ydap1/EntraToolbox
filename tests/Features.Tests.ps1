@@ -48,6 +48,32 @@ try {
         Assert ($Script:SL_Entries.Count -eq 2 -and -not $Script:SL_Next) 'overlapping pages deduplicate by sign-in ID'
         $Script:SL_UI = $null
     }
+    $licensed = @{ id='u'; userPrincipalName='u@school.test'; usageLocation='GB'; assignedLicenses=@(); licenseAssignmentStates=@(@{ skuId='sku'; assignedByGroup='g'; error='None' }) }
+    Assert ((Get-BlPlanRow $licensed sku Remove).Result -eq 'Skip') 'bulk licence removal preserves inherited-only assignments'
+    $licensed.licenseAssignmentStates += @{ skuId='sku'; assignedByGroup=$null; error='None' }
+    $mixed = Get-BlPlanRow $licensed sku Remove
+    Assert ($mixed.Source -eq 'Direct + group' -and $mixed.Result -eq 'Ready' -and $mixed.Detail -match 'remains') 'mixed licence sources permit only direct removal and explain retained access'
+    Assert ((Get-BlPlanRow $licensed sku Assign).Result -eq 'Skip') 'existing service plans are not overwritten by bulk assignment'
+    $licensed.licenseAssignmentStates=@(); $licensed.usageLocation=$null
+    Assert ((Get-BlPlanRow $licensed sku Assign).Result -eq 'Blocked') 'missing usage location blocks a new licence assignment'
+    Assert ((Get-BlAvailableSeats @{ prepaidUnits=@{ enabled=10 }; consumedUnits=12 }) -eq 0) 'overallocated subscriptions report zero available seats'
+    & {
+        $calls = [Collections.Generic.List[object]]::new()
+        function Invoke-RestMethod {
+            param($Uri, $Headers, $Method, $Body, $ContentType)
+            if ($Method -eq 'POST') { $calls.Add(($Body | ConvertFrom-Json)); return }
+            return @{ id='u'; userPrincipalName='u@school.test'; usageLocation='GB'; licenseAssignmentStates=@(@{ skuId='sku'; assignedByGroup=$null }) }
+        }
+        $Rows=@($mixed); $SkuId='sku'; $Action='Remove'; $Token='fake'; $Ref=@{ Results=@() }
+        & $Script:BlApplyWork
+        Assert ($calls.Count -eq 0 -and $Ref.Results[0].Result -eq 'Skipped') 'licence writes skip changed assignment sources after preview'
+        $Rows=@([pscustomobject]@{ Id='u'; Target='u@school.test'; Source='Direct' }); $Ref=@{ Results=@() }
+        & $Script:BlApplyWork
+        Assert ($calls.Count -eq 1 -and $calls[0].addLicenses.Count -eq 0 -and $calls[0].removeLicenses[0] -eq 'sku') 'licence removal sends only the reviewed SKU in removeLicenses'
+        $calls.Clear(); $Ref=@{ Results=@(); CancelRequested=$true }
+        & $Script:BlApplyWork
+        Assert ($calls.Count -eq 0) 'stopped licence batches do not begin another user'
+    }
     Assert ((Get-EtbWriteResult 403) -eq 'Failed' -and (Get-EtbWriteResult 504) -eq 'Uncertain' -and (Get-EtbWriteResult 0) -eq 'Uncertain') 'write failures distinguish rejection from uncertain delivery'
     $Ref = @{ BulkQueue = [Collections.Concurrent.ConcurrentQueue[object]]::new(); BulkLabels = @{ user1 = 'pupil@school.test' } }
     Publish-EtbWriteResult @{ Uri = 'https://graph.microsoft.com/v1.0/users/user1'; Method = 'PATCH'; Body = '{"passwordProfile":{"password":"secret"}}' } 'Failed' 'secret echoed'

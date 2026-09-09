@@ -64,6 +64,7 @@ if (-not (Get-Module MSAL.PS -ErrorAction SilentlyContinue | Where-Object Versio
 . (Join-Path $PSScriptRoot 'src\Tools\LeaverWorkflow.ps1')
 . (Join-Path $PSScriptRoot 'src\Tools\DeviceCompliance.ps1')
 . (Join-Path $PSScriptRoot 'src\Tools\LicenceAssignment.ps1')
+. (Join-Path $PSScriptRoot 'src\Tools\BulkLicences.ps1')
 . (Join-Path $PSScriptRoot 'src\MainWindow.ps1')
 
 # Capture the fully-loaded script session so WPF dispatcher callbacks can resolve

@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.31.0'
+        Date    = '2026-09-09'
+        Changes = @(
+            'Bulk Licences previews cohort assignments, available seats and direct versus group-inherited licences'
+            'Apply or remove direct licences with per-user outcomes, dry run, Stop and exports; recheck assignments before writing'
+        )
+    }
+    @{
         Version = '0.30.0'
         Date    = '2026-09-09'
         Changes = @(

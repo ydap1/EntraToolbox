@@ -179,8 +179,10 @@ function New-BackgroundRunspace {
 # (honouring Retry-After) and transient 502/503/504 with exponential backoff.
 # Non-retryable errors are rethrown untouched, so existing per-tool catch blocks
 # (401/403 classification etc.) keep working exactly as before.
-$Script:EtbWorkerPreamble = Get-Content (Join-Path $PSScriptRoot 'Graph.ps1') -Raw
+$Script:EtbWorkerPreamble = (Get-Content (Join-Path $PSScriptRoot 'Graph.ps1') -Raw) + "`n" + (Get-Content (Join-Path $PSScriptRoot 'Planning.ps1') -Raw)
 . (Join-Path $PSScriptRoot 'Graph.ps1')
+. (Join-Path $PSScriptRoot 'Planning.ps1')
+. (Join-Path $PSScriptRoot 'Roster.ps1')
 . (Join-Path $PSScriptRoot 'Data.ps1')
 . (Join-Path $PSScriptRoot 'Audit.ps1')
 . (Join-Path $PSScriptRoot 'Bulk.ps1')

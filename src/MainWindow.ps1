@@ -1077,6 +1077,7 @@ function Show-MainWindow {
         'Overview'    = 'Initialize-UserOverviewTool'
         'UserReset'   = 'Initialize-UserPasswordResetTool'
         'Leaver'      = 'Initialize-LeaverWorkflowTool'
+        'BulkLicence' = 'Initialize-BulkLicencesTool'
         'Licence'     = 'Initialize-LicenceAssignmentTool'
         'BulkUpn'     = 'Initialize-BulkUpnChangeTool'
         'ImmutableId' = 'Initialize-ImmutableIdTool'
@@ -1096,6 +1097,7 @@ function Show-MainWindow {
         'Overview'    = @('Start-UoUsers')
         'UserReset'   = @('Start-UprUserLoad')
         'Leaver'      = @('Start-LwUserLoad')
+        'BulkLicence' = @('Start-BlUsers')
         'Licence'     = @('Start-LaUserLoad', 'Start-LaSkuLoad')
         'BulkUpn'     = @('Start-BucLoad')
         'ImmutableId' = @('Invoke-IidOnConnect')
@@ -1120,6 +1122,7 @@ function Show-MainWindow {
         @{ Type = 'tool'; Name = 'UserReset';   Title = 'User Password Reset';  Desc = 'Reset a single account password' }
         @{ Type = 'tool'; Name = 'Leaver';      Title = 'Leaver Workflow';      Desc = 'Disable, revoke sessions, remove from groups' }
         @{ Type = 'tool'; Name = 'Licence';     Title = 'Licence Assignment';   Desc = 'View and assign Microsoft 365 licences' }
+        @{ Type = 'tool'; Name = 'BulkLicence'; Title = 'Bulk Licences'; Desc = 'Preview and apply licences to a user roster' }
         @{ Type = 'tool'; Name = 'BulkUpn';     Title = 'Bulk UPN Change';      Desc = 'Move users to a different verified domain' }
         @{ Type = 'tool'; Name = 'ImmutableId'; Title = 'Immutable ID';         Desc = 'Assign immutable ID to user' }
         @{ Type = 'cat';  Label = 'DEVICES' }
