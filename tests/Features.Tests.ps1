@@ -14,6 +14,17 @@ try {
         $null = [Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$errors)
         Assert (-not $errors) "$($file.Name) parses"
     }
+    & {
+        function Invoke-RestMethod {
+            param($Uri, $Headers)
+            if ($Uri -match '/auditLogs/') { throw 'Sign-in permission denied' }
+            return @{ id = 'u'; accountEnabled = $true }
+        }
+        function Get-EtbGraphCollection { param($Uri, $Headers); @{ displayName = 'Loaded'; skuPartNumber = 'TEST' } }
+        $UserId = 'u'; $Token = 'fake'; $Ref = @{}
+        & $Script:UoLoadWork
+        Assert ($Ref.Profile.id -eq 'u' -and $Ref.Groups.Count -eq 1 -and $Ref.Devices.Count -eq 1 -and $Ref.SignInsError -match 'permission denied') 'overview preserves successful sections when sign-in access is denied'
+    }
     Assert ((Get-EtbWriteResult 403) -eq 'Failed' -and (Get-EtbWriteResult 504) -eq 'Uncertain' -and (Get-EtbWriteResult 0) -eq 'Uncertain') 'write failures distinguish rejection from uncertain delivery'
     $Ref = @{ BulkQueue = [Collections.Concurrent.ConcurrentQueue[object]]::new(); BulkLabels = @{ user1 = 'pupil@school.test' } }
     Publish-EtbWriteResult @{ Uri = 'https://graph.microsoft.com/v1.0/users/user1'; Method = 'PATCH'; Body = '{"passwordProfile":{"password":"secret"}}' } 'Failed' 'secret echoed'

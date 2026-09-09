@@ -540,6 +540,7 @@ $Script:MainXaml = @'
           <WrapPanel x:Name="CmdActions" Margin="0,12,0,0" Visibility="Collapsed">
             <TextBlock Text="Open in:" Foreground="#7878A0" FontSize="12"
                        VerticalAlignment="Center" Margin="2,0,10,0"/>
+            <Button x:Name="CmdActOverview" Content="Overview" Style="{StaticResource FlatBtn}" Background="#6366F1" Padding="12,7" Margin="0,0,8,0" FontSize="12"/>
             <Button x:Name="CmdActReset"    Content="Password Reset" Style="{StaticResource FlatBtn}"
                     Background="#6366F1" Padding="12,7" Margin="0,0,8,0" FontSize="12"/>
             <Button x:Name="CmdActDevices"  Content="Devices"  Style="{StaticResource FlatBtn}"
@@ -551,7 +552,7 @@ $Script:MainXaml = @'
             <Button x:Name="CmdActLeaver"   Content="Leaver"   Style="{StaticResource FlatBtn}"
                     Background="#3C3C5A" Padding="12,7" FontSize="12"/>
           </WrapPanel>
-          <TextBlock Text="Type a name or UPN  •  ↑↓ select  •  Enter opens Password Reset  •  Esc closes"
+          <TextBlock Text="Type a name or UPN  •  ↑↓ select  •  Enter opens Overview  •  Esc closes"
                      Foreground="#50507A" FontSize="11" Margin="2,10,0,0"/>
         </StackPanel>
       </Border>
@@ -609,7 +610,7 @@ $Script:MainXaml = @'
             <Border Grid.Row="3" Grid.Column="0" Style="{StaticResource KeyChip}"><TextBlock Style="{StaticResource KeyText}" Text="Esc"/></Border>
             <TextBlock Grid.Row="3" Grid.Column="1" Style="{StaticResource KeyDesc}" Text="Close overlays and cancel dialogs"/>
             <Border Grid.Row="4" Grid.Column="0" Style="{StaticResource KeyChip}"><TextBlock Style="{StaticResource KeyText}" Text="Enter"/></Border>
-            <TextBlock Grid.Row="4" Grid.Column="1" Style="{StaticResource KeyDesc}" Text="Confirm dialogs; in search, open Password Reset"/>
+            <TextBlock Grid.Row="4" Grid.Column="1" Style="{StaticResource KeyDesc}" Text="Confirm dialogs; in search, open Overview"/>
             <Border Grid.Row="5" Grid.Column="0" Style="{StaticResource KeyChip}"><TextBlock Style="{StaticResource KeyText}" Text="↑  ↓"/></Border>
             <TextBlock Grid.Row="5" Grid.Column="1" Style="{StaticResource KeyDesc}" Text="Move through search results"/>
           </Grid>
@@ -921,9 +922,11 @@ function Open-CmdUserInTool {
     $sel = $Script:MainUI.CmdResults.SelectedItem
     if (-not $sel) { return }
     $upn = $sel.Tag.userPrincipalName
+    if ($Tool -eq 'Overview') { $Script:UO_PendingId = $sel.Tag.id }
     Hide-CmdPalette
     Set-NavSelection -Name $Tool
     $box = switch ($Tool) {
+        'Overview'   { $Script:UO_UI.Search }
         'UserReset'  { $Script:UPR_UI.UserSearch }
         'LastDevice' { $Script:LD_UI.UserSearch }
         'SignIn'     { $Script:SL_UI.UserSearch }
@@ -1046,6 +1049,7 @@ function Show-MainWindow {
         CmdSearch       = $window.FindName('CmdSearch')
         CmdResults      = $window.FindName('CmdResults')
         CmdActions      = $window.FindName('CmdActions')
+        CmdActOverview  = $window.FindName('CmdActOverview')
         CmdActReset     = $window.FindName('CmdActReset')
         CmdActDevices   = $window.FindName('CmdActDevices')
         CmdActSignIns   = $window.FindName('CmdActSignIns')
@@ -1070,6 +1074,7 @@ function Show-MainWindow {
     # ── Register lazy-init maps (panels built on first nav click) ────────────
     $Script:NavInitializers = @{
         'YearGroup'   = 'Initialize-PasswordResetTool'
+        'Overview'    = 'Initialize-UserOverviewTool'
         'UserReset'   = 'Initialize-UserPasswordResetTool'
         'Leaver'      = 'Initialize-LeaverWorkflowTool'
         'Licence'     = 'Initialize-LicenceAssignmentTool'
@@ -1088,6 +1093,7 @@ function Show-MainWindow {
     }
     $Script:NavConnectFns = @{
         'YearGroup'   = @('Start-PwUserLoad')
+        'Overview'    = @('Start-UoUsers')
         'UserReset'   = @('Start-UprUserLoad')
         'Leaver'      = @('Start-LwUserLoad')
         'Licence'     = @('Start-LaUserLoad', 'Start-LaSkuLoad')
@@ -1109,6 +1115,7 @@ function Show-MainWindow {
     # ── Build nav sidebar ─────────────────────────────────────────────────────
     $navDef = @(
         @{ Type = 'cat';  Label = 'USERS' }
+        @{ Type = 'tool'; Name = 'Overview'; Title = 'User Overview'; Desc = 'Account, groups, licences, devices and recent sign-ins' }
         @{ Type = 'tool'; Name = 'YearGroup';   Title = 'Year Group Passwords'; Desc = 'Reset passwords by year group or department' }
         @{ Type = 'tool'; Name = 'UserReset';   Title = 'User Password Reset';  Desc = 'Reset a single account password' }
         @{ Type = 'tool'; Name = 'Leaver';      Title = 'Leaver Workflow';      Desc = 'Disable, revoke sessions, remove from groups' }
@@ -1236,7 +1243,7 @@ function Show-MainWindow {
                 $r.ScrollIntoView($r.SelectedItem)
                 $e.Handled = $true
             } elseif ($e.Key -eq 'Return') {
-                Open-CmdUserInTool 'UserReset'
+                Open-CmdUserInTool 'Overview'
                 $e.Handled = $true
             }
         } catch {}
@@ -1248,8 +1255,9 @@ function Show-MainWindow {
         } catch {}
     })
     $Script:MainUI.CmdResults.Add_MouseDoubleClick({
-        try { Open-CmdUserInTool 'UserReset' } catch {}
+        try { Open-CmdUserInTool 'Overview' } catch {}
     })
+    $Script:MainUI.CmdActOverview.Add_Click({ Open-CmdUserInTool 'Overview' })
     $Script:MainUI.CmdActReset.Add_Click({    try { Open-CmdUserInTool 'UserReset' }  catch { Write-Log "CmdActReset error: $_" 'ERROR' } })
     $Script:MainUI.CmdActDevices.Add_Click({  try { Open-CmdUserInTool 'LastDevice' } catch { Write-Log "CmdActDevices error: $_" 'ERROR' } })
     $Script:MainUI.CmdActSignIns.Add_Click({  try { Open-CmdUserInTool 'SignIn' }     catch { Write-Log "CmdActSignIns error: $_" 'ERROR' } })

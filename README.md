@@ -8,6 +8,7 @@ WPF PowerShell GUI for Entra ID (Azure AD) tenant management. Requires Windows a
 
 | Tool | Category | Description |
 |------|----------|-------------|
+| **User Overview** | Users | Account status, department, groups, licences, Intune devices and ten recent sign-ins in one screen. Refresh reads current details; section errors remain separate. Ctrl+K opens Overview by default, with shortcuts to existing user tools. |
 | **Year Group Passwords** | Users | Bulk password reset with separate year-group and department dropdowns. Memorable password generation (`cat.dog.pat11!`), optional forced sign-in prompt, dry-run preview, CSV export, printable slips, and a Stop button for live runs. Narrow the selection to a pasted list or CSV. |
 | **User Password Reset** | Users | Single-account password reset without blocking the UI, with live `forceChangePasswordNextSignIn` toggle and group membership view. |
 | **Leaver Workflow** | Users | Disable account, revoke sign-in sessions, and remove from all groups in one click. Each step is individually togglable. Dry-run aware. Removed memberships are saved to disk and can be put back with Restore Groups. |

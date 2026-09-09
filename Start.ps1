@@ -50,6 +50,7 @@ if (-not (Get-Module MSAL.PS -ErrorAction SilentlyContinue | Where-Object Versio
 . (Join-Path $PSScriptRoot 'src\Demo.ps1')
 . (Join-Path $PSScriptRoot 'src\Tools\PasswordReset.ps1')
 . (Join-Path $PSScriptRoot 'src\Tools\UserPasswordReset.ps1')
+. (Join-Path $PSScriptRoot 'src\Tools\UserOverview.ps1')
 . (Join-Path $PSScriptRoot 'src\Tools\LastDevice.ps1')
 . (Join-Path $PSScriptRoot 'src\Tools\SignInLogs.ps1')
 . (Join-Path $PSScriptRoot 'src\Tools\GroupCopy.ps1')

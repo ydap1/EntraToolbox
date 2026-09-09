@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.29.0'
+        Date    = '2026-09-09'
+        Changes = @(
+            'User Overview combines account details, groups, licences, devices and recent sign-ins'
+            'Global search opens Overview by default; refresh and shortcuts support helpdesk investigations'
+        )
+    }
+    @{
         Version = '0.28.0'
         Date    = '2026-09-09'
         Changes = @(
