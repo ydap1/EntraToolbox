@@ -25,6 +25,29 @@ try {
         & $Script:UoLoadWork
         Assert ($Ref.Profile.id -eq 'u' -and $Ref.Groups.Count -eq 1 -and $Ref.Devices.Count -eq 1 -and $Ref.SignInsError -match 'permission denied') 'overview preserves successful sections when sign-in access is denied'
     }
+    $query = [uri]::UnescapeDataString((Get-SlQuery 'user-id' ([datetime]'2026-09-01') ([datetime]'2026-09-02')))
+    Assert ($query -match 'createdDateTime ge 2026-09-01' -and $query -match 'createdDateTime lt 2026-09-03' -and $query.Contains('$top=50')) 'sign-in query covers the inclusive date range with bounded pages'
+    $invalid = $false
+    try { $null = Get-SlQuery u ([datetime]'2026-09-03') ([datetime]'2026-09-02') } catch { $invalid = $true }
+    Assert $invalid 'reversed sign-in dates are rejected before requesting Graph'
+    $events = @(
+        @{ id='1'; createdDateTime='2026-09-01T12:00:00Z'; appDisplayName='Teams'; status=@{ errorCode=0 }; location=@{}; deviceDetail=@{} }
+        @{ id='2'; createdDateTime='2026-09-01T12:00:00Z'; appDisplayName='Teams'; status=@{ errorCode=50126; failureReason='Invalid password'; additionalDetails='Details' }; location=@{}; deviceDetail=@{}; correlationId='trace' }
+    )
+    $filtered = @(ConvertTo-SlRows $events $true 'password')
+    Assert ($filtered.Count -eq 1 -and $filtered[0].CorrelationId -eq 'trace' -and $filtered[0].AdditionalDetails -eq 'Details') 'failure filtering retains troubleshooting details for export'
+    & {
+        $Script:SL_Request = 5; $Script:SL_Entries = @($events[0]); $Script:SL_Next = 'next'
+        $Script:SL_UI = @{ UserList = [pscustomobject]@{ SelectedItem = [pscustomobject]@{ Tag = @{ id='u' } } }; Count = [pscustomobject]@{ Text='' } }
+        function Update-SlResults { }
+        Complete-SlPage @{ Request=4; UserId='u'; Entries=@($events[1]) }
+        Assert ($Script:SL_Entries.Count -eq 1) 'stale sign-in responses cannot overwrite a new search'
+        Complete-SlPage @{ Request=5; UserId='u'; Error='Network unavailable' }
+        Assert ($Script:SL_Entries.Count -eq 1 -and $Script:SL_Next -eq 'next') 'page failures preserve rows and a retryable pagination link'
+        Complete-SlPage @{ Request=5; UserId='u'; Entries=$events; Next=$null }
+        Assert ($Script:SL_Entries.Count -eq 2 -and -not $Script:SL_Next) 'overlapping pages deduplicate by sign-in ID'
+        $Script:SL_UI = $null
+    }
     Assert ((Get-EtbWriteResult 403) -eq 'Failed' -and (Get-EtbWriteResult 504) -eq 'Uncertain' -and (Get-EtbWriteResult 0) -eq 'Uncertain') 'write failures distinguish rejection from uncertain delivery'
     $Ref = @{ BulkQueue = [Collections.Concurrent.ConcurrentQueue[object]]::new(); BulkLabels = @{ user1 = 'pupil@school.test' } }
     Publish-EtbWriteResult @{ Uri = 'https://graph.microsoft.com/v1.0/users/user1'; Method = 'PATCH'; Body = '{"passwordProfile":{"password":"secret"}}' } 'Failed' 'secret echoed'

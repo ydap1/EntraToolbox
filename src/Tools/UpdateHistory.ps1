@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.30.0'
+        Date    = '2026-09-09'
+        Changes = @(
+            'Sign-in troubleshooting adds date ranges, Load more, readable failure reasons and correlation IDs'
+            'Filter and export loaded records; include disabled users and retain earlier pages when loading fails'
+        )
+    }
+    @{
         Version = '0.29.0'
         Date    = '2026-09-09'
         Changes = @(

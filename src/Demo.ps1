@@ -316,18 +316,7 @@ function Start-SlUserLoadDemo {
 
 function Start-SlLogsLoadDemo {
     param([string]$UserId)
-
-    $Script:SL_UI.LogsGrid.Visibility        = 'Collapsed'
-    $Script:SL_UI.LogsPlaceholder.Text       = 'Loading sign-in logs...'
-    $Script:SL_UI.LogsPlaceholder.Visibility = 'Visible'
-
-    $rows = New-DemoSignInLogs -UserId $UserId
-    $Script:SL_UI.LogsGrid.ItemsSource       = $rows
-    $Script:SL_UI.LogsPlaceholder.Visibility = 'Collapsed'
-    $Script:SL_UI.LogsGrid.Visibility        = 'Visible'
-    $n = $rows.Count
-    Write-SlLog "Loaded $n sign-in records (demo)." 'Success'
-    Set-MainStatus "Sign-in logs loaded ($n records)." 'Success'
+    Start-SlLogsLoad $UserId
 }
 
 # ── User Password Reset demo loaders ──────────────────────────────────────────
