@@ -1089,6 +1089,7 @@ function Show-MainWindow {
         'Teams'       = 'Initialize-TeamsProvisioningTool'
         'SecurityGroup' = 'Initialize-SecurityGroupCreatorTool'
         'BulkResults' = 'Initialize-BulkResultsTool'
+        'ChangeHistory' = 'Initialize-ChangeHistoryTool'
         'Changelog'   = 'Initialize-UpdateHistoryTool'
         'Appearance'  = 'Initialize-AppearanceTool'
         'SecureScore' = 'Initialize-SecureScoreTool'
@@ -1110,6 +1111,7 @@ function Show-MainWindow {
         'Teams'       = @('Start-TpUserLoad')
         'SecurityGroup' = @('Start-SgUserLoad')
         'BulkResults' = @()
+        'ChangeHistory' = @('Start-ChLoad')
         'Changelog'   = @()
         'Appearance'  = @()
         'SecureScore' = @('Start-SsLoad')
@@ -1131,6 +1133,7 @@ function Show-MainWindow {
         @{ Type = 'tool'; Name = 'LastDevice';  Title = 'Last Device';          Desc = 'Login history and stale device detection' }
         @{ Type = 'tool'; Name = 'DevComp';     Title = 'Device Compliance';    Desc = 'Compliance overview with failure reasons' }
         @{ Type = 'cat';  Label = 'AUDIT' }
+        @{ Type = 'tool'; Name = 'ChangeHistory'; Title = 'Change History'; Desc = 'Search local changes by date, operator, user and action' }
         @{ Type = 'tool'; Name = 'BulkResults'; Title = 'Bulk Results'; Desc = 'Progress, stop, export and recover bulk operations' }
         @{ Type = 'tool'; Name = 'SignIn';       Title = 'Sign-In Logs';        Desc = 'Browse Entra ID sign-in events' }
         @{ Type = 'cat';  Label = 'GROUPS & TEAMS' }

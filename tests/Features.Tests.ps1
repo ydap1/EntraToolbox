@@ -100,6 +100,22 @@ try {
         $deletes=@($calls | Where-Object Method -eq 'DELETE')
         Assert ($calls.Count -eq 2 -and $deletes.Count -eq 1 -and $deletes[0].Uri -eq 'https://graph.microsoft.com/v1.0/groups/g/members/old/$ref') 'group matching deletes only the reviewed membership reference'
     }
+    $historyDir=Join-Path $Global:AppRoot 'audit'; $null=New-Item $historyDir -ItemType Directory
+    $auditRows=@(
+        [pscustomobject]@{ Timestamp='2026-09-01 00:00:00'; Operator='admin'; Tenant='tenant-a'; Tool='Group Manager'; Action='Add member'; Target='pupil@school.test'; Result='Succeeded'; Detail='Group A' }
+        [pscustomobject]@{ Timestamp='2026-09-02 23:59:59'; Operator='admin'; Tenant='tenant-a'; Tool='Group Manager'; Action='Remove member'; Target='pupil@school.test'; Result='Failed'; Detail='Denied' }
+        [pscustomobject]@{ Timestamp='2026-09-02 12:00:00'; Operator='admin'; Tenant='tenant-b'; Tool='Other'; Action='Other'; Target='private'; Result='OK'; Detail='' }
+    )
+    $auditRows | Export-Csv (Join-Path $historyDir 'tenant-a-2026-09.csv') -NoTypeInformation
+    $auditRows | Export-Csv (Join-Path $historyDir 'tenant-b-2026-09.csv') -NoTypeInformation
+    'broken,columns' | Set-Content (Join-Path $historyDir 'tenant-a-broken.csv')
+    'x,y' | Add-Content (Join-Path $historyDir 'tenant-a-broken.csv')
+    $history=Read-EtbHistory $historyDir tenant-a
+    Assert ($history.Rows.Count -eq 2 -and @($history.Rows | Where-Object Tenant -ne 'tenant-a').Count -eq 0) 'history isolates both filenames and row tenant IDs'
+    Assert ($history.Errors.Count -eq 1) 'history reports corrupt files while retaining readable records'
+    $found=@(Select-EtbHistory $history.Rows ([datetime]'2026-09-01') ([datetime]'2026-09-02') admin 'Group Manager' pupil)
+    Assert ($found.Count -eq 2 -and $found[0].Result -eq 'Failed') 'history filters include both boundary days and retain newest-first ordering'
+    Assert (@(Select-EtbHistory $history.Rows ([datetime]'2026-09-01') ([datetime]'2026-09-02') other '' '').Count -eq 0) 'operator filtering uses the requested operator'
     Assert ((Get-EtbWriteResult 403) -eq 'Failed' -and (Get-EtbWriteResult 504) -eq 'Uncertain' -and (Get-EtbWriteResult 0) -eq 'Uncertain') 'write failures distinguish rejection from uncertain delivery'
     $Ref = @{ BulkQueue = [Collections.Concurrent.ConcurrentQueue[object]]::new(); BulkLabels = @{ user1 = 'pupil@school.test' } }
     Publish-EtbWriteResult @{ Uri = 'https://graph.microsoft.com/v1.0/users/user1'; Method = 'PATCH'; Body = '{"passwordProfile":{"password":"secret"}}' } 'Failed' 'secret echoed'

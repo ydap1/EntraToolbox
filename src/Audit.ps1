@@ -55,3 +55,40 @@ function Write-EtbAudit {
         Write-Log "Audit write failed: $_" 'ERROR'
     }
 }
+
+function Read-EtbHistory {
+    param([string]$Directory, [string]$Tenant)
+    $rows=[Collections.Generic.List[object]]::new()
+    $errors=[Collections.Generic.List[string]]::new()
+    if (-not $Tenant -or -not (Test-Path -LiteralPath $Directory)) { return @{ Rows=@(); Errors=@() } }
+    foreach ($file in Get-ChildItem -LiteralPath $Directory -File -Filter '*.csv') {
+        if (-not $file.Name.StartsWith("$Tenant-", [StringComparison]::OrdinalIgnoreCase)) { continue }
+        try {
+            foreach ($row in Import-Csv -LiteralPath $file.FullName -ErrorAction Stop) {
+                foreach ($column in 'Timestamp','Operator','Tenant','Tool','Action','Target','Result','Detail') {
+                    if ($row.PSObject.Properties.Name -notcontains $column) { throw "Missing audit column: $column" }
+                }
+                if ($row.Tenant -ne $Tenant) { continue }
+                $when=[datetime]::MinValue
+                if (-not [datetime]::TryParseExact($row.Timestamp, 'yyyy-MM-dd HH:mm:ss', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$when)) {
+                    throw 'An audit timestamp is missing or invalid; some rows were not loaded.'
+                }
+                $rows.Add([pscustomobject]@{ Timestamp=$row.Timestamp; Operator=$row.Operator; Tenant=$row.Tenant; Tool=$row.Tool; Action=$row.Action; Target=$row.Target; Result=$row.Result; Detail=$row.Detail })
+            }
+        } catch { $errors.Add("$($file.Name): $($_.Exception.Message)") }
+    }
+    @{ Rows=@($rows | Sort-Object Timestamp -Descending); Errors=$errors.ToArray() }
+}
+
+function Select-EtbHistory {
+    param([object[]]$Rows, [datetime]$From, [datetime]$To, [string]$Operator, [string]$Tool, [string]$Search)
+    if ($From.Date -gt $To.Date) { throw 'Start date must be on or before end date.' }
+    $start=$From.Date.ToString('yyyy-MM-dd HH:mm:ss'); $end=$To.Date.AddDays(1).ToString('yyyy-MM-dd HH:mm:ss')
+    foreach ($row in $Rows) {
+        if ([string]::CompareOrdinal($row.Timestamp,$start) -lt 0 -or [string]::CompareOrdinal($row.Timestamp,$end) -ge 0) { continue }
+        if ($Operator -and $row.Operator -ne $Operator) { continue }
+        if ($Tool -and $row.Tool -ne $Tool) { continue }
+        if ($Search -and (@($row.Target,$row.Action,$row.Result,$row.Detail,$row.Operator) -join ' ').IndexOf($Search,[StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
+        $row
+    }
+}

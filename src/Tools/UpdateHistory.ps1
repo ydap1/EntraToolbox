@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.33.0'
+        Date    = '2026-09-09'
+        Changes = @(
+            'Change History browses local tenant change records with date, operator, tool and text filters'
+            'Refresh and export filtered history; report unreadable files and keep demo history offline'
+        )
+    }
+    @{
         Version = '0.32.0'
         Date    = '2026-09-09'
         Changes = @(
