@@ -322,8 +322,9 @@ function Start-BucApply {
             }
             $Script:BUC_UI.PreviewGrid.Items.Refresh()
             $summary = "Done — changed: $ok  failed: $fail"
+            if ($ref.CancelRequested) { $summary = 'Stopped — ' + $summary }
             Write-BucLog $summary 'Text'
-            Set-MainStatus $summary $(if ($fail -gt 0) { 'Warning' } else { 'Success' })
+            Set-MainStatus $summary $(if ($fail -gt 0 -or $ref.CancelRequested) { 'Warning' } else { 'Success' })
             Update-BucButtons
         } catch {
             Write-Log "BUC apply-timer error: $_" 'ERROR'

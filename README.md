@@ -30,7 +30,7 @@ WPF PowerShell GUI for Entra ID (Azure AD) tenant management. Requires Windows a
 
 ### Bulk results
 
-**Bulk Results** lists live password, UPN, immutable-ID, group-copy, security-group and Teams runs. It shows per-request outcomes and progress, with cooperative **Stop**, result CSVs and failure-only exports. Confirmed failed UPN/immutable-ID changes and group membership requests can be retried explicitly. Uncertain readable changes can be checked against current state; an absent change remains uncertain. Passwords and object creation are never replayed there. Refresh the original tool after recovery. Session results clear on tenant switch; directory change records remain on disk.
+**Bulk Results** lists live password, UPN, immutable-ID, group-copy, group-management, licence, leaver, group-restore, security-group and Teams runs. Licence and group-manager dry runs and demo previews appear there too. It shows per-request outcomes and progress, with cooperative **Stop**, result CSVs and failure-only exports. Confirmed failed UPN/immutable-ID changes, licence assignments and group membership requests can be retried explicitly. Recovery rechecks group eligibility and ownership, and preserves licence assignments made since a failure. Uncertain readable changes can be checked against current state; an absent change remains uncertain. Passwords and object creation are never replayed there. Refresh the original tool after recovery. Accepted asynchronous requests are distinguished from completed writes. Session results clear on tenant switch; directory change records remain on disk.
 
 ### Record of changes
 
@@ -116,6 +116,6 @@ MIT
 
 ## Development checks
 
-Run `pwsh -NoProfile -File tests/Review.Tests.ps1` for offline parser, worker lifecycle and HTTP regression checks. Run `pwsh -NoProfile -File tests/Update.Tests.ps1` for startup prompt, release-note parsing and safe-update checks using temporary Git repositories (requires Git). These run on Windows or Linux without tenant credentials. On Windows, run `pwsh -NoProfile -STA -File tests/Windows.Smoke.ps1` to construct all themed XAML and initialize every tool with demo data. Interactive testing of resizing, scrolling, focus and live Graph operations is still required.
+Run `pwsh -NoProfile -File tests/Features.Tests.ps1` for helpdesk-tool planning, tenant-isolated history, sign-in paging/filtering, result recovery and embedded-XAML XML checks. Run `pwsh -NoProfile -File tests/Review.Tests.ps1` for offline parser, worker lifecycle and HTTP regression checks. Run `pwsh -NoProfile -File tests/Update.Tests.ps1` for startup prompt, release-note parsing and safe-update checks using temporary Git repositories (requires Git). These run on Windows or Linux without tenant credentials. On Windows, run `pwsh -NoProfile -STA -File tests/Windows.Smoke.ps1` to construct all themed XAML and initialize every tool with demo data, including Overview, sign-in pagination, licence/group previews and Change History. Interactive testing of resizing, scrolling, focus and live Graph operations is still required.
 
 See [REVIEW.md](REVIEW.md) for the code review, validation results and remaining limitations.

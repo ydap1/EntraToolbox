@@ -10,7 +10,7 @@ $Script:UoLoadWork = {
     $base = "https://graph.microsoft.com/v1.0/users/$UserId"
     $requests = [ordered]@{
         Profile = "$base" + '?$select=id,displayName,userPrincipalName,accountEnabled,department,officeLocation,jobTitle,userType,onPremisesSyncEnabled,usageLocation'
-        Groups = "$base/memberOf/microsoft.graph.group" + '?$select=id,displayName,groupTypes,onPremisesSyncEnabled&$top=999'
+        Groups = "$base/memberOf" + '?$select=id,displayName&$top=999'
         Licences = "$base/licenseDetails" + '?$select=skuId,skuPartNumber&$top=999'
         Devices = "$base/managedDevices" + '?$select=id,deviceName,operatingSystem,complianceState,lastSyncDateTime&$top=100'
         SignIns = 'https://graph.microsoft.com/v1.0/auditLogs/signIns?$filter=' + [uri]::EscapeDataString("userId eq '$UserId'") + '&$top=10&$orderby=createdDateTime desc&$select=id,createdDateTime,appDisplayName,status'
@@ -19,7 +19,10 @@ $Script:UoLoadWork = {
         try {
             if ($key -eq 'Profile') { $Ref[$key] = Invoke-RestMethod -Uri $requests[$key] -Headers $headers }
             elseif ($key -eq 'SignIns') { $Ref[$key] = @((Invoke-RestMethod -Uri $requests[$key] -Headers $headers).value) }
-            else { $Ref[$key] = @(Get-EtbGraphCollection -Uri $requests[$key] -Headers $headers) }
+            else {
+                $items = @(Get-EtbGraphCollection -Uri $requests[$key] -Headers $headers)
+                if ($key -eq 'Groups') { $Ref[$key] = @($items | Where-Object { $_.'@odata.type' -eq '#microsoft.graph.group' }) } else { $Ref[$key] = $items }
+            }
         } catch { $Ref["${key}Error"] = $_.Exception.Message }
     }
 }

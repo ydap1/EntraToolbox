@@ -457,7 +457,7 @@ Type YES (all capitals) to confirm.
                     }
                 }
                 $Script:IID_UI.Grid.Items.Refresh()
-                Write-IidLog "Done — $ok assigned, $err error(s)." 'Success'
+                Write-IidLog "$(if ($ref.CancelRequested) { 'Stopped' } else { 'Done' }) — $ok assigned, $err error(s)." $(if ($err -or $ref.CancelRequested) { 'Warning' } else { 'Success' })
                 Write-Log "ImmutableId: $ok assigned, $err errors" 'INFO'
             }
             $Script:IID_UI.BtnCheckAll.IsEnabled   = $true
@@ -562,7 +562,7 @@ Type YES (all capitals) to confirm.
                     }
                 }
                 $Script:IID_UI.Grid.Items.Refresh()
-                Write-IidLog "Done — $ok removed, $err error(s)." 'Success'
+                Write-IidLog "$(if ($ref.CancelRequested) { 'Stopped' } else { 'Done' }) — $ok removed, $err error(s)." $(if ($err -or $ref.CancelRequested) { 'Warning' } else { 'Success' })
                 Write-Log "ImmutableId: $ok removed, $err errors" 'INFO'
             }
             $Script:IID_UI.BtnCheckAll.IsEnabled   = $true

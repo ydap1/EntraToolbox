@@ -28,6 +28,21 @@ function Register-EtbBulkRun {
     if ($Script:BR_UI) { $Script:BR_UI.Runs.SelectedItem = $run }
 }
 
+function Publish-EtbBulkPreview {
+    param([string]$Name, [object[]]$Rows, [string]$Mode)
+    $run = [pscustomobject]@{
+        Name = "$(Get-Date -Format HH:mm:ss)  $Name ($Mode)"; Tool=$Name
+        Tenant=$Script:CurrentTenantId; Generation=$Script:SessionGeneration
+        Total=$Rows.Count; State=$Mode; Timer=$null; Ref=@{}
+        Rows=[Collections.ObjectModel.ObservableCollection[PSObject]]::new()
+    }
+    foreach ($row in $Rows) {
+        $run.Rows.Add([pscustomobject]@{ Time=(Get-Date -Format HH:mm:ss); Target=$row.Target; Action=$row.Action; Result=$row.Result; Detail=$row.Detail; Retry=$null })
+    }
+    $Script:BulkRuns.Insert(0,$run)
+    if ($Script:BR_UI) { $Script:BR_UI.Runs.SelectedItem=$run; Update-BrDisplay }
+}
+
 function Update-EtbBulkRun {
     param($Ref, [switch]$Finished)
     $run = $Ref['BulkRun']
@@ -36,6 +51,7 @@ function Update-EtbBulkRun {
     while ($Ref['BulkQueue'].TryDequeue([ref]$row)) { $run.Rows.Add($row) }
     if ($Finished) {
         $run.Timer = $null
+        $run.Ref = @{ CancelRequested = $Ref['CancelRequested'] }
         $run.State = if ($Ref['Error']) { "Interrupted: $($Ref['Error'])" }
             elseif ($Ref['CancelRequested']) { 'Stopped; remaining actions were not started' } else { 'Finished' }
     }
@@ -47,22 +63,25 @@ function Update-BrDisplay {
     $run = $Script:BR_UI.Runs.SelectedItem
     if (-not $run) {
         $Script:BR_UI.Grid.ItemsSource = @()
+        $Script:BR_UI.Progress.Value = 0
         $Script:BR_UI.Status.Text = 'Bulk operations appear here during this tenant session.'
         foreach ($key in 'Stop','Export','Failures','Retry','Check') { $Script:BR_UI[$key].IsEnabled = $false }
         return
     }
     $Script:BR_UI.Grid.ItemsSource = $run.Rows
     $ok = @($run.Rows | Where-Object Result -eq 'Succeeded').Count
+    $previewed = @($run.Rows | Where-Object Result -in 'Dry run','Demo').Count
+    $accepted = @($run.Rows | Where-Object Result -eq 'Accepted').Count
     $failed = @($run.Rows | Where-Object Result -eq 'Failed').Count
     $unknown = @($run.Rows | Where-Object Result -eq 'Uncertain').Count
-    $Script:BR_UI.Status.Text = "$($run.State) — $ok succeeded, $failed failed, $unknown uncertain. $($run.Rows.Count) write requests completed$(if ($run.Total) { " / up to $($run.Total) planned" })."
+    $Script:BR_UI.Status.Text = "$($run.State) — $ok succeeded, $accepted accepted, $failed failed, $unknown uncertain, $previewed previewed. $($run.Rows.Count) results recorded$(if ($run.Total) { " / up to $($run.Total) planned" })."
     $Script:BR_UI.Progress.Maximum = [math]::Max(1, [math]::Max($run.Total, $run.Rows.Count))
     $Script:BR_UI.Progress.Value = $run.Rows.Count
     $Script:BR_UI.Stop.IsEnabled = $null -ne $run.Timer -and -not $run.Ref['CancelRequested']
     $Script:BR_UI.Export.IsEnabled = $run.Rows.Count -gt 0
     $Script:BR_UI.Failures.IsEnabled = ($failed + $unknown) -gt 0
     $idle = -not $run.Timer -and -not $Script:BR_Busy -and $run.Generation -eq $Script:SessionGeneration
-    $Script:BR_UI.Retry.IsEnabled = $idle -and -not $Script:DryMode -and @($run.Rows | Where-Object { $_.Result -eq 'Failed' -and $_.Retry }).Count -gt 0
+    $Script:BR_UI.Retry.IsEnabled = $idle -and -not $Script:DryMode -and -not $Script:DemoMode -and @($run.Rows | Where-Object { $_.Result -eq 'Failed' -and $_.Retry }).Count -gt 0
     $Script:BR_UI.Check.IsEnabled = $idle -and @($run.Rows | Where-Object { $_.Result -eq 'Uncertain' -and $_.Retry }).Count -gt 0
 }
 
@@ -78,22 +97,25 @@ function Start-BrRecovery {
     param([switch]$Check)
     $run = $Script:BR_UI.Runs.SelectedItem
     if (-not $run -or $run.Timer -or $Script:BR_Busy -or $run.Generation -ne $Script:SessionGeneration) { return }
-    if (-not $Check -and ($Script:DryMode -or $Script:DemoMode)) { return }
+    if ($Script:DemoMode -or (-not $Check -and $Script:DryMode)) { return }
     $rows = @($run.Rows | Where-Object { $_.Retry -and $_.Result -eq $(if ($Check) { 'Uncertain' } else { 'Failed' }) })
     if (-not $rows.Count) { return }
     if (-not $Check -and [Windows.MessageBox]::Show("Retry $($rows.Count) confirmed failed requests from $($run.Tool)? Review the result rows first. Refresh the original tool afterwards.", 'Retry failed requests', 'YesNo', 'Question') -ne 'Yes') { return }
     $Script:BR_Busy = $true
     Update-BrDisplay
-    $Script:BR_RecoveryTimer = Start-AsyncWork -Vars @{ Items = $rows; CheckOnly = [bool]$Check } -RefSeed @{ Source = $run; Recovery = @() } -Script {
+    $recoveryName = if ($Check) { '' } else { "$($run.Tool) recovery" }
+    $Script:BR_RecoveryTimer = Start-AsyncWork -BulkName $recoveryName -BulkTotal $rows.Count -Vars @{ Items = $rows; CheckOnly = [bool]$Check } -RefSeed @{ Source = $run; Recovery = @() } -Script {
         $headers = @{ Authorization = "Bearer $Token" }
         foreach ($item in $Items) {
             if ($Ref['CancelRequested']) { break }
             $request = $item.Retry
-            $result = $item.Result; $detail = ''
+            $result = $item.Result; $detail = ''; $submitted = $false
             try {
                 if ($CheckOnly) {
                     # Only compare readable fields or membership references. Never infer a password or creation outcome.
-                    if ($request.Method -eq 'PATCH') {
+                    if ($request.Kind -eq 'Licence') {
+                        $matches = Test-EtbLicenceRecoveryState $request $headers
+                    } elseif ($request.Method -eq 'PATCH') {
                         $expected = $request.Body | ConvertFrom-Json -AsHashtable
                         $actual = Invoke-RestMethod -Uri ($request.Uri + '?$select=' + ($expected.Keys -join ',')) -Headers $headers
                         $matches = $true
@@ -112,14 +134,30 @@ function Start-BrRecovery {
                     $result = if ($matches) { 'Succeeded' } else { 'Uncertain' }
                     $detail = if ($matches) { 'Desired state verified by a fresh read.' } else { 'Desired state not observed. Outcome remains uncertain; review in the original tool.' }
                 } else {
+                    if ($request.Uri -match '/groups/([^/]+)/members/') {
+                        $groupId = $Matches[1]
+                        $group = Invoke-RestMethod -Uri ("https://graph.microsoft.com/v1.0/groups/$groupId" + '?$select=id,groupTypes,securityEnabled,mailEnabled,onPremisesSyncEnabled,isAssignableToRole') -Headers $headers
+                        Assert-GmEditableGroup $group
+                        if ($request.Method -eq 'DELETE') {
+                            $memberId = ($request.VerifyUri -split '/')[-1]
+                            $owners = @(Get-EtbGraphCollection -Uri "https://graph.microsoft.com/v1.0/groups/$groupId/owners?`$select=id" -Headers $headers)
+                            if ($owners.id -contains $memberId) { throw 'The member is now an owner. Review the group again before removing access.' }
+                        }
+                    }
                     $params = @{ Uri = $request.Uri; Method = $request.Method; Headers = $headers }
                     if ($request.Body) { $params.Body = $request.Body; $params.ContentType = 'application/json' }
-                    $null = Invoke-RestMethod @params
-                    $result = 'Succeeded'; $detail = 'Confirmed failure retried successfully.'
+                    if ($request.Kind -eq 'Licence' -and (Test-EtbLicenceRecoveryState $request $headers)) {
+                        $result = 'Succeeded'; $detail = 'Desired licence state already present; no retry submitted.'
+                    } else {
+                        if ($request.Kind -eq 'Licence') { Assert-EtbLicenceRetry $request $headers }
+                        $submitted = $true
+                        $null = Invoke-RestMethod @params
+                        $result = 'Succeeded'; $detail = 'Confirmed failure retried successfully.'
+                    }
                 }
             } catch {
                 $status = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
-                $result = if ($CheckOnly) { 'Uncertain' } else { Get-EtbWriteResult $status }
+                $result = if ($CheckOnly) { 'Uncertain' } elseif ($submitted) { Get-EtbWriteResult $status } else { 'Failed' }
                 $detail = $_.Exception.Message
             }
             $Ref['Recovery'] += [pscustomobject]@{ Row = $item; Result = $result; Detail = $detail; Check = $CheckOnly }

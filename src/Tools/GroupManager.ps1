@@ -115,6 +115,7 @@ function Start-GmApply {
     if (-not $rows.Count) { return }
     if ($Script:DryMode -or $Script:DemoMode) {
         foreach ($r in $rows) { $r.Result=if ($Script:DemoMode) { 'Demo' } else { 'Dry run' } }
+        Publish-EtbBulkPreview 'Group Manager' $rows $(if ($Script:DemoMode) { 'Demo' } else { 'Dry run' })
         $Script:GM_UI.Grid.Items.Refresh(); $Script:GM_UI.Apply.IsEnabled=$false
         $Script:GM_UI.Status.Text="Preview only: $($rows.Count) membership changes. No tenant changes made."
         return
@@ -169,6 +170,7 @@ function Initialize-GroupManagerTool {
     $Script:ResetCallbacks.Add({
         Stop-EtbAsyncWork $Script:GM_Timer; Stop-EtbAsyncWork $Script:GM_GroupTimer
         Set-GmBusy $false; $Script:GM_Roster.Rows.Clear(); $Script:GM_Roster.Users=@(); $Script:GM_Roster.ImportError=$false
+        $Script:GM_Roster.UI.Count.Text='0 selected users'; $Script:GM_Roster.UI.Status.Text='Connect to load users.'; $Script:GM_Roster.UI.Search.Text=''
         $Script:GM_Roster.UI.Matches.ItemsSource=@(); $Script:GM_Roster.UI.Years.ItemsSource=@(); $Script:GM_Roster.UI.Departments.ItemsSource=@(); $Script:GM_Roster.Panel.IsEnabled=$false
         $Script:GM_Groups=@(); $Script:GM_UI.Groups.ItemsSource=@(); Invalidate-GmPlan
     })

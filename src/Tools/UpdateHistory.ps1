@@ -10,6 +10,17 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.33.1'
+        Date    = '2026-09-09'
+        Changes = @(
+            'Bulk results identify added members, distinguish accepted requests and support licence outcome checks'
+            'Recovery rechecks group ownership and changed licence assignments; leaver and restore batches share progress and Stop'
+            'Tenant switches clear roster labels and completed runs release worker tokens'
+            'Licence and group-manager dry runs and demo previews also appear in Bulk Results'
+            'Stopped workflows retain accurate summaries; membership previews use direct collection reads'
+        )
+    }
+    @{
         Version = '0.33.0'
         Date    = '2026-09-09'
         Changes = @(

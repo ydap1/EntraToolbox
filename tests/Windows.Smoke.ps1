@@ -94,6 +94,36 @@ try {
             $window.UpdateLayout()
         }
     }
+    Set-NavSelection 'Overview'
+    $Script:UO_UI.Users.SelectedIndex=0
+    if (-not $Script:UO_UI.Summary.Text.Contains($Script:UO_UI.Users.SelectedItem.userPrincipalName)) { throw 'Overview did not load the selected demo user.' }
+    Set-NavSelection 'SignIn'
+    $Script:SL_UI.UserList.SelectedIndex=0
+    if ($Script:SL_Entries.Count -ne 50) { throw 'Sign-ins did not load a first demo page.' }
+    Start-SlLogsLoad $Script:SL_UI.UserList.SelectedItem.Tag.id -More
+    if ($Script:SL_Entries.Count -ne 70) { throw 'Sign-in Load more did not append the second demo page.' }
+    $Script:SL_UI.Failures.IsChecked=$true; Update-SlResults
+    if (@($Script:SL_UI.LogsGrid.ItemsSource | Where-Object Result -eq 'Success').Count) { throw 'Sign-in failure filter retained successes.' }
+    Set-NavSelection 'BulkLicence'
+    Add-EtbRosterUsers $Script:BL_Roster @($Script:Demo_Users | Select-Object -First 2)
+    Start-BlPreview
+    if ($Script:BL_Plan.Count -ne 2 -or -not $Script:BL_UI.Apply.IsEnabled) { throw 'Bulk licence demo preview failed.' }
+    Start-BlApply
+    if (@($Script:BL_Plan | Where-Object Result -eq 'Demo').Count -ne 2) { throw 'Bulk licence demo apply was not simulated.' }
+    Set-NavSelection 'GroupManager'
+    $Script:GM_UI.Groups.SelectedIndex=0
+    Add-EtbRosterUsers $Script:GM_Roster @($Script:Demo_Users | Select-Object -Last 2)
+    $Script:GM_UI.Mode.SelectedItem='Match user roster'
+    Start-GmPreview
+    if (-not $Script:GM_Plan.Count -or -not $Script:GM_UI.Apply.IsEnabled) { throw 'Group Manager demo preview failed.' }
+    Start-GmApply
+    if (-not @($Script:GM_Plan | Where-Object Result -eq 'Demo').Count) { throw 'Group Manager demo apply was not simulated.' }
+    Set-NavSelection 'BulkResults'
+    $Script:BR_UI.Runs.SelectedIndex=0
+    if (-not $Script:BR_UI.Grid.ItemsSource.Count -or $Script:BR_UI.Retry.IsEnabled) { throw 'Demo bulk results are missing or incorrectly replayable.' }
+    Set-NavSelection 'ChangeHistory'
+    Start-ChLoad
+    if ($Script:CH_UI.Grid.ItemsSource.Count -ne 2) { throw 'Demo change history did not load.' }
     foreach ($tool in @(
         @{ Nav = 'Teams'; UI = $Script:TP_UI; Rows = $Script:TP_Rows }
         @{ Nav = 'YearGroup'; UI = $Script:PwReset_UI; Rows = $Script:PwReset_Rows }

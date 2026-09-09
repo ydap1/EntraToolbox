@@ -60,7 +60,31 @@ function Get-GmSnapshot {
     $base = "https://graph.microsoft.com/v1.0/groups/$GroupId"
     $group = Invoke-RestMethod -Uri ($base + '?$select=id,displayName,groupTypes,securityEnabled,mailEnabled,isAssignableToRole,onPremisesSyncEnabled') -Headers $Headers
     Assert-GmEditableGroup $group
-    $members = @(Get-EtbGraphCollection -Uri ($base + '/members/microsoft.graph.user?$select=id,displayName,userPrincipalName&$top=999') -Headers $Headers)
+    # Read the direct collection instead of a cast query backed by an eventual index.
+    $members = @(Get-EtbGraphCollection -Uri ($base + '/members?$select=id,displayName,userPrincipalName&$top=999') -Headers $Headers | Where-Object { $_.'@odata.type' -eq '#microsoft.graph.user' })
     $owners = @(Get-EtbGraphCollection -Uri ($base + '/owners?$select=id&$top=999') -Headers $Headers)
     @{ Group=$group; Members=$members; Owners=$owners }
+}
+
+
+function Test-EtbLicenceRecoveryState {
+    param($Request, $Headers)
+    $body=$Request.Body | ConvertFrom-Json
+    $state=Invoke-RestMethod -Uri $Request.VerifyUri -Headers $Headers
+    $assign=@($body.addLicenses).Count -gt 0
+    $skuId=if ($assign) { $body.addLicenses[0].skuId } else { $body.removeLicenses[0] }
+    $direct=@($state.licenseAssignmentStates | Where-Object { $_.skuId -eq $skuId -and -not $_.assignedByGroup })
+    if ($assign) { return @($direct | Where-Object { $_.state -eq 'Active' -and (-not $_.error -or $_.error -eq 'None') }).Count -gt 0 }
+    return $direct.Count -eq 0
+}
+
+
+function Assert-EtbLicenceRetry {
+    param($Request, $Headers)
+    $body=$Request.Body | ConvertFrom-Json
+    if (-not @($body.addLicenses).Count) { return }
+    $current=Invoke-RestMethod -Uri $Request.VerifyUri -Headers $Headers
+    if (@($current.licenseAssignmentStates | Where-Object skuId -eq $body.addLicenses[0].skuId).Count) {
+        throw 'A licence assignment now exists or is pending. Preview the user in Bulk Licences before changing it.'
+    }
 }

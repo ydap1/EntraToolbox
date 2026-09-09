@@ -13,6 +13,10 @@ try {
         $errors = $null
         $null = [Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$errors)
         Assert (-not $errors) "$($file.Name) parses"
+        $ast=[Management.Automation.Language.Parser]::ParseFile($file.FullName,[ref]$null,[ref]$null)
+        foreach ($node in $ast.FindAll({ param($a) $a -is [Management.Automation.Language.StringConstantExpressionAst] -and $a.Value -match '^<(Grid|Window)\s+xmlns=' },$true)) {
+            $null=[xml](Invoke-ThemeXaml $node.Value)
+        }
     }
     & {
         function Invoke-RestMethod {
@@ -20,7 +24,7 @@ try {
             if ($Uri -match '/auditLogs/') { throw 'Sign-in permission denied' }
             return @{ id = 'u'; accountEnabled = $true }
         }
-        function Get-EtbGraphCollection { param($Uri, $Headers); @{ displayName = 'Loaded'; skuPartNumber = 'TEST' } }
+        function Get-EtbGraphCollection { param($Uri, $Headers); @{ displayName = 'Loaded'; skuPartNumber = 'TEST'; '@odata.type'='#microsoft.graph.group' } }
         $UserId = 'u'; $Token = 'fake'; $Ref = @{}
         & $Script:UoLoadWork
         Assert ($Ref.Profile.id -eq 'u' -and $Ref.Groups.Count -eq 1 -and $Ref.Devices.Count -eq 1 -and $Ref.SignInsError -match 'permission denied') 'overview preserves successful sections when sign-in access is denied'
@@ -74,6 +78,18 @@ try {
         & $Script:BlApplyWork
         Assert ($calls.Count -eq 0) 'stopped licence batches do not begin another user'
     }
+    & {
+        $paths=[Collections.Generic.List[string]]::new()
+        function Invoke-RestMethod { param($Uri,$Headers); @{ id='g'; securityEnabled=$true; mailEnabled=$false; groupTypes=@() } }
+        function Get-EtbGraphCollection {
+            param($Uri,$Headers)
+            $paths.Add($Uri)
+            if ($Uri -match '/owners') { return @() }
+            @(@{ id='u'; '@odata.type'='#microsoft.graph.user' }, @{ id='d'; '@odata.type'='#microsoft.graph.device' })
+        }
+        $snapshot=Get-GmSnapshot g @{}
+        Assert ($snapshot.Members.Count -eq 1 -and $snapshot.Members[0].id -eq 'u' -and -not @($paths | Where-Object { $_ -match '/microsoft.graph.user' }).Count) 'group previews filter users from direct membership reads without an eventual-index cast'
+    }
     $members = @(@{ id='owner'; userPrincipalName='owner@school.test' }, @{ id='old'; userPrincipalName='old@school.test' })
     $desired = @(@{ id='new'; userPrincipalName='new@school.test' })
     $owners = @(@{ id='owner' })
@@ -116,6 +132,27 @@ try {
     $found=@(Select-EtbHistory $history.Rows ([datetime]'2026-09-01') ([datetime]'2026-09-02') admin 'Group Manager' pupil)
     Assert ($found.Count -eq 2 -and $found[0].Result -eq 'Failed') 'history filters include both boundary days and retain newest-first ordering'
     Assert (@(Select-EtbHistory $history.Rows ([datetime]'2026-09-01') ([datetime]'2026-09-02') other '' '').Count -eq 0) 'operator filtering uses the requested operator'
+    Publish-EtbBulkPreview 'Offline plan' @([pscustomobject]@{ Target='u@school.test'; Action='Assign'; Result='Demo'; Detail='' }) 'Demo'
+    Assert ($Script:BulkRuns[0].State -eq 'Demo' -and $Script:BulkRuns[0].Rows[0].Result -eq 'Demo' -and -not $Script:BulkRuns[0].Rows[0].Retry) 'offline bulk previews use shared result rows without replayable requests'
+    & {
+        $audit=[Collections.Generic.List[string]]::new(); $messages=[Collections.Generic.List[string]]::new()
+        function Write-EtbAudit { param($Tool,$Action,$Target,$Result,$Detail); $audit.Add($Action) }
+        function Write-LwLog { param($Message,$Color); $messages.Add($Message) }
+        function Set-MainStatus { param($Message,$Color) }
+        function Start-AsyncWork {
+            param($BulkName,$Vars,$RefSeed,$Script,$OnComplete)
+            $RefSeed.CancelRequested=$true
+            & $OnComplete $RefSeed
+        }
+        $Script:LW_SelectedUser=@{ id='u'; displayName='Pupil'; userPrincipalName='u@school.test' }
+        $Script:LW_UI=@{}
+        foreach($name in 'ChkDisable','ChkRevoke','ChkGroups') { $Script:LW_UI[$name]=[pscustomobject]@{ IsChecked=$true } }
+        foreach($name in 'BtnRun','UserSearch','UserList') { $Script:LW_UI[$name]=[pscustomobject]@{ IsEnabled=$true } }
+        $Script:DryMode=$false; $Script:DemoMode=$false
+        Start-LwRun
+        Assert ($audit.Count -eq 0 -and @($messages | Where-Object { $_ -match 'stopped' }).Count -gt 0) 'stopping a leaver before its first step cannot log or audit unperformed changes as successful'
+        $Script:LW_UI=$null; $Script:LW_SelectedUser=$null
+    }
     Assert ((Get-EtbWriteResult 403) -eq 'Failed' -and (Get-EtbWriteResult 504) -eq 'Uncertain' -and (Get-EtbWriteResult 0) -eq 'Uncertain') 'write failures distinguish rejection from uncertain delivery'
     $Ref = @{ BulkQueue = [Collections.Concurrent.ConcurrentQueue[object]]::new(); BulkLabels = @{ user1 = 'pupil@school.test' } }
     Publish-EtbWriteResult @{ Uri = 'https://graph.microsoft.com/v1.0/users/user1'; Method = 'PATCH'; Body = '{"passwordProfile":{"password":"secret"}}' } 'Failed' 'secret echoed'
@@ -127,6 +164,19 @@ try {
     Publish-EtbWriteResult @{ Uri = 'https://graph.microsoft.com/v1.0/groups/g/members/u/$ref'; Method = 'DELETE' } 'Failed'
     $null = $Ref.BulkQueue.TryDequeue([ref]$row)
     Assert ($row.Retry.Uri.EndsWith('/$ref') -and $row.Retry.VerifyUri.EndsWith('/members/u')) 'membership recovery preserves the reference-only deletion endpoint'
+    Publish-EtbWriteResult @{ Uri='https://graph.microsoft.com/v1.0/groups/g/members/$ref'; Method='POST'; Body='{"@odata.id":"https://graph.microsoft.com/v1.0/directoryObjects/user1"}' } 'Succeeded'
+    $null=$Ref.BulkQueue.TryDequeue([ref]$row)
+    Assert ($row.Target -match 'pupil@school.test' -and $row.Action -eq 'Add member') 'bulk membership rows identify the actual member as well as the group'
+    Publish-EtbWriteResult @{ Uri='https://graph.microsoft.com/v1.0/users/user1/assignLicense'; Method='POST'; Body='{"addLicenses":[{"skuId":"sku","disabledPlans":[]}],"removeLicenses":[]}' } 'Uncertain'
+    $null=$Ref.BulkQueue.TryDequeue([ref]$row)
+    Assert ($row.Retry.Kind -eq 'Licence' -and $row.Retry.VerifyUri -eq 'https://graph.microsoft.com/v1.0/users/user1?$select=licenseAssignmentStates') 'licence failures retain a non-secret assignment verification request'
+    & {
+        function Invoke-RestMethod { param($Uri,$Headers); @{ licenseAssignmentStates=@(@{ skuId='sku'; assignedByGroup=$null; state='Active'; error='None' }) } }
+        Assert (Test-EtbLicenceRecoveryState $row.Retry @{}) 'licence recovery verifies a healthy direct assignment'
+        $rejected=$false
+        try { Assert-EtbLicenceRetry $row.Retry @{} } catch { $rejected=$true }
+        Assert $rejected 'licence retries cannot overwrite an assignment created after the original failure'
+    }
     Publish-EtbWriteResult @{ Uri = 'https://graph.microsoft.com/v1.0/groups'; Method = 'POST'; Body = '{"displayName":"Test"}' } 'Uncertain'
     $null = $Ref.BulkQueue.TryDequeue([ref]$row)
     Assert (-not $row.Retry) 'uncertain object creation is never replayed'

@@ -76,13 +76,14 @@ function Start-LwRestore {
     Write-LwLog "Restoring $($groups.Count) membership(s) for $($snap.Upn)..." 'TextDim'
 
     if ($Script:LW_RestoreTimer) { $Script:LW_RestoreTimer.Stop() }
-    $Script:LW_RestoreTimer = Start-AsyncWork `
+    $Script:LW_RestoreTimer = Start-AsyncWork -BulkName 'Restore Groups' -BulkTotal $groups.Count `
         -Vars    @{ UserId = $snap.UserId; Groups = $groups } `
         -RefSeed @{ Upn = $snap.Upn; Restored = 0; Results = @() } `
         -Script {
             $out = [System.Collections.Generic.List[object]]::new()
             $body = @{ '@odata.id' = "https://graph.microsoft.com/v1.0/directoryObjects/$UserId" } | ConvertTo-Json
             foreach ($g in $Groups) {
+                if ($Ref['CancelRequested']) { break }
                 try {
                     Invoke-RestMethod `
                         -Uri "https://graph.microsoft.com/v1.0/groups/$($g.Id)/members/`$ref" `
@@ -107,12 +108,12 @@ function Start-LwRestore {
                     if ($r['Ok']) { $ok++; Write-LwLog "Restored: $($r['Name'])" 'Success' }
                     else { $fail++; Write-LwLog "Restore failed: $($r['Name']) — $($r['Err'])" 'Danger' }
                 }
-                $summary = "Restore complete — $ok restored, $fail failed."
-                $color = if ($fail -gt 0) { 'Warning' } else { 'Success' }
+                $summary = "Restore $(if ($ref.CancelRequested) { 'stopped' } else { 'complete' }) — $ok restored, $fail failed."
+                $color = if ($fail -gt 0 -or $ref.CancelRequested) { 'Warning' } else { 'Success' }
                 Write-LwLog $summary $color
                 Set-MainStatus $summary $color
                 Write-EtbAudit -Tool 'Leaver Workflow' -Action 'Restore group memberships' `
-                               -Target $ref['Upn'] -Result $(if ($fail -gt 0) { 'Partial' } else { 'OK' }) `
+                               -Target $ref['Upn'] -Result $(if ($fail -gt 0 -or $ref.CancelRequested) { 'Partial' } else { 'OK' }) `
                                -Detail "$ok restored, $fail failed"
             } catch {
                 Write-Log "LW restore-timer error: $_" 'ERROR'
@@ -213,7 +214,7 @@ function Start-LwRun {
     Set-MainStatus "Running leaver workflow for $($user.displayName)..." 'TextDim'
 
     if ($Script:LW_RunTimer) { $Script:LW_RunTimer.Stop() }
-    $Script:LW_RunTimer = Start-AsyncWork `
+    $Script:LW_RunTimer = Start-AsyncWork -BulkName 'Leaver Workflow' `
         -Vars    @{ UserId = $user.id } `
         -RefSeed @{
             DoDisable     = $doDisable
@@ -230,7 +231,7 @@ function Start-LwRun {
             RemovedDetail = [System.Collections.Generic.List[object]]::new()
         } `
         -Script {
-            if ($Ref['DoDisable']) {
+            if ($Ref['DoDisable'] -and -not $Ref['CancelRequested']) {
                 try {
                     $body = '{"accountEnabled":false}'
                     Invoke-RestMethod `
@@ -243,7 +244,7 @@ function Start-LwRun {
                 }
             }
 
-            if ($Ref['DoRevoke']) {
+            if ($Ref['DoRevoke'] -and -not $Ref['CancelRequested']) {
                 try {
                     Invoke-RestMethod `
                         -Uri "https://graph.microsoft.com/v1.0/users/$UserId/revokeSignInSessions" `
@@ -255,7 +256,7 @@ function Start-LwRun {
                 }
             }
 
-            if ($Ref['DoGroups']) {
+            if ($Ref['DoGroups'] -and -not $Ref['CancelRequested']) {
                 $groups = [System.Collections.Generic.List[object]]::new()
                 $url = "https://graph.microsoft.com/v1.0/users/$UserId/memberOf?`$select=id,displayName&`$top=999"
                 do {
@@ -294,7 +295,7 @@ function Start-LwRun {
                             Write-LwLog "Disable account: FAILED — $($ref['DisableErr'])" 'Danger'
                             Write-EtbAudit -Tool 'Leaver Workflow' -Action 'Disable account' -Target $upn `
                                            -Result 'Failed' -Detail $ref['DisableErr']
-                        } else {
+                        } elseif ($ref['DisableDone']) {
                             Write-LwLog 'Disable account: done' 'Success'
                             Write-EtbAudit -Tool 'Leaver Workflow' -Action 'Disable account' -Target $upn
                         }
@@ -304,27 +305,27 @@ function Start-LwRun {
                             Write-LwLog "Revoke sessions: FAILED — $($ref['RevokeErr'])" 'Danger'
                             Write-EtbAudit -Tool 'Leaver Workflow' -Action 'Revoke sessions' -Target $upn `
                                            -Result 'Failed' -Detail $ref['RevokeErr']
-                        } else {
+                        } elseif ($ref['RevokeDone']) {
                             Write-LwLog 'Revoke sign-in sessions: done' 'Success'
                             Write-EtbAudit -Tool 'Leaver Workflow' -Action 'Revoke sessions' -Target $upn
                         }
                     }
-                    if ($ref['DoGroups']) {
+                    if ($ref['DoGroups'] -and ($ref['GroupsRemoved'].Count -or $ref['GroupsFailed'].Count -or -not $ref['CancelRequested'])) {
                         foreach ($g in $ref['GroupsRemoved']) { Write-LwLog "Removed from group: $g" 'Success' }
                         foreach ($g in $ref['GroupsFailed'])  { Write-LwLog "Group removal failed: $g" 'Danger' }
                         $nr = $ref['GroupsRemoved'].Count
                         $nf = $ref['GroupsFailed'].Count
                         Write-LwLog "Groups: $nr removed, $nf failed" 'Text'
                         Write-EtbAudit -Tool 'Leaver Workflow' -Action 'Remove all group memberships' `
-                                       -Target $upn -Result $(if ($nf -gt 0) { 'Partial' } else { 'OK' }) `
+                                       -Target $upn -Result $(if ($nf -gt 0 -or $ref['CancelRequested']) { 'Partial' } else { 'OK' }) `
                                        -Detail "$nr removed, $nf failed"
                         Save-LwGroupSnapshot -User $Script:LW_SelectedUser -Groups $ref['RemovedDetail']
                     }
                     $displayName = if ($Script:LW_SelectedUser) { $Script:LW_SelectedUser.displayName } else { 'user' }
-                    $summary = "Leaver workflow complete for $displayName"
+                    $summary = "Leaver workflow $(if ($ref.CancelRequested) { 'stopped' } else { 'complete' }) for $displayName"
                     $failed = $ref.DisableErr -or $ref.RevokeErr -or $ref.GroupsFailed.Count -gt 0
                     if ($failed) { $summary += ' — some actions failed; check the activity log.' }
-                    $color = if ($failed) { 'Warning' } else { 'Success' }
+                    $color = if ($failed -or $ref.CancelRequested) { 'Warning' } else { 'Success' }
                     Write-LwLog $summary $color
                     Set-MainStatus $summary $color
                     if ($ref.DisableDone -and $Script:LW_SelectedUser) {

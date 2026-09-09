@@ -128,6 +128,7 @@ function Start-BlApply {
     if (-not $rows.Count) { return }
     if ($Script:DryMode -or $Script:DemoMode) {
         foreach ($row in $rows) { $row.Result = if ($Script:DemoMode) { 'Demo' } else { 'Dry run' } }
+        Publish-EtbBulkPreview 'Bulk Licences' $rows $(if ($Script:DemoMode) { 'Demo' } else { 'Dry run' })
         $Script:BL_UI.Grid.Items.Refresh(); $Script:BL_UI.Apply.IsEnabled=$false
         $Script:BL_UI.Status.Text = "Preview only: $($rows.Count) assignments would change. No tenant changes made."
         return
@@ -180,6 +181,7 @@ function Initialize-BulkLicencesTool {
     $Script:ResetCallbacks.Add({
         Stop-EtbAsyncWork $Script:BL_Timer; Stop-EtbAsyncWork $Script:BL_SkuTimer
         Set-BlBusy $false; $Script:BL_Roster.Rows.Clear(); $Script:BL_Roster.Users=@(); $Script:BL_Roster.ImportError=$false
+        $Script:BL_Roster.UI.Count.Text='0 selected users'; $Script:BL_Roster.UI.Status.Text='Connect to load users.'; $Script:BL_Roster.UI.Search.Text=''
         $Script:BL_Roster.UI.Matches.ItemsSource=@(); $Script:BL_Roster.UI.Years.ItemsSource=@(); $Script:BL_Roster.UI.Departments.ItemsSource=@()
         $Script:BL_Roster.Panel.IsEnabled=$false; $Script:BL_UI.Sku.ItemsSource=@(); Invalidate-BlPlan
     })

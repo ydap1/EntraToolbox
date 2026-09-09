@@ -374,6 +374,15 @@ try {
     $job = Start-AsyncWork -Script { $Ref['Value'] = 42 } -OnComplete { param($ref) $Script:Completed = $ref.Value }
     Wait-JobCleanup $job
     Assert ($Script:Completed -eq 42) 'completed worker delivers its result'
+    $job = Start-AsyncWork -BulkName 'Tracking test' -BulkTotal 2 -Script {
+        Publish-EtbWriteResult @{ Uri='https://graph.microsoft.com/v1.0/users/u'; Method='PATCH'; Body='{"userPrincipalName":"new@school.test"}' } 'Succeeded'
+        Publish-EtbWriteResult @{ Uri='https://graph.microsoft.com/v1.0/users/v'; Method='PATCH'; Body='{"userPrincipalName":"other@school.test"}' } 'Uncertain' 'Connection lost'
+    } -OnComplete { }
+    Wait-JobCleanup $job
+    $bulkRun=$Script:BulkRuns[0]
+    Assert ($bulkRun.Rows.Count -eq 2 -and $bulkRun.State -eq 'Finished' -and -not $bulkRun.Timer) 'bulk runs drain worker results and finish without retaining a live timer'
+    Assert (-not $bulkRun.Ref.ContainsKey('Token')) 'completed bulk runs release their worker token'
+
     $job = Start-AsyncWork -Script { Start-Sleep -Seconds 30 } -OnComplete { $Script:Completed = -1 }
     $job.Stop()
     Wait-JobCleanup $job
@@ -453,7 +462,7 @@ try {
                 $counts[$path] = 1 + $counts[$path]
                 $ctx.Response.ContentType = 'application/json'
                 $ctx.Response.Headers.Add('Location', '/created')
-                $status = if ($path -eq '/write') { 503 } elseif ($path -eq '/retry' -and $counts[$path] -eq 1) { 429 } else { 200 }
+                $status = if ($path -eq '/accepted') { 202 } elseif ($path -eq '/write') { 503 } elseif ($path -eq '/retry' -and $counts[$path] -eq 1) { 429 } else { 200 }
                 $ctx.Response.StatusCode = $status
                 $ctx.Response.Headers.Add('Retry-After', '1')
                 $payload = if ($path -eq '/pages') {
@@ -472,7 +481,17 @@ try {
         $result = Invoke-RestMethod -Uri "http://localhost:$port/retry" -ResponseHeadersVariable returnedHeaders
         Assert ($result.ok -and $counts['/retry'] -eq 2) '429 request retries and returns the response'
         Assert ($returnedHeaders.Location -contains '/created') 'response headers reach the caller (Teams provisioning)'
+        $Ref = @{ BulkQueue=[Collections.Concurrent.ConcurrentQueue[object]]::new() }
         Assert-Throws { Invoke-RestMethod -Uri "http://localhost:$port/write" -Method POST } '503'
+        $captured=$null; $null=$Ref.BulkQueue.TryDequeue([ref]$captured)
+        Assert ($captured.Result -eq 'Uncertain') 'real HTTP write errors reach the shared results queue once'
+        $null=Invoke-RestMethod -Uri "http://localhost:$port/ok" -Method POST
+        $null=$Ref.BulkQueue.TryDequeue([ref]$captured)
+        Assert ($captured.Result -eq 'Succeeded') 'real HTTP successes reach the shared results queue'
+        $null=Invoke-RestMethod -Uri "http://localhost:$port/accepted" -Method POST
+        $null=$Ref.BulkQueue.TryDequeue([ref]$captured)
+        Assert ($captured.Result -eq 'Accepted') 'HTTP 202 acceptance is not reported as completed provisioning'
+        $Ref=$null
         Assert ($counts['/write'] -eq 1) 'ambiguous writes are never replayed'
         $pages = @(Get-EtbGraphCollection -Uri "http://localhost:$port/pages")
         Assert ($pages.Count -eq 2 -and $pages[1].id -eq 2) 'collection reads include subsequent pages'

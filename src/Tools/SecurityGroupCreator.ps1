@@ -279,8 +279,9 @@ function Start-SgCreate {
         $failed = @($ref['Results'] | Where-Object Result -eq 'Failed').Count
         if ($ref['GroupId']) {
             $message = "Created '$($ref['GroupName'])' ($($ref['GroupId'])). $added added, $failed failed."
+            if ($ref['CancelRequested']) { $message += ' Stopped before all members were processed.' }
             if ($ref['Error']) { $message += " Interrupted: $($ref['Error'])" }
-            $result = if ($failed -or $ref['Error']) { 'Partial' } else { 'OK' }
+            $result = if ($failed -or $ref['Error'] -or $ref['CancelRequested']) { 'Partial' } else { 'OK' }
         } else {
             $message = "Creation failed: $($ref['Error']). Check Entra before retrying; the request may have reached the server."
             $result = 'Failed'

@@ -258,12 +258,13 @@ function Start-GcCopy {
                     foreach ($g in $failed)  { Write-GcLog "Failed:  $g" 'Danger' }
 
                     $summary = "Done — added: $($added.Count)  skipped: $($skipped.Count)  failed: $($failed.Count)"
+                    if ($ref.CancelRequested) { $summary = 'Stopped — ' + $summary }
                     Write-GcLog $summary 'Text'
-                    Set-MainStatus $summary $(if ($failed.Count) { 'Warning' } else { 'Success' })
+                    Set-MainStatus $summary $(if ($failed.Count -or $ref.CancelRequested) { 'Warning' } else { 'Success' })
                     Write-Log "GC: $summary" 'INFO'
                     Write-EtbAudit -Tool 'Group Copy' -Action 'Copy group memberships' `
                                    -Target $ref['TgtUpn'] `
-                                   -Result $(if ($failed.Count) { 'Partial' } else { 'OK' }) `
+                                   -Result $(if ($failed.Count -or $ref.CancelRequested) { 'Partial' } else { 'OK' }) `
                                    -Detail "From $($ref['SrcUpn']): $($added.Count) added, $($skipped.Count) skipped, $($failed.Count) failed"
                 }
 

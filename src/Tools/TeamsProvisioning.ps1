@@ -660,9 +660,9 @@ function Start-TpCreateTeam {
                 } else {
                     $ok   = $ref['MembersOk']
                     $fail = $ref['MembersFail']
-                    $col  = if ($fail -gt 0) { 'Warning' } else { 'Success' }
+                    $col  = if ($fail -gt 0 -or $ref.CancelRequested) { 'Warning' } else { 'Success' }
                     Write-Log "TP: done - $ok added, $fail failed" 'INFO'
-                    Write-TpLog "Done — $ok members added, $fail failed." $col
+                    Write-TpLog "$(if ($ref.CancelRequested) { 'Stopped' } else { 'Done' }) — $ok members added, $fail failed." $col
                     Set-MainStatus "Team created: $ok added, $fail failed." $col
                     $Script:TP_UI.LblTeamStatus.Text       = 'Team   Created'
                     $Script:TP_UI.LblTeamStatus.Foreground = (Get-ThemeHex 'Success')
@@ -671,7 +671,7 @@ function Start-TpCreateTeam {
                     $Script:TP_UI.LblFailed.Foreground     = if ($fail -gt 0) { (Get-ThemeHex 'Danger') } else { (Get-ThemeHex 'TextDim') }
                     Write-EtbAudit -Tool 'Teams Provisioning' -Action 'Create team' `
                                    -Target $ref['TeamName'] `
-                                   -Result $(if ($fail -gt 0) { 'Partial' } else { 'OK' }) `
+                                   -Result $(if ($fail -gt 0 -or $ref.CancelRequested) { 'Partial' } else { 'OK' }) `
                                    -Detail "$ok members added, $fail failed"
                 }
 

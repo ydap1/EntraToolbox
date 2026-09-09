@@ -1197,6 +1197,7 @@ function Show-MainWindow {
                 Set-MainStatus 'Ready.' 'TextDim'
             }
             Update-EtbModeStatus
+            Update-BrDisplay
         } catch {
             Write-Log "BtnDryRun click error: $_" 'ERROR'
         }

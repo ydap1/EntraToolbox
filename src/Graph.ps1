@@ -51,7 +51,7 @@ function Invoke-RestMethod {
     }
     $request = @{
         Uri = $Uri; Method = $Method; Headers = $Headers
-        TimeoutSec = $TimeoutSec; MaximumRedirection = 0; ErrorAction = 'Stop'
+        TimeoutSec = $TimeoutSec; MaximumRedirection = 0; ErrorAction = 'Stop'; StatusCodeVariable = 'etbStatus'
     }
     if ($PSBoundParameters.ContainsKey('Body')) { $request.Body = $Body }
     if ($ContentType) { $request.ContentType = $ContentType }
@@ -63,7 +63,9 @@ function Invoke-RestMethod {
             if ($ResponseHeadersVariable) {
                 Set-Variable -Name $ResponseHeadersVariable -Value $responseHeaders -Scope 1
             }
-            if ($Method -notin 'GET','HEAD','OPTIONS') { Publish-EtbWriteResult $request 'Succeeded' }
+            if ($Method -notin 'GET','HEAD','OPTIONS') {
+                Publish-EtbWriteResult $request $(if ($etbStatus -eq 202) { 'Accepted' } else { 'Succeeded' }) $(if ($etbStatus -eq 202) { 'Request accepted. Check the original tool for provisioning completion.' } else { '' })
+            }
             return $result
         } catch {
             $response = $_.Exception.Response
@@ -100,17 +102,24 @@ function Publish-EtbWriteResult {
     if ($Request.Method -eq 'PATCH' -and $uri.AbsolutePath -match '/users/[^/]+$' -and $body -and
         @($body.Keys | Where-Object { $_ -notin 'userPrincipalName','onPremisesImmutableId','accountEnabled' }).Count -eq 0) {
         $retry = @{ Uri = $uri.AbsoluteUri; Method = 'PATCH'; Body = $Request.Body }
+    } elseif ($Request.Method -eq 'POST' -and $uri.AbsolutePath -match '/users/[^/]+/assignLicense$' -and $body) {
+        $retry = @{ Uri=$uri.AbsoluteUri; Method='POST'; Body=$Request.Body; Kind='Licence'; VerifyUri=($uri.AbsoluteUri -replace '/assignLicense$', '?$select=licenseAssignmentStates') }
     } elseif ($uri.AbsolutePath -match '/groups/[^/]+/members/(?:[^/]+/)?\$ref$') {
         $verify = if ($Request.Method -eq 'DELETE') { $uri.AbsoluteUri -replace '/\$ref$', '' }
             elseif ($body['@odata.id']) { ($uri.AbsoluteUri -replace '/\$ref$', '/') + ($body['@odata.id'] -split '/')[-1] }
         if ($verify) { $retry = @{ Uri = $uri.AbsoluteUri; Method = $Request.Method; Body = $Request.Body; VerifyUri = $verify } }
     }
     $target = $uri.AbsolutePath -replace '^/v1.0/', ''
+    if ($body -and $body['@odata.id']) { $target += ' -> ' + ($body['@odata.id'] -split '/')[-1] }
+    if ($body -and $body['user@odata.bind']) { $target += ' -> ' + $body['user@odata.bind'] }
+    if ($body -and $body['displayName']) { $target += ' -> ' + $body['displayName'] }
     if ($Ref['BulkLabels']) {
-        foreach ($segment in ($uri.AbsolutePath -split '/')) {
+        foreach ($segment in ($target -split '[/ ]+')) {
             if ($Ref['BulkLabels'].ContainsKey($segment)) { $target = $target.Replace($segment, $Ref['BulkLabels'][$segment]) }
         }
     }
     if ($body -and $body.ContainsKey('passwordProfile')) { $Detail = if ($Result -eq 'Succeeded') { '' } else { 'Password request failed or has an uncertain outcome; review the original tool.' } }
-    $Ref['BulkQueue'].Enqueue([pscustomobject]@{ Time = (Get-Date -Format HH:mm:ss); Target = $target; Action = $Request.Method; Result = $Result; Detail = $Detail; Retry = $retry })
+    $action = if ($uri.AbsolutePath -match '/assignLicense$') { if (@($body['addLicenses']).Count) { 'Assign licence' } else { 'Remove licence' } }
+        elseif ($uri.AbsolutePath -match '/members/') { if ($Request.Method -eq 'DELETE') { 'Remove member' } else { 'Add member' } } else { $Request.Method }
+    $Ref['BulkQueue'].Enqueue([pscustomobject]@{ Time = (Get-Date -Format HH:mm:ss); Target = $target; Action = $action; Result = $Result; Detail = $Detail; Retry = $retry })
 }
