@@ -147,6 +147,11 @@ try {
         $Ref = @{ GroupId = $null; Results = @() }
         & $Script:SgCreateWork
         Assert ($calls.Count -eq 1 -and $Ref.GroupId -eq 'created-group') 'empty security group creation makes no member requests'
+        $calls.Clear()
+        $Description = ''
+        $Ref = @{ GroupId = $null; Results = @() }
+        & $Script:SgCreateWork
+        Assert ($calls.Count -eq 1 -and 'description' -notin $calls[0].Body.PSObject.Properties.Name) 'a blank description is omitted because Graph rejects empty strings'
         function Invoke-RestMethod { throw 'Group creation denied' }
         $Ref = @{ GroupId = $null; Results = @() }
         Assert-Throws { & $Script:SgCreateWork } 'Group creation denied'

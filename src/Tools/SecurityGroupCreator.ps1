@@ -225,10 +225,13 @@ function Start-SgUserLoad {
 $Script:SgCreateWork = {
     $headers = @{ Authorization = "Bearer $Token" }
     $body = @{
-        displayName = $GroupName; description = $Description
+        displayName = $GroupName
         mailEnabled = $false; securityEnabled = $true; groupTypes = @()
         mailNickname = 'sg-' + [guid]::NewGuid().ToString('N')
-    } | ConvertTo-Json
+    }
+    # Graph returns 400 for an empty-string description, so omit it when blank.
+    if ($Description) { $body.description = $Description }
+    $body = $body | ConvertTo-Json
     $group = Invoke-RestMethod -Uri 'https://graph.microsoft.com/v1.0/groups' -Method POST -Headers $headers -Body $body -ContentType 'application/json'
     if (-not $group.id) { throw 'Group creation returned no ID. Check Entra before trying again.' }
     $Ref['GroupId'] = $group.id

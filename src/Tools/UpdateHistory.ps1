@@ -10,6 +10,13 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.34.1'
+        Date    = '2026-09-10'
+        Changes = @(
+            'Security Group Creator no longer fails with 400 Bad Request when the description is left blank'
+        )
+    }
+    @{
         Version = '0.34.0'
         Date    = '2026-09-10'
         Changes = @(
