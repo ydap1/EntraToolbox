@@ -42,7 +42,7 @@ Multi-tenant. Profiles saved locally, token cache persisted across sessions — 
 
 ## Usage
 
-Tools in the navigation sidebar have individual bordered cards; the selected tool has an accent outline.
+The tool sidebar groups tasks into **User support**, **Bulk user changes**, **Groups & Teams**, **Devices**, **Reports & activity**, and **App**. Click a section heading to expand or collapse it. The current tool’s section opens automatically when restoring your last tool or navigating from search. Larger, high-contrast labels wrap in a wider, resizable sidebar; the selected tool has a coloured marker and a stronger label. Tab reaches section headings and tools; arrow keys move between tools in expanded sections.
 
 Teams Provisioning, Year Group Passwords, Bulk UPN Change and Security Group Creator share year-group and department dropdowns with user counts. Year groups combine class codes such as `7A` and `7B`; department selection preserves the full department name. Names such as `Year 7` are also recognised. Teams and password-reset load buttons replace the current list; Bulk UPN Change and Security Group Creator add to it without duplicating users. Counts reflect each tool's eligible users, including the cloud-only restriction in Bulk UPN Change.
 

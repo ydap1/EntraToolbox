@@ -10,6 +10,15 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.34.0'
+        Date    = '2026-09-10'
+        Changes = @(
+            'Tool navigation is organised into six collapsible sections by workflow'
+            'Larger, brighter labels wrap in a wider sidebar, with a clear selected-tool marker and quieter rows'
+            'Search and restored navigation reveal the selected section; arrow keys skip collapsed tools'
+        )
+    }
+    @{
         Version = '0.33.1'
         Date    = '2026-09-09'
         Changes = @(

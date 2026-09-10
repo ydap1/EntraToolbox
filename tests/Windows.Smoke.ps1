@@ -94,7 +94,19 @@ try {
             $window.UpdateLayout()
         }
     }
+    if ($Script:MainUI.NavPanel.Children.Count -ne 6) { throw 'Navigation should contain six task sections.' }
+    if ($Script:NavItems.Count -ne $Script:NavInitializers.Count -or @($Script:NavItems.Name | Sort-Object -Unique).Count -ne $Script:NavItems.Count) { throw 'Navigation has missing or duplicate tools.' }
+    foreach ($item in $Script:NavItems) {
+        if (-not $item.Section.Content.Children.Contains($item.Border)) { throw "Tool is outside its section: $($item.Name)" }
+    }
+    foreach ($section in $Script:MainUI.NavPanel.Children) { $section.IsExpanded = $false }
     Set-NavSelection 'Overview'
+    $overviewItem = $Script:NavItems | Where-Object Name -eq 'Overview'
+    if (-not $overviewItem.Section.IsExpanded -or $overviewItem.Section.Header -ne 'User support') { throw 'Opening Overview did not reveal its user-support section.' }
+    if (@($Script:NavItems | Where-Object { $_.Indicator.Visibility -eq 'Visible' }).Count -ne 1) { throw 'The sidebar must mark exactly one selected tool.' }
+    $overviewItem.Section.IsExpanded = $false
+    Set-NavSelection 'Overview'
+    if (-not $overviewItem.Section.IsExpanded) { throw 'Reopening the current tool did not reveal its collapsed section.' }
     $Script:UO_UI.Users.SelectedIndex=0
     if (-not $Script:UO_UI.Summary.Text.Contains($Script:UO_UI.Users.SelectedItem.userPrincipalName)) { throw 'Overview did not load the selected demo user.' }
     Set-NavSelection 'SignIn'

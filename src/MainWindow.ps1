@@ -59,17 +59,16 @@ function Update-EtbModeStatus {
 # ── Nav builders ───────────────────────────────────────────────────────────────
 function New-NavCategory {
     param([string]$Label)
-    $tb            = [System.Windows.Controls.TextBlock]::new()
-    $tb.Text       = $Label
-    $tb.Foreground = New-SolidBrush 'Muted'
-    $tb.FontSize   = 10
-    $tb.FontWeight = [System.Windows.FontWeights]::Bold
-    $tb.Margin     = [System.Windows.Thickness]::new(20, 16, 12, 6)
-    return $tb
+    $section = [System.Windows.Controls.Expander]::new()
+    $section.Style = $Script:MainUI.Window.FindResource('NavSection')
+    $section.Header = $Label
+    $section.Content = [System.Windows.Controls.StackPanel]::new()
+    [System.Windows.Automation.AutomationProperties]::SetName($section, $Label)
+    return $section
 }
 
 function New-NavItem {
-    param([string]$Name, [string]$Title, [string]$Subtitle)
+    param([string]$Name, [string]$Title, [string]$Subtitle, $Section)
     $button = [System.Windows.Controls.Button]::new()
     $button.Style = $Script:MainUI.Window.FindResource('NavButton')
     $button.Tag = $Name
@@ -77,8 +76,25 @@ function New-NavItem {
     [System.Windows.Automation.AutomationProperties]::SetName($button, $Title)
     $titleTb = [System.Windows.Controls.TextBlock]::new()
     $titleTb.Text = $Title
-    $titleTb.TextTrimming = 'CharacterEllipsis'
-    $button.Content = $titleTb
+    $titleTb.TextWrapping = 'Wrap'
+    $titleTb.VerticalAlignment = 'Center'
+    $titleTb.Margin = [System.Windows.Thickness]::new(12, 0, 0, 0)
+    $indicator = [System.Windows.Controls.Border]::new()
+    $indicator.Width = 3
+    $indicator.Height = 20
+    $indicator.CornerRadius = [System.Windows.CornerRadius]::new(1.5)
+    $indicator.Background = New-SolidBrush 'Accent'
+    $indicator.Visibility = 'Hidden'
+    $indicator.VerticalAlignment = 'Center'
+    $row = [System.Windows.Controls.Grid]::new()
+    $markColumn = [System.Windows.Controls.ColumnDefinition]::new()
+    $markColumn.Width = [System.Windows.GridLength]::new(3)
+    [void]$row.ColumnDefinitions.Add($markColumn)
+    [void]$row.ColumnDefinitions.Add([System.Windows.Controls.ColumnDefinition]::new())
+    [System.Windows.Controls.Grid]::SetColumn($titleTb, 1)
+    [void]$row.Children.Add($indicator)
+    [void]$row.Children.Add($titleTb)
+    $button.Content = $row
     $button.Add_Click({
         param($navSender, $navEvent)
         try { Set-NavSelection -Name $navSender.Tag }
@@ -86,26 +102,32 @@ function New-NavItem {
     })
     $button.Add_PreviewKeyDown({
         param($navSender, $navEvent)
+        $visible = @($Script:NavItems | Where-Object { $_.Section.IsExpanded })
+        if (-not $visible.Count) { return }
         $index = -1
-        for ($i = 0; $i -lt $Script:NavItems.Count; $i++) {
-            if ($Script:NavItems[$i].Name -eq $navSender.Tag) { $index = $i; break }
+        for ($i = 0; $i -lt $visible.Count; $i++) {
+            if ($visible[$i].Name -eq $navSender.Tag) { $index = $i; break }
         }
-        if ($navEvent.Key -eq 'Down') { $index = [math]::Min($index + 1, $Script:NavItems.Count - 1) }
+        if ($navEvent.Key -eq 'Down') { $index = [math]::Min($index + 1, $visible.Count - 1) }
         elseif ($navEvent.Key -eq 'Up') { $index = [math]::Max($index - 1, 0) }
         elseif ($navEvent.Key -eq 'Home') { $index = 0 }
-        elseif ($navEvent.Key -eq 'End') { $index = $Script:NavItems.Count - 1 }
+        elseif ($navEvent.Key -eq 'End') { $index = $visible.Count - 1 }
         else { return }
-        [void]$Script:NavItems[$index].Border.Focus()
-        $Script:NavItems[$index].Border.BringIntoView()
+        [void]$visible[$index].Border.Focus()
+        $visible[$index].Border.BringIntoView()
         $navEvent.Handled = $true
     })
-    return @{ Name = $Name; Border = $button; TitleTb = $titleTb; Title = $Title; Subtitle = $Subtitle }
+    return @{ Name = $Name; Border = $button; TitleTb = $titleTb; Title = $Title; Subtitle = $Subtitle; Indicator = $indicator; Section = $Section }
 }
 
 function Set-NavSelection {
     param([string]$Name)
     if ([string]::IsNullOrEmpty($Name)) { return }
-    if ($Script:CurrentNavItem -eq $Name) { return }
+    if ($Script:CurrentNavItem -eq $Name) {
+        $current = $Script:NavItems | Where-Object Name -eq $Name | Select-Object -First 1
+        if ($current) { $current.Section.IsExpanded = $true; $current.Section.UpdateLayout(); $current.Border.BringIntoView() }
+        return
+    }
 
     # Lazy-initialize the tool panel on first visit
     if (-not $Script:NavContents.ContainsKey($Name)) {
@@ -139,23 +161,33 @@ function Set-NavSelection {
     $selBrush    = New-SolidBrush 'Hover'
     $textBrush   = New-SolidBrush 'Text'
     $dimBrush    = New-SolidBrush 'TextDim'
+    foreach ($section in $Script:MainUI.NavPanel.Children) { $section.Foreground = $dimBrush }
 
+    $selectedItem = $null
     foreach ($item in $Script:NavItems) {
         if ($item.Name -eq $Name) {
+            $selectedItem = $item
             $item.Border.Background  = $selBrush
-            $item.Border.BorderBrush = $accentBrush
+            $item.Border.BorderBrush = New-SolidBrush 'Border'
+            $item.TitleTb.FontWeight = [System.Windows.FontWeights]::SemiBold
+            $item.Indicator.Visibility = 'Visible'
+            $item.Section.IsExpanded = $true
+            $item.Section.Foreground = $accentBrush
             $item.TitleTb.Foreground = $textBrush
             $Script:MainUI.ToolTitle.Text = $item.Title
             $Script:MainUI.ToolDescription.Text = $item.Subtitle
         } else {
-            $item.Border.Background  = New-SolidBrush 'Card'
-            $item.Border.BorderBrush = New-SolidBrush 'Border'
-            $item.TitleTb.Foreground = $dimBrush
+            $item.Border.Background  = [System.Windows.Media.Brushes]::Transparent
+            $item.Border.BorderBrush = [System.Windows.Media.Brushes]::Transparent
+            $item.TitleTb.Foreground = $textBrush
+            $item.TitleTb.FontWeight = [System.Windows.FontWeights]::Normal
+            $item.Indicator.Visibility = 'Hidden'
         }
     }
 
     $Script:MainUI.ContentArea.Content = $Script:NavContents[$Name]
     $Script:CurrentNavItem = $Name
+    if ($selectedItem) { $selectedItem.Section.UpdateLayout(); $selectedItem.Border.BringIntoView() }
     try { Set-AppSetting -Name 'LastTool' -Value $Name }
     catch { Write-Log "Could not save last tool: $_" 'DEBUG' }
 
@@ -189,23 +221,61 @@ $Script:MainXaml = @'
       </Setter>
     </Style>
 
-    <Style x:Key="NavButton" TargetType="Button">
-      <Setter Property="Background" Value="#242436"/>
-      <Setter Property="BorderBrush" Value="#3C3C5A"/>
-      <Setter Property="BorderThickness" Value="1"/>
+    <Style x:Key="NavSection" TargetType="Expander">
       <Setter Property="Foreground" Value="#7878A0"/>
-      <Setter Property="FontSize" Value="13"/>
-      <Setter Property="FontWeight" Value="Medium"/>
-      <Setter Property="Margin" Value="10,3"/>
-      <Setter Property="Padding" Value="12,9"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Margin" Value="8,2"/>
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Expander">
+        <Border BorderBrush="#3C3C5A" BorderThickness="0,0,0,1" Padding="0,0,0,4">
+          <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <ToggleButton x:Name="HeaderSite" Content="{TemplateBinding Header}" Foreground="{TemplateBinding Foreground}"
+                          FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}"
+                          IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                          AutomationProperties.Name="{Binding Header, RelativeSource={RelativeSource TemplatedParent}}"
+                          MinHeight="38" Cursor="Hand" HorizontalContentAlignment="Stretch">
+              <ToggleButton.Template><ControlTemplate TargetType="ToggleButton">
+                <Border x:Name="SectionHeader" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="4" Padding="10,8">
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <Path x:Name="Chevron" Data="M 0,0 L 4,4 L 0,8" Stroke="{TemplateBinding Foreground}" StrokeThickness="1.5"
+                          HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5"/>
+                    <ContentPresenter Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                  </Grid>
+                </Border>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="IsChecked" Value="True"><Setter TargetName="Chevron" Property="RenderTransform"><Setter.Value><RotateTransform Angle="90"/></Setter.Value></Setter></Trigger>
+                  <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="SectionHeader" Property="Background" Value="#242436"/></Trigger>
+                  <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="SectionHeader" Property="BorderBrush" Value="#6366F1"/></Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate></ToggleButton.Template>
+            </ToggleButton>
+            <ContentPresenter x:Name="SectionTools" Grid.Row="1" ContentSource="Content" Visibility="Collapsed" Margin="0,2,0,6"/>
+          </Grid>
+        </Border>
+        <ControlTemplate.Triggers><Trigger Property="IsExpanded" Value="True"><Setter TargetName="SectionTools" Property="Visibility" Value="Visible"/></Trigger></ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+
+    <Style x:Key="NavButton" TargetType="Button">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Foreground" Value="#E2E2F0"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="FontWeight" Value="Normal"/>
+      <Setter Property="MinHeight" Value="38"/>
+      <Setter Property="Margin" Value="4,1"/>
+      <Setter Property="Padding" Value="8,7"/>
       <Setter Property="Cursor" Value="Hand"/>
-      <Setter Property="HorizontalContentAlignment" Value="Left"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
       <Setter Property="Template">
         <Setter.Value><ControlTemplate TargetType="Button">
           <Border x:Name="NavSurface" Background="{TemplateBinding Background}"
                   BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
                   CornerRadius="5" Padding="{TemplateBinding Padding}">
-            <ContentPresenter VerticalAlignment="Center"/>
+            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
@@ -437,7 +507,7 @@ $Script:MainXaml = @'
     <!-- ── Navigation sidebar + content area ──────────────────────────────── -->
     <Grid Grid.Row="2">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="216" MinWidth="190"/>
+        <ColumnDefinition Width="268" MinWidth="220"/>
         <ColumnDefinition Width="4"/>
         <ColumnDefinition Width="*"/>
       </Grid.ColumnDefinitions>
@@ -445,21 +515,19 @@ $Script:MainXaml = @'
       <!-- Sidebar -->
       <Border Grid.Column="0" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,0,1,0">
         <DockPanel>
-          <!-- version label pinned to bottom -->
-          <TextBlock x:Name="MainVersion" DockPanel.Dock="Bottom"
-                     Foreground="#3C3C5A" FontSize="11"
-                     Margin="17,8,12,10" VerticalAlignment="Center"/>
-          <TextBlock x:Name="MainUpdate" DockPanel.Dock="Bottom"
-                     Foreground="#6366F1" FontSize="11" FontWeight="SemiBold"
-                     Margin="17,0,12,0" Cursor="Hand" Visibility="Collapsed"
-                     TextWrapping="Wrap"
-                     ToolTip="A newer version is available on GitHub — click to open"/>
-          <TextBlock x:Name="MainShortcuts" DockPanel.Dock="Bottom"
-                     Text="Keyboard shortcuts  (F1)" Foreground="#50507A" FontSize="11"
-                     Margin="17,0,12,2" Cursor="Hand"
-                     ToolTip="Show the keyboard shortcut guide"/>
+          <TextBlock DockPanel.Dock="Top" Text="Tools" Foreground="#E2E2F0" FontSize="17" FontWeight="SemiBold" Margin="20,16,12,8"/>
+          <Border DockPanel.Dock="Bottom" BorderBrush="#3C3C5A" BorderThickness="0,1,0,0" Padding="20,12">
+            <StackPanel>
+              <TextBlock x:Name="MainShortcuts" Text="Keyboard shortcuts  ·  F1" Foreground="#7878A0" FontSize="12"
+                         Margin="0,0,0,6" Cursor="Hand" ToolTip="Show the keyboard shortcut guide"/>
+              <TextBlock x:Name="MainUpdate" Foreground="#6366F1" FontSize="12" FontWeight="SemiBold"
+                         Margin="0,0,0,6" Cursor="Hand" Visibility="Collapsed" TextWrapping="Wrap"
+                         ToolTip="A newer version is available on GitHub — click to open"/>
+              <TextBlock x:Name="MainVersion" Foreground="#7878A0" FontSize="11"/>
+            </StackPanel>
+          </Border>
           <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <StackPanel x:Name="NavPanel" Margin="0,8,0,16"/>
+            <StackPanel x:Name="NavPanel" Margin="0,0,0,12"/>
           </ScrollViewer>
         </DockPanel>
       </Border>
@@ -1120,40 +1188,41 @@ function Show-MainWindow {
 
     # ── Build nav sidebar ─────────────────────────────────────────────────────
     $navDef = @(
-        @{ Type = 'cat';  Label = 'USERS' }
+        @{ Type = 'cat'; Label = 'User support' }
         @{ Type = 'tool'; Name = 'Overview'; Title = 'User Overview'; Desc = 'Account, groups, licences, devices and recent sign-ins' }
-        @{ Type = 'tool'; Name = 'YearGroup';   Title = 'Year Group Passwords'; Desc = 'Reset passwords by year group or department' }
         @{ Type = 'tool'; Name = 'UserReset';   Title = 'User Password Reset';  Desc = 'Reset a single account password' }
-        @{ Type = 'tool'; Name = 'Leaver';      Title = 'Leaver Workflow';      Desc = 'Disable, revoke sessions, remove from groups' }
         @{ Type = 'tool'; Name = 'Licence';     Title = 'Licence Assignment';   Desc = 'View and assign Microsoft 365 licences' }
+        @{ Type = 'tool'; Name = 'Leaver';      Title = 'Leaver Workflow';      Desc = 'Disable, revoke sessions, remove from groups' }
+        @{ Type = 'cat'; Label = 'Bulk user changes' }
+        @{ Type = 'tool'; Name = 'YearGroup';   Title = 'Year Group Passwords'; Desc = 'Reset passwords by year group or department' }
         @{ Type = 'tool'; Name = 'BulkLicence'; Title = 'Bulk Licences'; Desc = 'Preview and apply licences to a user roster' }
         @{ Type = 'tool'; Name = 'BulkUpn';     Title = 'Bulk UPN Change';      Desc = 'Move users to a different verified domain' }
         @{ Type = 'tool'; Name = 'ImmutableId'; Title = 'Immutable ID';         Desc = 'Assign immutable ID to user' }
-        @{ Type = 'cat';  Label = 'DEVICES' }
-        @{ Type = 'tool'; Name = 'LastDevice';  Title = 'Last Device';          Desc = 'Login history and stale device detection' }
-        @{ Type = 'tool'; Name = 'DevComp';     Title = 'Device Compliance';    Desc = 'Compliance overview with failure reasons' }
-        @{ Type = 'cat';  Label = 'AUDIT' }
-        @{ Type = 'tool'; Name = 'ChangeHistory'; Title = 'Change History'; Desc = 'Search local changes by date, operator, user and action' }
-        @{ Type = 'tool'; Name = 'BulkResults'; Title = 'Bulk Results'; Desc = 'Progress, stop, export and recover bulk operations' }
-        @{ Type = 'tool'; Name = 'SignIn';       Title = 'Sign-In Logs';        Desc = 'Browse Entra ID sign-in events' }
-        @{ Type = 'cat';  Label = 'GROUPS & TEAMS' }
+        @{ Type = 'cat'; Label = 'Groups & Teams' }
         @{ Type = 'tool'; Name = 'GroupManager'; Title = 'Group Manager'; Desc = 'Compare an existing group with a user roster and review membership changes' }
         @{ Type = 'tool'; Name = 'GroupCopy';   Title = 'Group Copy';           Desc = 'Copy memberships from one user to another' }
         @{ Type = 'tool'; Name = 'SecurityGroup'; Title = 'Security Group Creator'; Desc = 'Create a security group from year groups, departments, individual users or CSV' }
         @{ Type = 'tool'; Name = 'Teams';        Title = 'Teams Provisioning';  Desc = 'Create Teams from year groups, departments or individual users' }
-        @{ Type = 'cat';  Label = 'SECURITY' }
+        @{ Type = 'cat'; Label = 'Devices' }
+        @{ Type = 'tool'; Name = 'LastDevice';  Title = 'Last Device';          Desc = 'Login history and stale device detection' }
+        @{ Type = 'tool'; Name = 'DevComp';     Title = 'Device Compliance';    Desc = 'Compliance overview with failure reasons' }
+        @{ Type = 'cat'; Label = 'Reports & activity' }
+        @{ Type = 'tool'; Name = 'SignIn';       Title = 'Sign-In Logs';        Desc = 'Browse Entra ID sign-in events' }
         @{ Type = 'tool'; Name = 'SecureScore'; Title = 'Secure Score';         Desc = 'Microsoft Secure Score with control breakdown' }
-        @{ Type = 'cat';  Label = 'APP' }
+        @{ Type = 'tool'; Name = 'BulkResults'; Title = 'Bulk Results'; Desc = 'Progress, stop, export and recover bulk operations' }
+        @{ Type = 'tool'; Name = 'ChangeHistory'; Title = 'Change History'; Desc = 'Search local changes by date, operator, user and action' }
+        @{ Type = 'cat'; Label = 'App' }
         @{ Type = 'tool'; Name = 'Appearance';  Title = 'Appearance';           Desc = 'Theme and font settings' }
         @{ Type = 'tool'; Name = 'Changelog';   Title = 'Update History';       Desc = 'Version changelog and release notes' }
     )
 
     foreach ($def in $navDef) {
         if ($def.Type -eq 'cat') {
-            [void]$Script:MainUI.NavPanel.Children.Add((New-NavCategory -Label $def.Label))
+            $section = New-NavCategory -Label $def.Label
+            [void]$Script:MainUI.NavPanel.Children.Add($section)
         } else {
-            $item = New-NavItem -Name $def.Name -Title $def.Title -Subtitle $def.Desc
-            [void]$Script:MainUI.NavPanel.Children.Add($item.Border)
+            $item = New-NavItem -Name $def.Name -Title $def.Title -Subtitle $def.Desc -Section $section
+            [void]$section.Content.Children.Add($item.Border)
             $Script:NavItems.Add($item)
         }
     }
