@@ -10,6 +10,13 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.34.2'
+        Date    = '2026-09-21'
+        Changes = @(
+            'bugs fixed'
+        )
+    }
+    @{
         Version = '0.34.1'
         Date    = '2026-09-10'
         Changes = @(

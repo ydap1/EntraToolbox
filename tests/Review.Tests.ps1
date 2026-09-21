@@ -102,6 +102,35 @@ try {
         }
         $Script:BUC_AllUsers = @()
     }
+    # Exercise the actual Teams worker without WPF or a live tenant.
+    & {
+        $command = (Get-Command Start-TpCreateTeam).ScriptBlock.Ast.Find({
+            param($node)
+            $node -is [Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq 'Start-AsyncWork'
+        }, $true)
+        $scriptParameter = $command.CommandElements | Where-Object {
+            $_ -is [Management.Automation.Language.CommandParameterAst] -and $_.ParameterName -eq 'Script'
+        }
+        $worker = $command.CommandElements[$command.CommandElements.IndexOf($scriptParameter) + 1].ScriptBlock.GetScriptBlock()
+        function Start-Sleep { param($Seconds) }
+        function Invoke-RestMethod {
+            param($Uri, $Headers, $Method, $Body, $ResponseHeadersVariable, $ErrorAction)
+            if ($Method -eq 'POST') {
+                $calls.Add(($Body | ConvertFrom-Json))
+                Set-Variable -Name $ResponseHeadersVariable -Value @{ Location = '/v1.0/teams/operations/test' } -Scope 1
+            } else {
+                return @{ status = 'succeeded'; targetResourceId = 'created-team' }
+            }
+        }
+        foreach ($Template in 'educationClass', 'standard') {
+            $calls = [Collections.Generic.List[object]]::new()
+            $Token = 'test'; $TeamName = 'Private team'; $AdminUpn = 'admin@school.test'; $MemberSnap = @()
+            $Ref = @{ Log = [Collections.Concurrent.ConcurrentQueue[string]]::new() }
+            & $worker
+            Assert ($calls.Count -eq 1 -and $calls[0].visibility -ceq 'private') "$Template creation explicitly requests private visibility"
+            Assert ($calls[0].'template@odata.bind' -eq "https://graph.microsoft.com/v1.0/teamsTemplates('$Template')" -and $Ref.TeamId -eq 'created-team') "$Template creation preserves its template and completes provisioning"
+        }
+    }
     # Group creation uses a single create request and reports member failures
     # without losing the group ID or skipping the remaining users.
     & {
@@ -120,6 +149,7 @@ try {
         $Ref = @{ GroupId = $null; Results = @() }
         & $Script:SgCreateWork
         Assert ($calls.Count -eq 26 -and $calls[0].Body.securityEnabled -and -not $calls[0].Body.mailEnabled -and $calls[0].Body.groupTypes.Count -eq 0) 'creates a security group with assigned membership before adding users'
+        Assert ($calls[0].Body.visibility -ceq 'Private') 'security group creation explicitly requests private visibility'
         Assert ($calls[0].Body.displayName -eq $GroupName -and $calls[0].Body.description -eq $Description -and $calls[0].Body.mailNickname) 'group request carries the entered details and a mail nickname'
         Assert ($calls[25].Uri -eq 'https://graph.microsoft.com/v1.0/groups/created-group/members/$ref' -and $calls[25].Body.'@odata.id' -like '*/user-25') 'member requests support lists larger than 20 users'
         Assert ($Ref.GroupId -eq 'created-group' -and @($Ref.Results | Where-Object Result -eq 'Added').Count -eq 24 -and $Ref.Results[1].Error -eq 'Membership denied') 'failed membership is reported and later users are still added'

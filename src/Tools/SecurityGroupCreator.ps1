@@ -226,6 +226,7 @@ $Script:SgCreateWork = {
     $headers = @{ Authorization = "Bearer $Token" }
     $body = @{
         displayName = $GroupName
+        visibility = 'Private'
         mailEnabled = $false; securityEnabled = $true; groupTypes = @()
         mailNickname = 'sg-' + [guid]::NewGuid().ToString('N')
     }

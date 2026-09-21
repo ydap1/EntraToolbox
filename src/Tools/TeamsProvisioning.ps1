@@ -576,6 +576,7 @@ function Start-TpCreateTeam {
             $body = @{
                 'template@odata.bind' = "https://graph.microsoft.com/v1.0/teamsTemplates('$Template')"
                 displayName           = $TeamName
+                visibility            = 'private'
                 members               = @(
                     @{
                         '@odata.type'     = '#microsoft.graph.aadUserConversationMember'
