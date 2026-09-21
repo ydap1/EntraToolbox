@@ -74,6 +74,13 @@ $Script:Demo_Users = @(
     [PSCustomObject]@{ id='u-st-10'; displayName='Rachel Green';        userPrincipalName='r.green@contoso.sch.uk';            department='Staff'; accountEnabled=$true }
 )
 
+foreach ($user in $Script:Demo_Users) {
+    $office = if ($user.department -eq 'Staff') { 'Admin Block' }
+              elseif ($user.department -like '12*') { 'Sixth Form Centre' }
+              else { 'Main Building' }
+    $user | Add-Member -NotePropertyName officeLocation -NotePropertyValue $office
+}
+
 # ── Fake devices ───────────────────────────────────────────────────────────────
 # lastSyncDateTime strings are UTC (relative to 2026-05-13)
 $Script:Demo_Devices = @(
@@ -206,7 +213,7 @@ function Get-DemoGroupsForUser {
 
 # ── Year Group Passwords demo loader ───────────────────────────────────────────
 function Start-PwUserLoadDemo {
-    $Script:PwReset_GraphUsers = @($Script:Demo_Users | Where-Object { $_.accountEnabled -and $_.department })
+    $Script:PwReset_GraphUsers = @($Script:Demo_Users | Where-Object { $_.accountEnabled -and ($_.department -or $_.officeLocation) })
 
     Update-PwPopulationCombos
 

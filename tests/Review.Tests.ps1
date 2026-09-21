@@ -56,8 +56,8 @@ try {
         $savedGroups = [Collections.Generic.List[string]]::new()
         function Set-TenantSetting { param($TenantId, $Name, $Value); $savedGroups.Add("${Name}:$Value") }
         $users = @(
-            [pscustomobject]@{ id = 'a'; displayName = 'Ann'; userPrincipalName = 'ann@school.test'; department = '7A' }
-            [pscustomobject]@{ id = 'b'; displayName = 'Ben'; userPrincipalName = 'ben@school.test'; department = '7B' }
+            [pscustomobject]@{ id = 'a'; displayName = 'Ann'; userPrincipalName = 'ann@school.test'; department = '7A'; officeLocation = 'Main Building'; accountEnabled = $true }
+            [pscustomobject]@{ id = 'b'; displayName = 'Ben'; userPrincipalName = 'ben@school.test'; department = '7B'; officeLocation = 'Annex'; accountEnabled = $true }
         )
         $year = @(Get-EtbPopulationChoices -Users $users -Mode YearGroup)[0]
         $dept = @(Get-EtbPopulationChoices -Users $users -Mode Department)[0]
@@ -84,10 +84,25 @@ try {
         Assert ($Script:PwReset_Rows.Count -eq 2 -and $Script:PwReset_UI.Grid.SelectedItems.Count -eq 2) 'password reset year loading selects every class in the year'
         Set-PwPopulation -Choice $dept
         Assert ($Script:PwReset_Rows.Count -eq 1 -and $Script:PwReset_Rows[0].Id -eq 'a' -and $savedGroups.Count -eq 1 -and $savedGroups[0] -eq 'LastYearGroup:7') 'department loading preserves the remembered password-reset year'
+        $Script:UserCache.Users = $users + @(
+            [pscustomobject]@{ id = 'c'; displayName = 'Cal'; userPrincipalName = 'cal@school.test'; department = ''; officeLocation = 'Main Building'; accountEnabled = $true }
+            [pscustomobject]@{ id = 'd'; officeLocation = 'Main Building'; accountEnabled = $false }
+            [pscustomobject]@{ id = 'e'; department = '7A'; officeLocation = ''; accountEnabled = $true }
+        )
+        function Update-PwPopulationCombos { }
+        function Get-TenantSetting { }
+        Complete-PwUserLoad
+        $offices = @(Get-EtbPopulationChoices -Users $Script:PwReset_GraphUsers -Mode OfficeLocation)
+        Assert ($offices.Count -eq 2 -and $offices[0].Value -eq 'Annex' -and $offices[1].Label -eq 'Main Building - 2 users') 'office choices are sorted, count enabled users and omit blank locations'
+        Assert (@(Get-EtbPopulationChoices -Users @([pscustomobject]@{ officeLocation = $null }) -Mode OfficeLocation).Count -eq 0) 'users without offices leave the office dropdown empty'
+        Set-PwPopulation -Choice $offices[1]
+        Assert (($Script:PwReset_Rows.Id -join ',') -eq 'a,c' -and $Script:PwReset_UI.Grid.SelectedItems.Count -eq 2 -and $savedGroups.Count -eq 1) 'office loading replaces and selects users, includes blank departments and preserves the remembered year'
         $Script:PwReset_Running = $true
-        Set-PwPopulation -Choice $year
-        Assert ($Script:PwReset_Rows.Count -eq 1) 'password-reset population cannot change during a run'
+        Set-PwPopulation -Choice $offices[0]
+        Assert (($Script:PwReset_Rows.Id -join ',') -eq 'a,c') 'office loading cannot change password-reset targets during a run'
         $Script:PwReset_Running = $false
+        $Script:UserCache.Users = @()
+        $Script:PwReset_GraphUsers = @()
         $Script:CurrentTenantId = $null
         function Update-BucUserFilter { }
         function Update-BucButtons { }

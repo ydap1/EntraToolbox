@@ -18,7 +18,7 @@ There’s no separate app installer or Azure app registration. Use **Demo** to e
 
 ## Tools
 
-- **Users:** account overview, individual and year-group password resets, leaver workflow and group membership restore.
+- **Users:** account overview, individual password resets and bulk resets by year group, department or office location, leaver workflow and group membership restore.
 - **Bulk changes:** licence assignment, UPN changes and immutable IDs.
 - **Groups & Teams:** copy or reconcile memberships, create security groups with users or devices, and provision Class or Standard Teams.
 - **Devices:** Intune device lookup, stale devices, sign-in time reports and compliance details.

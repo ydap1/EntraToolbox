@@ -10,6 +10,13 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.35.0'
+        Date    = '2026-09-21'
+        Changes = @(
+            'Year Group Passwords can load enabled users by office location, with user counts and demo support'
+        )
+    }
+    @{
         Version = '0.34.2'
         Date    = '2026-09-21'
         Changes = @(

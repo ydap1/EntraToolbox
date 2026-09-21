@@ -141,7 +141,9 @@ try {
         @{ Nav = 'YearGroup'; UI = $Script:PwReset_UI; Rows = $Script:PwReset_Rows }
     )) {
         Set-NavSelection $tool.Nav
-        foreach ($source in @(@('CboYear', 'BtnLoad'), @('CboDept', 'BtnLoadDept'))) {
+        $sources = @(@('CboYear', 'BtnLoad'), @('CboDept', 'BtnLoadDept'))
+        if ($tool.Nav -eq 'YearGroup') { $sources += ,@('CboOffice', 'BtnLoadOffice') }
+        foreach ($source in $sources) {
             $combo = $tool.UI[$source[0]]
             if ($combo -isnot [Windows.Controls.ComboBox] -or $combo.Items.Count -eq 0) { throw "$($tool.Nav): missing population dropdown." }
             $combo.SelectedIndex = 0
@@ -154,11 +156,13 @@ try {
         if ($tool.Nav -eq 'Teams') { $tool.UI.TeamName.Text = 'Keep this team name' }
         $yearChoice = $tool.UI.CboYear.SelectedItem
         $deptChoice = $tool.UI.CboDept.SelectedItem
+        $officeChoice = if ($tool.Nav -eq 'YearGroup') { $tool.UI.CboOffice.SelectedItem }
         $tool.UI.BtnClear.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
         if ($tool.Rows.Count -ne 0 -or $tool.UI.BtnClear.IsEnabled -or $tool.UI.CboYear.SelectedItem -ne $yearChoice -or $tool.UI.CboDept.SelectedItem -ne $deptChoice) {
             throw "$($tool.Nav): Clear all failed to empty the list and preserve dropdown choices."
         }
         if ($tool.Nav -eq 'Teams' -and $tool.UI.TeamName.Text -ne 'Keep this team name') { throw 'Clear all lost the team name.' }
+        if ($tool.Nav -eq 'YearGroup' -and $tool.UI.CboOffice.SelectedItem -ne $officeChoice) { throw 'Clear all lost the office location.' }
         if ($tool.Nav -eq 'YearGroup' -and ($tool.UI.BtnExport.IsEnabled -or $tool.UI.BtnPrint.IsEnabled -or $tool.UI.BtnRun.IsEnabled)) {
             throw 'Password actions remain enabled after clearing users.'
         }
