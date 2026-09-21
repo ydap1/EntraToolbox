@@ -1,13 +1,16 @@
 # Entra Toolbox
 
-A Windows app for managing school Entra ID tenants.
-
 ## Download, install and run
 
-1. Install [PowerShell 7](https://aka.ms/powershell).
-2. [Download Entra Toolbox](https://github.com/ydap1/EntraToolbox/archive/refs/heads/main.zip) and extract the ZIP to a folder.
-3. Open the extracted folder and double-click **Launch.cmd**. The first launch downloads the required sign-in module, so you’ll need an internet connection.
-4. Click **+** in the tenant bar, enter your tenant ID, verified domain or admin email, and sign in.
+On Windows, install Git and [PowerShell 7](https://aka.ms/powershell), then run:
+
+```powershell
+git clone https://github.com/ydap1/EntraToolbox.git
+cd EntraToolbox
+.\Launch.cmd
+```
+
+The first launch downloads the required sign-in module, so you’ll need an internet connection. Click **+** in the tenant bar, enter your tenant ID, verified domain or admin email, and sign in. For later launches, double-click **Launch.cmd** in the cloned folder.
 
 There’s no separate app installer or Azure app registration. Use **Demo** to explore with sample data before connecting a tenant.
 
@@ -27,15 +30,7 @@ Multiple tenants, CSV imports and exports, and theme customisation are supported
 
 Choose a tool from the sidebar. **Ctrl+K** searches users; **F1** opens the shortcut guide. Use **Dry Run** to preview supported changes, and **Bulk Results** to track runs or export failures. Tenant profiles and audit records are saved locally in `config`.
 
-The app checks for updates at launch. ZIP downloads must be updated manually. For automatic updates, install Git and clone the repository instead:
-
-```powershell
-git clone https://github.com/ydap1/EntraToolbox.git
-cd EntraToolbox
-.\Launch.cmd
-```
-
-Accept the launch prompt to update a clean clone on `main`.
+The app checks for updates at launch. Accept the prompt to update a clean clone on `main`.
 
 ## Screenshots
 
