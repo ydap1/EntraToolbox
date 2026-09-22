@@ -132,6 +132,9 @@ try {
             param($Uri, $Headers, $Method, $Body, $ResponseHeadersVariable, $ErrorAction)
             if ($Method -eq 'POST') {
                 $calls.Add(($Body | ConvertFrom-Json))
+                if ($calls[-1].'template@odata.bind' -like "*('educationClass')" -and $calls[-1].PSObject.Properties['visibility']) {
+                    throw 'Class template settings cannot be overridden.'
+                }
                 Set-Variable -Name $ResponseHeadersVariable -Value @{ Location = '/v1.0/teams/operations/test' } -Scope 1
             } else {
                 return @{ status = 'succeeded'; targetResourceId = 'created-team' }
@@ -142,8 +145,31 @@ try {
             $Token = 'test'; $TeamName = 'Private team'; $AdminUpn = 'admin@school.test'; $MemberSnap = @()
             $Ref = @{ Log = [Collections.Concurrent.ConcurrentQueue[string]]::new() }
             & $worker
-            Assert ($calls.Count -eq 1 -and $calls[0].visibility -ceq 'private') "$Template creation explicitly requests private visibility"
+            if ($Template -eq 'educationClass') {
+                Assert ($calls.Count -eq 1 -and -not $calls[0].PSObject.Properties['visibility']) 'Class creation preserves the required template settings'
+            } else {
+                Assert ($calls.Count -eq 1 -and $calls[0].visibility -ceq 'private') 'standard creation explicitly requests private visibility'
+            }
             Assert ($calls[0].'template@odata.bind' -eq "https://graph.microsoft.com/v1.0/teamsTemplates('$Template')" -and $Ref.TeamId -eq 'created-team') "$Template creation preserves its template and completes provisioning"
+        }
+        foreach ($responseBody in '{"error":{"code":"BadRequest","message":"Class template settings cannot be overridden."}}', '<html>Bad gateway</html>') {
+            $calls.Clear()
+            $Ref = @{ Log = [Collections.Concurrent.ConcurrentQueue[string]]::new() }
+            function Invoke-RestMethod {
+                param($Uri, $Headers, $Method, $Body, $ResponseHeadersVariable, $ErrorAction)
+                $calls.Add($Uri)
+                $failure = [Management.Automation.ErrorRecord]::new([Exception]::new('400 Bad Request'), 'GraphFailure', [Management.Automation.ErrorCategory]::InvalidOperation, $null)
+                $failure.ErrorDetails = [Management.Automation.ErrorDetails]::new($responseBody)
+                throw $failure
+            }
+            $caught = $null
+            try { & $worker } catch { $caught = $_ }
+            Assert ($caught.Exception.Message -eq '400 Bad Request' -and $calls.Count -eq 1 -and -not $Ref.TeamId) 'creation errors preserve the original failure and never retry or start membership writes'
+            if ($responseBody.StartsWith('{')) {
+                Assert ($Ref.CreationError -eq 'BadRequest: Class template settings cannot be overridden.') 'Graph rejection details survive for the Teams log and audit'
+            } else {
+                Assert (-not $Ref.CreationError) 'non-JSON failures retain the original HTTP error'
+            }
         }
     }
     # Group creation uses a single create request and reports member failures

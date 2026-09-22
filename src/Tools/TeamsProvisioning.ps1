@@ -562,6 +562,7 @@ function Start-TpCreateTeam {
         -RefSeed @{
             TeamName    = $teamName
             TeamId      = $null
+            CreationError = $null
             MembersOk   = 0
             MembersFail = 0
             Log         = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
@@ -576,7 +577,6 @@ function Start-TpCreateTeam {
             $body = @{
                 'template@odata.bind' = "https://graph.microsoft.com/v1.0/teamsTemplates('$Template')"
                 displayName           = $TeamName
-                visibility            = 'private'
                 members               = @(
                     @{
                         '@odata.type'     = '#microsoft.graph.aadUserConversationMember'
@@ -584,10 +584,23 @@ function Start-TpCreateTeam {
                         'user@odata.bind' = "https://graph.microsoft.com/v1.0/users('$AdminUpn')"
                     }
                 )
-            } | ConvertTo-Json -Depth 10
+            }
+            if ($Template -eq 'standard') { $body.visibility = 'private' }
+            $body = $body | ConvertTo-Json -Depth 10
 
-            $null     = Invoke-RestMethod -Uri 'https://graph.microsoft.com/v1.0/teams' `
+            try {
+                $null = Invoke-RestMethod -Uri 'https://graph.microsoft.com/v1.0/teams' `
                             -Headers $headers -Method POST -Body $body -ResponseHeadersVariable createHeaders -ErrorAction Stop
+            } catch {
+                $createError = $_
+                try {
+                    $graphError = ($createError.ErrorDetails.Message | ConvertFrom-Json -ErrorAction Stop).error
+                    if ($graphError.message) {
+                        $Ref['CreationError'] = "$($graphError.code): $($graphError.message)"
+                    }
+                } catch { }
+                throw $createError
+            }
             $location = @($createHeaders['Location'])[0]
             if (-not $location) { throw 'No Location header in 202 response' }
             if ($location -notmatch '^https?://') {
@@ -651,13 +664,14 @@ function Start-TpCreateTeam {
                 $Script:TP_Creating = $false
 
                 if ($ref['Error']) {
-                    Write-Log "TP: creation failed - $($ref['Error'])" 'ERROR'
-                    Write-TpLog "ERROR: $($ref['Error'])" 'Danger'
+                    $detail = $ref['CreationError'] ?? $ref['Error']
+                    Write-Log "TP: creation failed - $detail" 'ERROR'
+                    Write-TpLog "ERROR: $detail" 'Danger'
                     Set-MainStatus 'Team creation failed.' 'Danger'
                     $Script:TP_UI.LblTeamStatus.Text       = 'Team   FAILED'
                     $Script:TP_UI.LblTeamStatus.Foreground = (Get-ThemeHex 'Danger')
                     Write-EtbAudit -Tool 'Teams Provisioning' -Action 'Create team' `
-                                   -Target $ref['TeamName'] -Result 'Failed' -Detail $ref['Error']
+                                   -Target $ref['TeamName'] -Result 'Failed' -Detail $detail
                 } else {
                     $ok   = $ref['MembersOk']
                     $fail = $ref['MembersFail']
