@@ -32,6 +32,8 @@ Choose a tool from the sidebar. **Ctrl+K** searches users; **F1** opens the shor
 
 The app checks for updates at launch. Accept the prompt to update a clean clone on `main`.
 
+If Git history has diverged, the updater stops without changing app files. Back up local work before realigning your checkout, or clone into a new folder and copy your `config` folder across.
+
 ## Screenshots
 
 <details>

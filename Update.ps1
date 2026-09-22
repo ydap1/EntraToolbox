@@ -77,6 +77,9 @@ function Invoke-EtbUpdateGit {
         }
         $output = $stdout.GetAwaiter().GetResult().Trim()
         $errorText = $stderr.GetAwaiter().GetResult().Trim()
+        if ($process.ExitCode -eq 1 -and $Arguments[0] -eq 'merge-base' -and $Arguments[1] -eq '--is-ancestor') {
+            throw 'Installed Git history has diverged from the update, possibly after a history rewrite or local commits. Automatic updates require a fast-forward. Back up your local work and realign main with origin/main, or use a fresh clone and copy your config folder across. No application files were changed.'
+        }
         if ($process.ExitCode -ne 0) { throw "Git $($Arguments[0]) failed: $errorText" }
         return $output
     } finally { $process.Dispose() }

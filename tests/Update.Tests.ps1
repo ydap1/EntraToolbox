@@ -130,6 +130,17 @@ $Script:IH_History = @(@{ Version = '1.0.0'; Changes = @($(throw 'must not execu
         Install-EtbStartupUpdate $checkout $tip
         Assert ((Get-Content (Join-Path $checkout 'version.txt')) -eq '2.0.0' -and (Invoke-EtbUpdateGit $checkout @('rev-parse', 'HEAD')) -eq $tip) 'a clean Git clone fast-forwards to exactly the reviewed commit'
         Assert ((Get-Content (Join-Path $checkout 'config/tenants.json')) -eq 'keep tenant configuration') 'updates preserve ignored tenant configuration'
+        $null = Invoke-EtbUpdateGit $origin @('commit', '--amend', '-m', 'test: rewrite published history')
+        $rewritten = Invoke-EtbUpdateGit $origin @('rev-parse', 'HEAD')
+        Assert-Throws { Install-EtbStartupUpdate $checkout $rewritten } 'Installed Git history has diverged'
+        Assert ((Invoke-EtbUpdateGit $checkout @('rev-parse', 'HEAD')) -eq $tip) 'a rewritten release leaves the installed revision unchanged'
+        $null = Invoke-EtbUpdateGit $checkout @('branch', 'backup-before-update')
+        $null = Invoke-EtbUpdateGit $checkout @('reset', '--keep', $rewritten)
+        Assert ((Invoke-EtbUpdateGit $checkout @('rev-parse', 'backup-before-update')) -eq $tip -and
+            (Invoke-EtbUpdateGit $checkout @('rev-parse', 'HEAD')) -eq $rewritten -and
+            (Get-Content (Join-Path $checkout 'config/tenants.json')) -eq 'keep tenant configuration') 'manual realignment preserves a backup of the old commits and tenant configuration'
+        $null = Invoke-EtbUpdateGit $origin @('reset', '--hard', $tip)
+        $null = Invoke-EtbUpdateGit $checkout @('reset', '--keep', $tip)
         # A future release must not overwrite an ignored local configuration file.
         New-Item (Join-Path $origin 'config') -ItemType Directory | Out-Null
         Set-Content (Join-Path $origin 'config/tenants.json') 'unexpected tracked config'
@@ -142,7 +153,7 @@ $Script:IH_History = @(@{ Version = '1.0.0'; Changes = @($(throw 'must not execu
         $null = Invoke-EtbUpdateGit $checkout @('add', 'local.txt')
         $null = Invoke-EtbUpdateGit $checkout @('-c', 'user.name=ydap1', '-c', 'user.email=artemiy600@gmail.com', 'commit', '-m', 'test: retain divergent local work')
         $localTip = Invoke-EtbUpdateGit $checkout @('rev-parse', 'HEAD')
-        Assert-Throws { Install-EtbStartupUpdate $checkout $collision } 'Git merge-base failed'
+        Assert-Throws { Install-EtbStartupUpdate $checkout $collision } 'Installed Git history has diverged'
         Assert ((Invoke-EtbUpdateGit $checkout @('rev-parse', 'HEAD')) -eq $localTip -and (Get-Content (Join-Path $checkout 'local.txt')) -eq 'local work') 'divergent local commits are preserved without a reset or merge commit'
     }
     Assert-Throws { Install-EtbStartupUpdate $checkout $tip } 'official EntraToolbox repository'
