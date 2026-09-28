@@ -445,6 +445,7 @@ function Start-UprPasswordReset {
         $Script:UPR_UI.InlineStatus.Visibility = 'Visible'
         return
     }
+    if (-not (Confirm-EtbAction "Reset the password for $($User.displayName) ($($User.userPrincipalName))? Their current password stops working immediately ($forceLabel)." 'Confirm password reset')) { return }
     $Script:UPR_UI.BtnReset.IsEnabled = $false
     $Script:UPR_UI.BtnRegen.IsEnabled = $false
     $Script:UPR_UI.PasswordMasked.IsEnabled = $false
