@@ -94,7 +94,7 @@ try {
             $window.UpdateLayout()
         }
     }
-    if ($Script:MainUI.NavPanel.Children.Count -ne 6) { throw 'Navigation should contain six task sections.' }
+    if ($Script:MainUI.NavPanel.Children.Count -ne 7) { throw 'Navigation should contain the pinned section and six task sections.' }
     if ($Script:NavItems.Count -ne $Script:NavInitializers.Count -or @($Script:NavItems.Name | Sort-Object -Unique).Count -ne $Script:NavItems.Count) { throw 'Navigation has missing or duplicate tools.' }
     foreach ($item in $Script:NavItems) {
         if (-not $item.Section.Content.Children.Contains($item.Border)) { throw "Tool is outside its section: $($item.Name)" }
@@ -107,6 +107,11 @@ try {
     $overviewItem.Section.IsExpanded = $false
     Set-NavSelection 'Overview'
     if (-not $overviewItem.Section.IsExpanded) { throw 'Reopening the current tool did not reveal its collapsed section.' }
+    Switch-NavPin 'SignIn'
+    $pinnedItems = @($Script:NavItems | Where-Object { $_.Section -eq $Script:NavPinnedSection })
+    if ($pinnedItems.Count -ne 1 -or $Script:NavItems[0].Name -ne 'SignIn' -or $Script:NavPinnedSection.Visibility -ne 'Visible') { throw 'Pinning did not add the tool to the top of the sidebar.' }
+    Switch-NavPin 'SignIn'
+    if ($Script:NavPinnedSection.Content.Children.Count -or $Script:NavPinnedSection.Visibility -ne 'Collapsed') { throw 'Unpinning did not empty the pinned section.' }
     $Script:UO_UI.Users.SelectedIndex=0
     if (-not $Script:UO_UI.Summary.Text.Contains($Script:UO_UI.Users.SelectedItem.userPrincipalName)) { throw 'Overview did not load the selected demo user.' }
     Set-NavSelection 'SignIn'

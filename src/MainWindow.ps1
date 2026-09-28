@@ -26,6 +26,9 @@ $Script:SuppressTenantSelect = $false # guards TenantCombo SelectionChanged duri
 $Script:NavInitializers = @{}   # name → 'Initialize-*Tool' function name
 $Script:NavConnectFns   = @{}   # name → array of connect-load function names
 $Script:_LazyPanel      = $null # staging var: Set-NavSelection writes to it via InvokeScript
+$Script:NavDefs         = @{}   # name → nav definition (title, description), for pinned copies
+$Script:NavPinnedSection = $null
+$Script:NavPinned       = [System.Collections.Generic.HashSet[string]]::new()
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 $Script:BrushCache = @{}
@@ -94,7 +97,25 @@ function New-NavItem {
     [System.Windows.Controls.Grid]::SetColumn($titleTb, 1)
     [void]$row.Children.Add($indicator)
     [void]$row.Children.Add($titleTb)
+    # Pin toggle: visible on hover, or always once pinned. Ctrl+D does the same from the keyboard.
+    [void]$row.ColumnDefinitions.Add([System.Windows.Controls.ColumnDefinition]@{ Width = [System.Windows.GridLength]::Auto })
+    $star = [System.Windows.Controls.TextBlock]::new()
+    $star.Tag = $Name
+    $star.FontSize = 14
+    $star.VerticalAlignment = 'Center'
+    $star.Margin = [System.Windows.Thickness]::new(8, 0, 2, 0)
+    [System.Windows.Controls.Grid]::SetColumn($star, 2)
+    [void]$row.Children.Add($star)
+    $star.Add_MouseLeftButtonDown({
+        param($starSender, $starEvent)
+        # Handled here so the surrounding nav button does not also navigate.
+        $starEvent.Handled = $true
+        try { Switch-NavPin $starSender.Tag }
+        catch { Write-Log "Pin toggle failed: $_" 'ERROR' }
+    })
     $button.Content = $row
+    $button.Add_MouseEnter({ param($navSender) $navSender.Content.Children[2].Opacity = 1 })
+    $button.Add_MouseLeave({ param($navSender) Set-NavStar $navSender.Content.Children[2] })
     $button.Add_Click({
         param($navSender, $navEvent)
         try { Set-NavSelection -Name $navSender.Tag }
@@ -102,6 +123,11 @@ function New-NavItem {
     })
     $button.Add_PreviewKeyDown({
         param($navSender, $navEvent)
+        if ($navEvent.Key -eq 'D' -and [System.Windows.Input.Keyboard]::Modifiers -eq [System.Windows.Input.ModifierKeys]::Control) {
+            Switch-NavPin $navSender.Tag
+            $navEvent.Handled = $true
+            return
+        }
         $visible = @($Script:NavItems | Where-Object { $_.Section.IsExpanded })
         if (-not $visible.Count) { return }
         $index = -1
@@ -117,7 +143,54 @@ function New-NavItem {
         $visible[$index].Border.BringIntoView()
         $navEvent.Handled = $true
     })
-    return @{ Name = $Name; Border = $button; TitleTb = $titleTb; Title = $Title; Subtitle = $Subtitle; Indicator = $indicator; Section = $Section }
+    Set-NavStar $star
+    return @{ Name = $Name; Border = $button; TitleTb = $titleTb; Title = $Title; Subtitle = $Subtitle; Indicator = $indicator; Section = $Section; Star = $star }
+}
+
+function Set-NavStar {
+    param($Star)
+    $pinned = $Script:NavPinned.Contains($Star.Tag)
+    $Star.Text = if ($pinned) { [string][char]0x2605 } else { [string][char]0x2606 }
+    $Star.Foreground = New-SolidBrush $(if ($pinned) { 'Accent' } else { 'TextDim' })
+    $Star.ToolTip = if ($pinned) { 'Unpin (Ctrl+D)' } else { 'Pin to top (Ctrl+D)' }
+    $Star.Opacity = if ($pinned -or $Star.Parent.Parent.IsMouseOver) { 1 } else { 0 }
+}
+
+# Pinned tools appear, in pin order, in a section above the categories.
+function Get-NavPinned {
+    @(Get-AppSetting -Name 'PinnedTools') | Where-Object { $_ -and $Script:NavDefs.ContainsKey([string]$_) } | Select-Object -Unique
+}
+
+function Switch-NavPin {
+    param([Parameter(Mandatory)][string]$Name)
+    $pinned = @(Get-NavPinned)
+    $pinned = if ($pinned -contains $Name) { @($pinned | Where-Object { $_ -ne $Name }) } else { $pinned + $Name }
+    Set-AppSetting -Name 'PinnedTools' -Value @($pinned)
+    Update-NavPinned
+}
+
+function Update-NavPinned {
+    $section = $Script:NavPinnedSection
+    foreach ($old in @($Script:NavItems | Where-Object { $_.Section -eq $section })) { [void]$Script:NavItems.Remove($old) }
+    $section.Content.Children.Clear()
+    $Script:NavPinned.Clear()
+    $pinned = @(Get-NavPinned)
+    foreach ($name in $pinned) { [void]$Script:NavPinned.Add($name) }
+    for ($i = 0; $i -lt $pinned.Count; $i++) {
+        $def = $Script:NavDefs[$pinned[$i]]
+        $item = New-NavItem -Name $pinned[$i] -Title $def.Title -Subtitle $def.Desc -Section $section
+        [void]$section.Content.Children.Add($item.Border)
+        # First in the list so arrow-key navigation starts with pinned tools.
+        $Script:NavItems.Insert($i, $item)
+    }
+    $section.Visibility = if ($pinned.Count) { 'Visible' } else { 'Collapsed' }
+    foreach ($item in $Script:NavItems) { Set-NavStar $item.Star }
+    # Re-apply the selection highlight to the rebuilt pinned copies.
+    if ($Script:CurrentNavItem) {
+        $current = $Script:CurrentNavItem
+        $Script:CurrentNavItem = $null
+        Set-NavSelection -Name $current
+    }
 }
 
 function Set-NavSelection {
@@ -668,6 +741,7 @@ $Script:MainXaml = @'
             <Grid.RowDefinitions>
               <RowDefinition/><RowDefinition/><RowDefinition/>
               <RowDefinition/><RowDefinition/><RowDefinition/>
+              <RowDefinition/>
             </Grid.RowDefinitions>
             <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource KeyChip}"><TextBlock Style="{StaticResource KeyText}" Text="Ctrl + K"/></Border>
             <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource KeyDesc}" Text="Global user search — jump to any tool for a user"/>
@@ -681,6 +755,8 @@ $Script:MainXaml = @'
             <TextBlock Grid.Row="4" Grid.Column="1" Style="{StaticResource KeyDesc}" Text="Confirm dialogs; in search, open Overview"/>
             <Border Grid.Row="5" Grid.Column="0" Style="{StaticResource KeyChip}"><TextBlock Style="{StaticResource KeyText}" Text="↑  ↓"/></Border>
             <TextBlock Grid.Row="5" Grid.Column="1" Style="{StaticResource KeyDesc}" Text="Move through search results"/>
+            <Border Grid.Row="6" Grid.Column="0" Style="{StaticResource KeyChip}"><TextBlock Style="{StaticResource KeyText}" Text="Ctrl + D"/></Border>
+            <TextBlock Grid.Row="6" Grid.Column="1" Style="{StaticResource KeyDesc}" Text="Pin or unpin the focused tool (or click its star)"/>
           </Grid>
           <TextBlock Text="Press Esc or click outside to close" Foreground="#50507A"
                      FontSize="11" Margin="0,14,0,0"/>
@@ -1216,6 +1292,11 @@ function Show-MainWindow {
         @{ Type = 'tool'; Name = 'Changelog';   Title = 'Update History';       Desc = 'Version changelog and release notes' }
     )
 
+    $Script:NavPinnedSection = New-NavCategory -Label 'Pinned'
+    [void]$Script:MainUI.NavPanel.Children.Add($Script:NavPinnedSection)
+    foreach ($def in $navDef) {
+        if ($def.Type -eq 'tool') { $Script:NavDefs[$def.Name] = $def }
+    }
     foreach ($def in $navDef) {
         if ($def.Type -eq 'cat') {
             $section = New-NavCategory -Label $def.Label
@@ -1226,6 +1307,7 @@ function Show-MainWindow {
             $Script:NavItems.Add($item)
         }
     }
+    Update-NavPinned
 
     # Reopen on the tool last used, so relaunching lands where work stopped.
     $startTool = Get-AppSetting -Name 'LastTool'

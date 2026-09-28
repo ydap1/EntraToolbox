@@ -193,4 +193,17 @@ try {
     Assert (-not $row.Retry) 'uncertain object creation is never replayed'
     $export = @(Get-BrExportRows ([pscustomobject]@{ Tool='Test'; Rows=@($row) }) -FailuresOnly)
     Assert ($export.Count -eq 1 -and -not $export[0].PSObject.Properties['Retry']) 'failure exports omit retained request data'
+    & {
+        . "$root/src/MainWindow.ps1"
+        function Update-NavPinned { }
+        $Script:NavDefs = @{ SignIn = @{}; Overview = @{} }
+        Switch-NavPin 'SignIn'; Switch-NavPin 'Overview'
+        Assert ((@(Get-NavPinned) -join ',') -eq 'SignIn,Overview') 'pinned tools persist in the order they were pinned'
+        Switch-NavPin 'SignIn'
+        Assert ((@(Get-NavPinned) -join ',') -eq 'Overview') 'pinning a pinned tool again unpins it'
+        Set-AppSetting -Name 'PinnedTools' -Value @('Overview', 'RemovedTool', 'Overview')
+        Assert ((@(Get-NavPinned) -join ',') -eq 'Overview') 'unknown or duplicate saved pins are ignored'
+        Switch-NavPin 'Overview'
+        Assert (@(Get-NavPinned).Count -eq 0) 'the last pin can be removed'
+    }
 } finally { Remove-Item $Global:AppRoot -Recurse -Force }
