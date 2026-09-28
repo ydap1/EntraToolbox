@@ -54,25 +54,6 @@ function Write-AppLog {
     }, 'Normal')
 }
 
-# ── In-tab rich-text log ──────────────────────────────────────────────────────
-# Deprecated — tools should use Write-AppLog instead.  Kept for backward compat.
-function Write-RichLog {
-    param(
-        $LogBox,
-        [string]$Msg,
-        [string]$Color = 'TextDim'
-    )
-    if (-not $LogBox) { Write-Log $Msg 'DEBUG'; return }
-    $ts   = Get-Date -Format 'HH:mm:ss'
-    $para = New-Object System.Windows.Documents.Paragraph
-    $run  = New-Object System.Windows.Documents.Run "[$ts]  $Msg"
-    $run.Foreground = Get-ThemeHex $Color
-    $para.Inlines.Add($run)
-    $para.Margin = '0'
-    $LogBox.Document.Blocks.Add($para)
-    $LogBox.ScrollToEnd()
-}
-
 # ── WPF callback session bridge ───────────────────────────────────────────────
 # Dot-sourced functions live in the Start.ps1 script scope. WPF DispatcherTimer
 # ticks and deferred UI callbacks can run in a child scope where those commands
@@ -1462,51 +1443,6 @@ function Invoke-TokenRefreshCheck {
                 Write-Log 'Auth: access token refreshed silently' 'INFO'
             }
         }
-}
-
-# ── Graph REST helpers ─────────────────────────────────────────────────────────
-# All three helpers route through Invoke-EtbGraphRequest, which retries 429
-# throttling (honouring Retry-After) and transient 502/503/504 with backoff —
-# the same policy the worker preamble applies inside background runspaces.
-function Invoke-EtbGraphRequest {
-    param(
-        [Parameter(Mandatory)][string]$Uri,
-        [string]$Method = 'GET',
-        [hashtable]$Body = $null
-    )
-    $params = @{
-        Uri         = $Uri
-        Method      = $Method
-        Headers     = @{ Authorization = "Bearer $Script:AccessToken" }
-        ErrorAction = 'Stop'
-    }
-    if ($Body) {
-        $params.Headers['Content-Type'] = 'application/json'
-        $params.Body = $Body | ConvertTo-Json -Depth 10
-    }
-    Invoke-RestMethod @params
-}
-
-function Invoke-GraphGet {
-    param([string]$Path)
-    Invoke-EtbGraphRequest -Uri "https://graph.microsoft.com$Path"
-}
-
-function Invoke-GraphPatch {
-    param([string]$Path, [hashtable]$Body)
-    Invoke-EtbGraphRequest -Uri "https://graph.microsoft.com$Path" -Method PATCH -Body $Body
-}
-
-function Get-GraphPaged {
-    param([string]$Path)
-    $items = [System.Collections.Generic.List[object]]::new()
-    $url = "https://graph.microsoft.com$Path"
-    do {
-        $resp = Invoke-EtbGraphRequest -Uri $url
-        foreach ($i in $resp.value) { $items.Add($i) }
-        $url = $resp.'@odata.nextLink'
-    } while ($url)
-    $items.ToArray()
 }
 
 # ── Shared directory user cache ────────────────────────────────────────────────
