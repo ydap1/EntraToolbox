@@ -194,15 +194,7 @@ function Start-LdAllDevicesLoad {
 
     if ($Script:LD_AllDevTimer) { $Script:LD_AllDevTimer.Stop() }
     $Script:LD_AllDevTimer = Start-AsyncWork -RefSeed @{ Devices = $null } -Script {
-        $devices = [System.Collections.Generic.List[object]]::new()
-        $url = 'https://graph.microsoft.com/beta/deviceManagement/managedDevices?$select=id,deviceName,model,serialNumber,osVersion,complianceState,usersLoggedOn,lastSyncDateTime&$top=999'
-        do {
-            $resp = Invoke-RestMethod -Uri $url `
-                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-            foreach ($d in $resp.value) { $devices.Add($d) }
-            $url = $resp.'@odata.nextLink'
-        } while ($url)
-        $Ref['Devices'] = $devices.ToArray()
+        $Ref['Devices'] = @(Get-EtbGraphCollection -Uri 'https://graph.microsoft.com/beta/deviceManagement/managedDevices?$select=id,deviceName,model,serialNumber,osVersion,complianceState,usersLoggedOn,lastSyncDateTime&$top=999' -Headers @{ Authorization = "Bearer $Token" })
     } -OnComplete {
         param($ref)
         try {

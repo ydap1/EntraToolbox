@@ -1482,15 +1482,7 @@ function Request-EtbUsers {
     $Script:UserCache.Loading = $true
     Write-Log 'UserCache: fetching directory users (shared load)' 'DEBUG'
     $Script:UserCache.Timer = Start-AsyncWork -RefSeed @{ Users = $null } -Script {
-        $users = [System.Collections.Generic.List[object]]::new()
-        $url   = 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,accountEnabled,userType,department,officeLocation,onPremisesSyncEnabled,onPremisesImmutableId&$top=999'
-        do {
-            $resp = Invoke-RestMethod -Uri $url `
-                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-            foreach ($u in $resp.value) { $users.Add($u) }
-            $url = $resp.'@odata.nextLink'
-        } while ($url)
-        $Ref['Users'] = $users.ToArray()
+        $Ref['Users'] = @(Get-EtbGraphCollection -Uri 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,accountEnabled,userType,department,officeLocation,onPremisesSyncEnabled,onPremisesImmutableId&$top=999' -Headers @{ Authorization = "Bearer $Token" })
     } -OnComplete {
         param($ref)
         $Script:UserCache.Loading = $false

@@ -257,16 +257,8 @@ function Start-LwRun {
             }
 
             if ($Ref['DoGroups'] -and -not $Ref['CancelRequested']) {
-                $groups = [System.Collections.Generic.List[object]]::new()
-                $url = "https://graph.microsoft.com/v1.0/users/$UserId/memberOf?`$select=id,displayName&`$top=999"
-                do {
-                    $resp = Invoke-RestMethod -Uri $url `
-                        -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-                    foreach ($g in $resp.value) {
-                        if ($g.'@odata.type' -eq '#microsoft.graph.group') { $groups.Add($g) }
-                    }
-                    $url = $resp.'@odata.nextLink'
-                } while ($url)
+                $groups = @(Get-EtbGraphCollection -Uri "https://graph.microsoft.com/v1.0/users/$UserId/memberOf?`$select=id,displayName&`$top=999" -Headers @{ Authorization = "Bearer $Token" } |
+                    Where-Object { $_.'@odata.type' -eq '#microsoft.graph.group' })
 
                 foreach ($grp in $groups) {
                     if ($Ref['CancelRequested']) { break }

@@ -161,15 +161,7 @@ function Start-UprGroupLoad {
         -Vars    @{ UserId = $UserId } `
         -RefSeed @{ RequestedId = $UserId; Groups = $null } `
         -Script {
-            $groups = [System.Collections.Generic.List[object]]::new()
-            $url = "https://graph.microsoft.com/v1.0/users/$UserId/transitiveMemberOf?`$select=displayName,groupTypes&`$top=999"
-            do {
-                $resp = Invoke-RestMethod -Uri $url `
-                    -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-                foreach ($g in $resp.value) { $groups.Add($g) }
-                $url = $resp.'@odata.nextLink'
-            } while ($url)
-            $Ref['Groups'] = $groups.ToArray()
+            $Ref['Groups'] = @(Get-EtbGraphCollection -Uri "https://graph.microsoft.com/v1.0/users/$UserId/transitiveMemberOf?`$select=displayName,groupTypes&`$top=999" -Headers @{ Authorization = "Bearer $Token" })
         } -OnComplete {
             param($ref)
             if ($Script:UPR_UI.UserList.SelectedItem.Tag.id -ne $ref.RequestedId) { return }

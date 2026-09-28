@@ -110,17 +110,8 @@ function Start-GcSourceGroupLoad {
         -Vars    @{ UserId = $UserId } `
         -RefSeed @{ RequestedId = $UserId; Groups = $null } `
         -Script {
-            $groups = [System.Collections.Generic.List[object]]::new()
-            $url = "https://graph.microsoft.com/v1.0/users/$UserId/memberOf?`$select=id,displayName,groupTypes,isAssignableToRole&`$top=999"
-            do {
-                $resp = Invoke-RestMethod -Uri $url `
-                    -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-                foreach ($g in $resp.value) {
-                    if ($g.'@odata.type' -eq '#microsoft.graph.group') { $groups.Add($g) }
-                }
-                $url = $resp.'@odata.nextLink'
-            } while ($url)
-            $Ref['Groups'] = $groups.ToArray()
+            $Ref['Groups'] = @(Get-EtbGraphCollection -Uri "https://graph.microsoft.com/v1.0/users/$UserId/memberOf?`$select=id,displayName,groupTypes,isAssignableToRole&`$top=999" -Headers @{ Authorization = "Bearer $Token" } |
+                Where-Object { $_.'@odata.type' -eq '#microsoft.graph.group' })
         } -OnComplete {
             param($ref)
             if ($Script:GC_SourceUser.id -ne $ref.RequestedId) { return }
@@ -211,14 +202,8 @@ function Start-GcCopy {
             Failed  = [System.Collections.Generic.List[string]]::new()
         } `
         -Script {
-            $tgtGroupIds = [System.Collections.Generic.HashSet[string]]::new()
-            $url = "https://graph.microsoft.com/v1.0/users/$TgtUserId/memberOf?`$select=id&`$top=999"
-            do {
-                $resp = Invoke-RestMethod -Uri $url `
-                    -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-                foreach ($g in $resp.value) { [void]$tgtGroupIds.Add($g.id) }
-                $url = $resp.'@odata.nextLink'
-            } while ($url)
+            $tgtGroupIds = [System.Collections.Generic.HashSet[string]]::new([string[]]@(
+                Get-EtbGraphCollection -Uri "https://graph.microsoft.com/v1.0/users/$TgtUserId/memberOf?`$select=id&`$top=999" -Headers @{ Authorization = "Bearer $Token" } | ForEach-Object id))
 
             foreach ($grp in $SrcGroups) {
                 if ($grp.groupTypes -contains 'DynamicMembership' -or $grp.isAssignableToRole) {

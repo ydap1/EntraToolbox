@@ -49,15 +49,7 @@ function Start-SsLoad {
                 -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
             $Ref['Score'] = if ($r.value.Count -gt 0) { $r.value[0] } else { $null }
 
-            $profiles = [System.Collections.Generic.List[object]]::new()
-            $url = 'https://graph.microsoft.com/v1.0/security/secureScoreControlProfiles'
-            do {
-                $rp = Invoke-RestMethod -Uri $url `
-                    -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-                foreach ($p in $rp.value) { $profiles.Add($p) }
-                $url = $rp.'@odata.nextLink'
-            } while ($url)
-            $Ref['Profiles'] = $profiles.ToArray()
+            $Ref['Profiles'] = @(Get-EtbGraphCollection -Uri 'https://graph.microsoft.com/v1.0/security/secureScoreControlProfiles' -Headers @{ Authorization = "Bearer $Token" })
         } -OnComplete {
             param($ref)
             try {

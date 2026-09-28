@@ -48,15 +48,7 @@ function Start-DcLoad {
 
     if ($Script:DC_LoadTimer) { $Script:DC_LoadTimer.Stop() }
     $Script:DC_LoadTimer = Start-AsyncWork -RefSeed @{ Devices = $null } -Script {
-        $devices = [System.Collections.Generic.List[object]]::new()
-        $url = 'https://graph.microsoft.com/beta/deviceManagement/managedDevices?$select=id,deviceName,complianceState,operatingSystem,osVersion,userDisplayName&$top=999'
-        do {
-            $resp = Invoke-RestMethod -Uri $url `
-                -Headers @{ Authorization = "Bearer $Token" } -Method GET -ErrorAction Stop
-            foreach ($d in $resp.value) { $devices.Add($d) }
-            $url = $resp.'@odata.nextLink'
-        } while ($url)
-        $Ref['Devices'] = $devices.ToArray()
+        $Ref['Devices'] = @(Get-EtbGraphCollection -Uri 'https://graph.microsoft.com/beta/deviceManagement/managedDevices?$select=id,deviceName,complianceState,operatingSystem,osVersion,userDisplayName&$top=999' -Headers @{ Authorization = "Bearer $Token" })
     } -OnComplete {
         param($ref)
         try {
