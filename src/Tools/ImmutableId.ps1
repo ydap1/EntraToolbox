@@ -160,7 +160,7 @@ $Script:IID_Xaml = @'
       <CheckBox x:Name="IidChkEmptyOnly" Content="Show only users without an existing ImmutableId"
                 IsChecked="True" Margin="0,0,24,0" VerticalAlignment="Center"/>
       <CheckBox x:Name="IidChkOverwrite"
-                Content="Allow overwriting existing ImmutableIds  &#x26A0; permanent" Foreground="#F59E0B"
+                Content="Allow overwriting existing ImmutableIds  &#x26A0; permanent" Foreground="#FBBF24"
                 IsChecked="False" VerticalAlignment="Center"/>
     </WrapPanel>
   </Border>
@@ -192,7 +192,7 @@ $Script:IID_Xaml = @'
                 IsEnabled="False" Margin="0,0,8,0"/>
         <Button x:Name="IidBtnApply"
                 Content="Assign ImmutableIds to selected rows"
-                Style="{StaticResource Btn}" Background="#D97706" Padding="12,7"
+                Style="{StaticResource Btn}" Background="#EF4444" Padding="12,7"
                 ToolTip="Permanently writes the generated ID to Entra for each checked row that has a generated ID ready"
                 IsEnabled="False" Margin="0,0,8,0"/>
         <Button x:Name="IidBtnRemove"

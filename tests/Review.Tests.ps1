@@ -22,7 +22,7 @@ try {
     }
     Assert ($parseErrors.Count -eq 0) "all application scripts parse ($($parseErrors -join '; '))"
     # Palette hexes outside the theme map ignore the chosen preset. Status colours are shared by every preset.
-    $status = '#000000','#0D2218','#0D2B1A','#180808','#200E0E','#22C55E','#2B0D0D','#7F1D1D','#94A3B8','#CC6666','#D97706','#EF4444','#F59E0B'
+    $status = '#000000','#0D2218','#0D2B1A','#180808','#200E0E','#22C55E','#2B0D0D','#7F1D1D','#94A3B8','#CC6666','#EF4444','#FBBF24'
     $uiFiles = @(Get-ChildItem $root/src/Tools -Filter *.ps1) + @(Get-Item $root/src/MainWindow.ps1, $root/src/Demo.ps1)
     $hexes = @($uiFiles | Select-String '#[0-9A-Fa-f]{6}\b' -AllMatches | ForEach-Object { $_.Matches.Value } | Sort-Object -Unique)
     $authSource = Get-Content "$root/src/Auth.ps1" -Raw
