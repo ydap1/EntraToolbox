@@ -51,6 +51,11 @@ function ConvertTo-EtbCsvRow {
     }
 }
 
+function Confirm-EtbAction {
+    param([string]$Message, [string]$Title)
+    [Windows.MessageBox]::Show($Message, $Title, 'YesNo', 'Warning') -eq 'Yes'
+}
+
 function Clear-EtbList {
     param($List)
     $List.ItemsSource = $null

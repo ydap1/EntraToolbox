@@ -207,6 +207,9 @@ function Start-LwRun {
         return
     }
 
+    $steps = @($(if ($doDisable) { 'disable the account' }), $(if ($doRevoke) { 'revoke all sign-in sessions' }), $(if ($doGroups) { 'remove all direct group memberships' })) | Where-Object { $_ }
+    if (-not (Confirm-EtbAction "Run the leaver workflow for $($user.displayName) ($($user.userPrincipalName))?`nThis will $($steps -join ', ')." 'Confirm leaver workflow')) { return }
+
     $Script:LW_UI.BtnRun.IsEnabled    = $false
     $Script:LW_UI.UserSearch.IsEnabled = $false
     $Script:LW_UI.UserList.IsEnabled   = $false

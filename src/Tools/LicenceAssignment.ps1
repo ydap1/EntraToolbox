@@ -233,6 +233,7 @@ function Start-LaRemove {
         Write-LaLog "[DRY] Would remove $($sel.Content) from $($user.displayName)" 'Warning'
         return
     }
+    if (-not (Confirm-EtbAction "Remove $($sel.Content) from $($user.displayName)? They may lose access to its services." 'Confirm licence removal')) { return }
 
     $Script:LA_UI.BtnRemove.IsEnabled = $false
     $Script:LA_UI.BtnAssign.IsEnabled = $false

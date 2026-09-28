@@ -149,6 +149,17 @@ try {
         foreach($name in 'ChkDisable','ChkRevoke','ChkGroups') { $Script:LW_UI[$name]=[pscustomobject]@{ IsChecked=$true } }
         foreach($name in 'BtnRun','UserSearch','UserList') { $Script:LW_UI[$name]=[pscustomobject]@{ IsEnabled=$true } }
         $Script:DryMode=$false; $Script:DemoMode=$false
+        $started=[Collections.Generic.List[int]]::new()
+        function Confirm-EtbAction { param($Message,$Title); $false }
+        function Start-AsyncWork { $started.Add(1) }
+        Start-LwRun
+        Assert ($started.Count -eq 0) 'declining the leaver confirmation changes nothing'
+        function Confirm-EtbAction { param($Message,$Title); $true }
+        function Start-AsyncWork {
+            param($BulkName,$Vars,$RefSeed,$Script,$OnComplete)
+            $RefSeed.CancelRequested=$true
+            & $OnComplete $RefSeed
+        }
         Start-LwRun
         Assert ($audit.Count -eq 0 -and @($messages | Where-Object { $_ -match 'stopped' }).Count -gt 0) 'stopping a leaver before its first step cannot log or audit unperformed changes as successful'
         $Script:LW_UI=$null; $Script:LW_SelectedUser=$null
