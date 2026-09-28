@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.35.4'
+        Date    = '2026-09-28'
+        Changes = @(
+            'User Password Reset asks for confirmation before replacing the selected user''s password'
+            'Immutable ID: the Assign button now uses the same red as other permanent changes, so it no longer looks like Generate'
+        )
+    }
+    @{
         Version = '0.35.3'
         Date    = '2026-09-28'
         Changes = @(
