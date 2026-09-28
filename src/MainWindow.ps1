@@ -558,7 +558,7 @@ $Script:MainXaml = @'
       <GridSplitter Grid.Row="0" Height="4" HorizontalAlignment="Stretch"
                     Background="#3C3C5A" Cursor="SizeNS" ResizeBehavior="PreviousAndNext"
                     ShowsPreview="True"/>
-      <Border Grid.Row="1" Background="#0F1115" BorderBrush="#3C3C5A" BorderThickness="0,1,0,0">
+      <Border Grid.Row="1" Background="#12121C" BorderBrush="#3C3C5A" BorderThickness="0,1,0,0">
         <Grid Margin="8,4">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*"/>

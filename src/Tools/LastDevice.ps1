@@ -155,7 +155,7 @@ function Start-LdDeviceLoad {
                     $dotColor = switch ($d.complianceState) {
                         'compliant'    { '#22C55E' }
                         'noncompliant' { '#EF4444' }
-                        default        { '#50507A' }
+                        default        { Get-ThemeHex 'Muted' }
                     }
                     $dot.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($dotColor)
 

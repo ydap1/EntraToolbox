@@ -21,7 +21,14 @@ try {
         $parseErrors += $e
     }
     Assert ($parseErrors.Count -eq 0) "all application scripts parse ($($parseErrors -join '; '))"
+    # Palette hexes outside the theme map ignore the chosen preset. Status colours are shared by every preset.
+    $status = '#000000','#0D2218','#0D2B1A','#180808','#200E0E','#22C55E','#2B0D0D','#7F1D1D','#94A3B8','#CC6666','#D97706','#EF4444','#F59E0B'
+    $uiFiles = @(Get-ChildItem $root/src/Tools -Filter *.ps1) + @(Get-Item $root/src/MainWindow.ps1, $root/src/Demo.ps1)
+    $hexes = @($uiFiles | Select-String '#[0-9A-Fa-f]{6}\b' -AllMatches | ForEach-Object { $_.Matches.Value } | Sort-Object -Unique)
     $authSource = Get-Content "$root/src/Auth.ps1" -Raw
+    $mapped = @([regex]::Matches(($authSource -split '\$Script:ThemeMap = ')[1].Split('}')[0], "'(#[0-9A-Fa-f]{6})' =") | ForEach-Object { $_.Groups[1].Value })
+    $stray = @($hexes | Where-Object { $_ -notin $mapped -and $_ -notin $status })
+    Assert ($stray.Count -eq 0) "UI colours follow the theme ($($stray -join ', '))"
     Assert ($authSource.Contains("`$iParams['Prompt'] = 'Login'") -and -not $authSource.Contains("@{ prompt = 'login' }")) 'MFA retry uses the reserved MSAL prompt parameter'
     . "$root/src/Auth.ps1"
 

@@ -70,7 +70,7 @@ $Script:IID_Xaml = @'
     </Style>
 
     <Style TargetType="CheckBox">
-      <Setter Property="Foreground" Value="#C2C2E0"/>
+      <Setter Property="Foreground" Value="#C0C0E0"/>
       <Setter Property="VerticalContentAlignment" Value="Center"/>
       <Setter Property="Cursor" Value="Hand"/>
     </Style>
@@ -81,9 +81,9 @@ $Script:IID_Xaml = @'
       <Setter Property="BorderBrush"          Value="#3C3C5A"/>
       <Setter Property="BorderThickness"      Value="1"/>
       <Setter Property="RowBackground"        Value="Transparent"/>
-      <Setter Property="AlternatingRowBackground" Value="#17172A"/>
+      <Setter Property="AlternatingRowBackground" Value="#181826"/>
       <Setter Property="GridLinesVisibility"  Value="Horizontal"/>
-      <Setter Property="HorizontalGridLinesBrush" Value="#23233A"/>
+      <Setter Property="HorizontalGridLinesBrush" Value="#1E1E32"/>
       <Setter Property="SelectionMode"        Value="Single"/>
       <Setter Property="SelectionUnit"        Value="FullRow"/>
       <Setter Property="CanUserAddRows"       Value="False"/>
@@ -113,7 +113,7 @@ $Script:IID_Xaml = @'
           <Setter Property="Background" Value="#1E1E32"/>
         </Trigger>
         <Trigger Property="IsSelected" Value="True">
-          <Setter Property="Background" Value="#26264A"/>
+          <Setter Property="Background" Value="#2A2A50"/>
         </Trigger>
       </Style.Triggers>
     </Style>
@@ -154,7 +154,7 @@ $Script:IID_Xaml = @'
   </Border>
 
   <!-- ── Filter toolbar ─────────────────────────────────────────────────── -->
-  <Border Grid.Row="1" Background="#191927" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1"
+  <Border Grid.Row="1" Background="#1A1A2C" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1"
           Padding="16,10">
     <WrapPanel Orientation="Horizontal">
       <CheckBox x:Name="IidChkEmptyOnly" Content="Show only users without an existing ImmutableId"
@@ -166,7 +166,7 @@ $Script:IID_Xaml = @'
   </Border>
 
   <!-- ── Action toolbar ─────────────────────────────────────────────────── -->
-  <Border Grid.Row="2" Background="#16162A" Padding="12,8">
+  <Border Grid.Row="2" Background="#1A1A2C" Padding="12,8">
     <DockPanel LastChildFill="False">
 
       <!-- Selection buttons + count -->

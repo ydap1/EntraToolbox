@@ -213,7 +213,7 @@ function Start-LaLicenceLoad {
                         $lbi   = [System.Windows.Controls.ListBoxItem]::new()
                         $lbi.Content = Get-LaSkuLabel $sku.skuPartNumber $avail
                         $lbi.Tag     = $sku
-                        if ($avail -le 0) { $lbi.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#7878A0') }
+                        if ($avail -le 0) { $lbi.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString((Get-ThemeHex 'TextDim')) }
                         [void]$Script:LA_UI.AvailableList.Items.Add($lbi)
                     }
                 }

@@ -499,7 +499,8 @@ $Script:IH_History = @(
 # ── Build WPF panel ────────────────────────────────────────────────────────────
 function Initialize-UpdateHistoryTool {
     $bc = [System.Windows.Media.BrushConverter]::new()
-    function IH-Brush([string]$h) { $bc.ConvertFromString($h) }
+    # Built in code, not XAML, so map legacy hexes to the active theme here.
+    function IH-Brush([string]$h) { $bc.ConvertFromString($(if ($Script:ThemeMap.Contains($h)) { $Script:ThemeMap[$h] } else { $h })) }
     function IH-Thick([double]$l, [double]$t, [double]$r, [double]$b) {
         [System.Windows.Thickness]::new($l, $t, $r, $b)
     }
@@ -537,7 +538,7 @@ function Initialize-UpdateHistoryTool {
         $card                  = [System.Windows.Controls.Border]::new()
         $card.Background       = IH-Brush '#1C1C2A'
         $card.CornerRadius     = [System.Windows.CornerRadius]::new(8)
-        $card.BorderBrush      = IH-Brush '#2E2E4A'
+        $card.BorderBrush      = IH-Brush '#3C3C5A'
         $card.BorderThickness  = [System.Windows.Thickness]::new(1)
         $card.Padding          = IH-Thick 18 14 18 14
         $card.Margin           = IH-Thick 0 0 0 12
@@ -564,7 +565,7 @@ function Initialize-UpdateHistoryTool {
         $badge.VerticalAlignment = 'Center'
         $vt                   = [System.Windows.Controls.TextBlock]::new()
         $vt.Text              = "v$($entry.Version)"
-        $vt.Foreground        = [System.Windows.Media.Brushes]::White
+        $vt.Foreground        = IH-Brush (Get-EtbAccentForeground)
         $vt.FontWeight        = [System.Windows.FontWeights]::Bold
         $vt.FontSize          = 13
         $badge.Child          = $vt
@@ -585,7 +586,7 @@ function Initialize-UpdateHistoryTool {
         # Separator
         $sep = [System.Windows.Controls.Border]::new()
         $sep.Height     = 1
-        $sep.Background = IH-Brush '#2E2E4A'
+        $sep.Background = IH-Brush '#3C3C5A'
         $sep.Margin     = IH-Thick 0 10 0 10
         [void]$cs.Children.Add($sep)
 
@@ -593,7 +594,7 @@ function Initialize-UpdateHistoryTool {
         foreach ($change in $entry.Changes) {
             $bt               = [System.Windows.Controls.TextBlock]::new()
             $bt.Text          = [char]0x2022 + "  $change"
-            $bt.Foreground    = IH-Brush '#C2C2E0'
+            $bt.Foreground    = IH-Brush '#C0C0E0'
             $bt.FontSize      = 12
             $bt.TextWrapping  = 'Wrap'
             $bt.Margin        = IH-Thick 0 2 0 2
