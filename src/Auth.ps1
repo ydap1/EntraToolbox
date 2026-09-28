@@ -407,7 +407,16 @@ function Set-AppSetting {
         try { Get-Content -Path $p -Raw -ErrorAction Stop | ConvertFrom-Json } catch { [PSCustomObject]@{} }
     } else { [PSCustomObject]@{} }
     $s | Add-Member -NotePropertyName $Name -NotePropertyValue $Value -Force
-    ConvertTo-Json $s -Depth 5 | Set-Content -Path $p -Encoding UTF8
+    Set-EtbFileContent $p (ConvertTo-Json $s -Depth 5)
+}
+
+# Write beside the target, then swap it in, so a crash or full disk mid-write
+# can never leave a truncated settings or tenants file behind.
+function Set-EtbFileContent {
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Value)
+    $tmp = "$Path.tmp"
+    Set-Content -LiteralPath $tmp -Value $Value -Encoding UTF8
+    Move-Item -LiteralPath $tmp -Destination $Path -Force
 }
 
 # ── Theme ────────────────────────────────────────────────────────────────────
@@ -1068,7 +1077,14 @@ function Get-SavedTenants {
     if (-not (Test-Path $p)) { return @() }
     $raw = Get-Content -Path $p -Raw -ErrorAction SilentlyContinue
     if ([string]::IsNullOrWhiteSpace($raw)) { return @() }
-    return @($raw | ConvertFrom-Json)
+    try { return @($raw | ConvertFrom-Json -ErrorAction Stop) }
+    catch {
+        # Keep the damaged file for manual recovery instead of blocking startup
+        # or letting the next save overwrite it.
+        Move-Item -LiteralPath $p -Destination "$p.corrupt" -Force
+        Write-Log "tenants.json was unreadable and has been moved to tenants.json.corrupt: $_" 'WARN'
+        return @()
+    }
 }
 
 function Save-Tenant {
@@ -1079,13 +1095,13 @@ function Save-Tenant {
     $existing = @(Get-SavedTenants)
     if ($existing | Where-Object { $_.TenantId -eq $TenantId }) { return }
     $all = $existing + @([PSCustomObject]@{ TenantId = $TenantId; DisplayName = $DisplayName })
-    ConvertTo-Json @($all) -Depth 3 | Set-Content -Path (Get-TenantsConfigPath) -Encoding UTF8
+    Set-EtbFileContent (Get-TenantsConfigPath) (ConvertTo-Json @($all) -Depth 3)
 }
 
 function Remove-SavedTenant {
     param([Parameter(Mandatory)][string]$TenantId)
     $remaining = @(Get-SavedTenants | Where-Object { $_.TenantId -ne $TenantId })
-    ConvertTo-Json @($remaining) -Depth 3 | Set-Content -Path (Get-TenantsConfigPath) -Encoding UTF8
+    Set-EtbFileContent (Get-TenantsConfigPath) (ConvertTo-Json @($remaining) -Depth 3)
 }
 
 function Get-TenantCacheFile {
@@ -1110,7 +1126,7 @@ function Set-TenantAccountHint {
             $t | Add-Member -NotePropertyName 'AccountHint' -NotePropertyValue $AccountHint -Force
         }
     }
-    ConvertTo-Json @($all) -Depth 3 | Set-Content -Path (Get-TenantsConfigPath) -Encoding UTF8
+    Set-EtbFileContent (Get-TenantsConfigPath) (ConvertTo-Json @($all) -Depth 3)
 }
 
 # Per-tenant preferences stored alongside the profile, the same way the account
@@ -1131,7 +1147,7 @@ function Set-TenantSetting {
             $t | Add-Member -NotePropertyName $Name -NotePropertyValue $Value -Force
         }
     }
-    ConvertTo-Json @($all) -Depth 3 | Set-Content -Path (Get-TenantsConfigPath) -Encoding UTF8
+    Set-EtbFileContent (Get-TenantsConfigPath) (ConvertTo-Json @($all) -Depth 3)
 }
 
 function Disconnect-Tenant {

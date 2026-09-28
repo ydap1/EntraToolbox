@@ -31,6 +31,12 @@ try {
     Assert ($stray.Count -eq 0) "UI colours follow the theme ($($stray -join ', '))"
     Assert ($authSource.Contains("`$iParams['Prompt'] = 'Login'") -and -not $authSource.Contains("@{ prompt = 'login' }")) 'MFA retry uses the reserved MSAL prompt parameter'
     . "$root/src/Auth.ps1"
+    $tenantsPath = Get-TenantsConfigPath
+    Set-Content $tenantsPath '[{"TenantId":' -Encoding UTF8
+    Assert (@(Get-SavedTenants).Count -eq 0 -and (Test-Path "$tenantsPath.corrupt")) 'an unreadable tenants file is set aside instead of blocking startup'
+    Save-Tenant -TenantId 'tenant-a' -DisplayName 'A'
+    Assert ((Get-SavedTenants).TenantId -eq 'tenant-a' -and -not (Test-Path "$tenantsPath.tmp")) 'tenant profiles are saved through a completed replacement file'
+    Remove-SavedTenant -TenantId 'tenant-a'
 
     . "$root/src/Import.ps1"
     . "$root/src/Tools/PasswordReset.ps1"
