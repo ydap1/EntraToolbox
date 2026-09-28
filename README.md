@@ -28,7 +28,7 @@ Multiple tenants, CSV imports and exports, and theme customisation are supported
 
 ## Using the app
 
-Choose a tool from the sidebar. **Ctrl+K** searches users; **F1** opens the shortcut guide. Use **Dry Run** to preview supported changes, and **Bulk Results** to track runs or export failures. Tenant profiles and audit records are saved locally in `config`.
+Choose a tool from the sidebar; click its star (or press **Ctrl+D**) to pin it to the top. **Ctrl+K** searches users; **F1** opens the shortcut guide. Use **Dry Run** to preview supported changes, and **Bulk Results** to track runs or export failures. Tenant profiles and audit records are saved locally in `config`.
 
 The app checks for updates at launch. Accept the prompt to update a clean clone on `main`.
 

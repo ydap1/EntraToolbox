@@ -10,6 +10,13 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.36.0'
+        Date    = '2026-09-28'
+        Changes = @(
+            'Pin favourite tools: click the star beside any tool, or press Ctrl+D, to keep it in a Pinned section at the top of the sidebar'
+        )
+    }
+    @{
         Version = '0.35.4'
         Date    = '2026-09-28'
         Changes = @(
