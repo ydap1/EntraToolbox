@@ -10,6 +10,16 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.35.3'
+        Date    = '2026-09-28'
+        Changes = @(
+            'Leaver Workflow and licence removal now ask for confirmation before changing the selected user'
+            'Update History, Immutable ID and the activity log now follow the selected colour theme'
+            'Saved tenants and settings survive an interrupted save; an unreadable tenants file is set aside as tenants.json.corrupt instead of blocking startup'
+            'Directory lists stop safely if Graph returns a repeating page link'
+        )
+    }
+    @{
         Version = '0.35.2'
         Date    = '2026-09-22'
         Changes = @(
