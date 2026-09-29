@@ -225,7 +225,7 @@ try {
         $Script:TE_Rows.Add([pscustomobject]@{ Id='dup'; UPN='dup@school.test'; IsOwner=$false })
         $Script:DryMode = $false; $Script:DemoMode = $false
         $started = [Collections.Generic.List[object]]::new()
-        function Start-AsyncWork { param($BulkName, $BulkTotal, $Vars, $RefSeed, $Script, $OnComplete); $started.Add(@{ Vars=$Vars; Ref=$RefSeed; Script=$Script; OnComplete=$OnComplete }) }
+        function Start-AsyncWork { param($BulkName, $BulkTotal, $Vars, $RefSeed, $Script, $OnProgress, $OnComplete); $started.Add(@{ Vars=$Vars; Ref=$RefSeed; Script=$Script; OnProgress=$OnProgress; OnComplete=$OnComplete }) }
         function Confirm-EtbAction { param($Message, $Title); $false }
         Start-TeApply
         Assert ($started.Count -eq 0) 'declining the team editor confirmation changes nothing'
@@ -233,7 +233,8 @@ try {
         function Confirm-EtbAction { param($Message, $Title); $true }
         $audit = [Collections.Generic.List[string]]::new()
         function Write-EtbAudit { param($Tool, $Action, $Target, $Result, $Detail); $audit.Add("${Action}:${Target}:$Result") }
-        function Write-AppLog { param($Msg, $Color) }
+        $log = [Collections.Generic.List[string]]::new()
+        function Write-AppLog { param($Msg, $Color); $log.Add("${Color}|$Msg") }
         function Set-MainStatus { param($Text, $Color) }
         Start-TeApply
         $job = $started[0]
@@ -250,7 +251,10 @@ try {
         $Members = $job.Vars.Members; $TeamId = $job.Vars.TeamId; $Token = 'fake'; $Ref = $job.Ref
         & $job.Script
         Assert ($bodies.Count -eq 3 -and @($bodies[0].roles).Count -eq 0 -and $bodies[1].roles -contains 'owner' -and $bodies[0].'user@odata.bind' -match "users\('pupil'\)") 'team editor adds members and owners with the Teams member API'
+        & $job.OnProgress $Ref
+        Assert (@($log | Where-Object { $_ -match '^Success\|Team Editor: Added: pupil@school.test \[member\]$' }).Count -eq 1 -and @($log | Where-Object { $_ -match '^Danger\|Team Editor: FAILED: teacher@school.test' }).Count -eq 1 -and @($log | Where-Object { $_ -match '^Muted\|Team Editor: Skipped: late@school.test' }).Count -eq 1) 'team editor writes each person to the activity log as it works'
         & $job.OnComplete $Ref
+        Assert ($log[-1] -match "^Warning\|Team Editor: finished '7 Science' — 1 added, 2 already in the team, 1 failed") 'team editor logs a summary when it finishes'
         Assert ($Script:TE_Rows.Count -eq 1 -and $Script:TE_Rows[0].Id -eq 'teacher' -and $Script:TE_MemberIds.Contains('pupil') -and -not $Script:TE_Busy) 'people not added stay listed for another try'
         Assert ($Script:TE_UI.BannerName.Text -eq '7 Science' -and $Script:TE_UI.BannerInfo.Text -match '^4 people already in this team' -and $Script:TE_UI.BannerCount.Text -eq '1 to add' -and $Script:TE_UI.BannerBadge.Visibility -eq 'Visible') 'the team banner stays on the chosen team with current counts after adding'
         Assert (@($Ref.Results | Where-Object Result -eq 'Skipped').Target -join ',' -eq 'late@school.test,dup@school.test' -and $Script:TE_MemberIds.Contains('late') -and $Script:TE_MemberIds.Contains('dup')) 'people already in the team are skipped, not failed, even when the list was stale'
