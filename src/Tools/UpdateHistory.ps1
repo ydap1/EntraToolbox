@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.37.1'
+        Date    = '2026-09-29'
+        Changes = @(
+            'Team Editor: people already in the Team are skipped rather than reported as failed, even if they joined after the list was built or have not yet appeared in the Teams roster'
+            'Teams Provisioning: the signed-in admin is no longer added a second time when they are part of the chosen year group or department'
+        )
+    }
+    @{
         Version = '0.37.0'
         Date    = '2026-09-29'
         Changes = @(
