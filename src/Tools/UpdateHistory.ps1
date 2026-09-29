@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.37.0'
+        Date    = '2026-09-29'
+        Changes = @(
+            'Team Editor — pick an existing Team and add missing students or staff by year group, department, office or name; people already in the Team are skipped'
+            'Choose who joins as an owner, preview with Dry Run, and track progress, Stop and failures in Bulk Results; every addition is recorded in Change History'
+        )
+    }
+    @{
         Version = '0.36.0'
         Date    = '2026-09-28'
         Changes = @(
