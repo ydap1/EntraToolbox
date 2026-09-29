@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.38.0'
+        Date    = '2026-09-29'
+        Changes = @(
+            'Team Editor pins the selected team in a card above the list, with how many people are already in it and how many are ready to add'
+            'Team Editor reports each person added, skipped or failed in the activity log as it works, plus a summary when it finishes'
+        )
+    }
+    @{
         Version = '0.37.2'
         Date    = '2026-09-29'
         Changes = @(
