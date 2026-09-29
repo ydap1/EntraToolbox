@@ -1231,6 +1231,7 @@ function Show-MainWindow {
         'GroupManager' = 'Initialize-GroupManagerTool'
         'GroupCopy'   = 'Initialize-GroupCopyTool'
         'Teams'       = 'Initialize-TeamsProvisioningTool'
+        'TeamEditor'  = 'Initialize-TeamEditorTool'
         'SecurityGroup' = 'Initialize-SecurityGroupCreatorTool'
         'BulkResults' = 'Initialize-BulkResultsTool'
         'ChangeHistory' = 'Initialize-ChangeHistoryTool'
@@ -1253,6 +1254,7 @@ function Show-MainWindow {
         'GroupManager' = @('Start-GmUsers')
         'GroupCopy'   = @('Start-GcUserLoad')
         'Teams'       = @('Start-TpUserLoad')
+        'TeamEditor'  = @('Start-TeLoad')
         'SecurityGroup' = @('Start-SgUserLoad')
         'BulkResults' = @()
         'ChangeHistory' = @('Start-ChLoad')
@@ -1279,6 +1281,7 @@ function Show-MainWindow {
         @{ Type = 'tool'; Name = 'GroupCopy';   Title = 'Group Copy';           Desc = 'Copy memberships from one user to another' }
         @{ Type = 'tool'; Name = 'SecurityGroup'; Title = 'Security Group Creator'; Desc = 'Create a security group from year groups, departments, individual users or CSV' }
         @{ Type = 'tool'; Name = 'Teams';        Title = 'Teams Provisioning';  Desc = 'Create Teams from year groups, departments or individual users' }
+        @{ Type = 'tool'; Name = 'TeamEditor';   Title = 'Team Editor';         Desc = 'Add missing students or staff to an existing Team' }
         @{ Type = 'cat'; Label = 'Devices' }
         @{ Type = 'tool'; Name = 'LastDevice';  Title = 'Last Device';          Desc = 'Login history and stale device detection' }
         @{ Type = 'tool'; Name = 'DevComp';     Title = 'Device Compliance';    Desc = 'Compliance overview with failure reasons' }

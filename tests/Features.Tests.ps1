@@ -194,6 +194,53 @@ try {
     $export = @(Get-BrExportRows ([pscustomobject]@{ Tool='Test'; Rows=@($row) }) -FailuresOnly)
     Assert ($export.Count -eq 1 -and -not $export[0].PSObject.Properties['Retry']) 'failure exports omit retained request data'
     & {
+        $members = [Collections.Generic.HashSet[string]]::new([string[]]@('in'))
+        $users = @(
+            [pscustomobject]@{ id='in'; userPrincipalName='in@school.test' }
+            [pscustomobject]@{ id='new'; userPrincipalName='new@school.test'; department='7A'; officeLocation='Main' }
+            [pscustomobject]@{ id='new'; userPrincipalName='new@school.test' }
+            [pscustomobject]@{ id='listed'; userPrincipalName='listed@school.test' }
+        )
+        $missing = @(Get-TeMissingRows $users $members @([pscustomobject]@{ Id='listed' }))
+        Assert ($missing.Count -eq 1 -and $missing[0].Id -eq 'new' -and $missing[0].Office -eq 'Main' -and -not $missing[0].IsOwner) 'team editor lists only people not already in the team or the list'
+
+        $Script:TE_UI = @{ Teams = [pscustomobject]@{ SelectedItem = [pscustomobject]@{ id='team1'; displayName='7 Science' } } }
+        foreach ($name in 'TeamPicker','Picker','Remove','Clear','Apply','Count','Status') { $Script:TE_UI[$name] = [pscustomobject]@{ IsEnabled=$false; Text='' } }
+        $Script:TE_UI.Grid = [pscustomobject]@{} | Add-Member -PassThru ScriptMethod CommitEdit { $true }
+        $Script:TE_MemberIds = [Collections.Generic.HashSet[string]]::new([string[]]@('in'))
+        $Script:TE_Rows.Clear()
+        $Script:TE_Rows.Add([pscustomobject]@{ Id='pupil'; UPN='pupil@school.test'; IsOwner=$false })
+        $Script:TE_Rows.Add([pscustomobject]@{ Id='teacher'; UPN='teacher@school.test'; IsOwner=$true })
+        $Script:DryMode = $false; $Script:DemoMode = $false
+        $started = [Collections.Generic.List[object]]::new()
+        function Start-AsyncWork { param($BulkName, $BulkTotal, $Vars, $RefSeed, $Script, $OnComplete); $started.Add(@{ Vars=$Vars; Ref=$RefSeed; Script=$Script; OnComplete=$OnComplete }) }
+        function Confirm-EtbAction { param($Message, $Title); $false }
+        Start-TeApply
+        Assert ($started.Count -eq 0) 'declining the team editor confirmation changes nothing'
+
+        function Confirm-EtbAction { param($Message, $Title); $true }
+        $audit = [Collections.Generic.List[string]]::new()
+        function Write-EtbAudit { param($Tool, $Action, $Target, $Result, $Detail); $audit.Add("${Action}:${Target}:$Result") }
+        function Write-AppLog { param($Msg, $Color) }
+        function Set-MainStatus { param($Text, $Color) }
+        Start-TeApply
+        $job = $started[0]
+        $bodies = [Collections.Generic.List[object]]::new()
+        function Invoke-RestMethod {
+            param($Uri, $Method, $Headers, $Body, $ContentType)
+            if ($Uri -notmatch '/teams/team1/members$' -or $Method -ne 'POST') { throw "unexpected request $Method $Uri" }
+            $bodies.Add(($Body | ConvertFrom-Json))
+            if ($Body -match 'teacher') { throw 'Graph rejected the owner' }
+        }
+        $Members = $job.Vars.Members; $TeamId = $job.Vars.TeamId; $Token = 'fake'; $Ref = $job.Ref
+        & $job.Script
+        Assert ($bodies.Count -eq 2 -and @($bodies[0].roles).Count -eq 0 -and $bodies[1].roles -contains 'owner' -and $bodies[0].'user@odata.bind' -match "users\('pupil'\)") 'team editor adds members and owners with the Teams member API'
+        & $job.OnComplete $Ref
+        Assert ($Script:TE_Rows.Count -eq 1 -and $Script:TE_Rows[0].Id -eq 'teacher' -and $Script:TE_MemberIds.Contains('pupil') -and -not $Script:TE_Busy) 'people not added stay listed for another try'
+        Assert (($audit -join ',') -eq 'Add member:pupil@school.test:Succeeded,Add owner:teacher@school.test:Uncertain') 'every team editor outcome is audited with its role'
+        $Script:TE_UI = $null; $Script:TE_Rows.Clear()
+    }
+    & {
         . "$root/src/MainWindow.ps1"
         function Update-NavPinned { }
         $Script:NavDefs = @{ SignIn = @{}; Overview = @{} }
