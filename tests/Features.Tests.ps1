@@ -205,7 +205,17 @@ try {
         Assert ($missing.Count -eq 1 -and $missing[0].Id -eq 'new' -and $missing[0].Office -eq 'Main' -and -not $missing[0].IsOwner) 'team editor lists only people not already in the team or the list'
 
         $Script:TE_UI = @{ Teams = [pscustomobject]@{ SelectedItem = [pscustomobject]@{ id='team1'; displayName='7 Science' } } }
-        foreach ($name in 'TeamPicker','Picker','Remove','Clear','Apply','Count','Status') { $Script:TE_UI[$name] = [pscustomobject]@{ IsEnabled=$false; Text='' } }
+        foreach ($name in 'TeamPicker','Picker','Remove','Clear','Apply','Count','Status','Banner','BannerBar','BannerName','BannerInfo','BannerBadge','BannerCount') {
+            $Script:TE_UI[$name] = [pscustomobject]@{ IsEnabled=$false; Text=''; Background=''; Foreground=''; Visibility=''; ToolTip='' }
+        }
+        $selected = $Script:TE_UI.Teams.SelectedItem
+        $Script:TE_UI.Teams.SelectedItem = $null
+        Update-TeState
+        Assert ($Script:TE_UI.BannerName.Text -eq 'No team selected' -and $Script:TE_UI.BannerBadge.Visibility -eq 'Collapsed') 'the team banner says plainly when no team is chosen'
+        $Script:TE_UI.Teams.SelectedItem = $selected
+        $Script:TE_MemberIds = $null
+        Update-TeState
+        Assert ($Script:TE_UI.BannerName.Text -eq '7 Science' -and $Script:TE_UI.BannerInfo.Text -match 'Reading' -and $Script:TE_UI.BannerBar.Background -eq (Get-ThemeHex 'Accent')) 'the team banner names the chosen team while its members load'
         $Script:TE_UI.Grid = [pscustomobject]@{} | Add-Member -PassThru ScriptMethod CommitEdit { $true }
         $Script:TE_MemberIds = [Collections.Generic.HashSet[string]]::new([string[]]@('in'))
         $Script:TE_Rows.Clear()
@@ -242,6 +252,7 @@ try {
         Assert ($bodies.Count -eq 3 -and @($bodies[0].roles).Count -eq 0 -and $bodies[1].roles -contains 'owner' -and $bodies[0].'user@odata.bind' -match "users\('pupil'\)") 'team editor adds members and owners with the Teams member API'
         & $job.OnComplete $Ref
         Assert ($Script:TE_Rows.Count -eq 1 -and $Script:TE_Rows[0].Id -eq 'teacher' -and $Script:TE_MemberIds.Contains('pupil') -and -not $Script:TE_Busy) 'people not added stay listed for another try'
+        Assert ($Script:TE_UI.BannerName.Text -eq '7 Science' -and $Script:TE_UI.BannerInfo.Text -match '^4 people already in this team' -and $Script:TE_UI.BannerCount.Text -eq '1 to add' -and $Script:TE_UI.BannerBadge.Visibility -eq 'Visible') 'the team banner stays on the chosen team with current counts after adding'
         Assert (@($Ref.Results | Where-Object Result -eq 'Skipped').Target -join ',' -eq 'late@school.test,dup@school.test' -and $Script:TE_MemberIds.Contains('late') -and $Script:TE_MemberIds.Contains('dup')) 'people already in the team are skipped, not failed, even when the list was stale'
         Assert (($audit -join ',') -eq 'Add member:pupil@school.test:Succeeded,Add owner:teacher@school.test:Uncertain,Add member:late@school.test:Skipped,Add member:dup@school.test:Skipped') 'every team editor outcome is audited with its role'
         $Script:TE_UI = $null; $Script:TE_Rows.Clear()

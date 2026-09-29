@@ -15,6 +15,7 @@ $Script:TE_Rows       = [System.Collections.ObjectModel.ObservableCollection[PSO
 $Script:TE_Busy       = $false
 $Script:TE_Timer      = $null
 $Script:TE_SearchTimer = $null
+$Script:TE_MemberError = $null
 
 # Grid rows for the users not already in the team or already listed.
 function Get-TeMissingRows {
@@ -34,6 +35,29 @@ function Update-TeState {
     $Script:TE_UI.Clear.IsEnabled      = $ready -and $Script:TE_Rows.Count -gt 0
     $Script:TE_UI.Apply.IsEnabled      = $ready -and $Script:TE_Rows.Count -gt 0
     $Script:TE_UI.Count.Text = "$($Script:TE_Rows.Count) to add"
+    Update-TeBanner
+}
+
+# The pinned card above the list, so the target team is never in doubt.
+function Update-TeBanner {
+    $team = $Script:TE_UI.Teams.SelectedItem
+    $Script:TE_UI.BannerBar.Background = Get-ThemeHex $(if ($team) { 'Accent' } else { 'Border' })
+    $Script:TE_UI.BannerBadge.Visibility = if ($team -and $null -ne $Script:TE_MemberIds) { 'Visible' } else { 'Collapsed' }
+    $Script:TE_UI.BannerCount.Text = "$($Script:TE_Rows.Count) to add"
+    if (-not $team) {
+        $Script:TE_UI.BannerName.Text = 'No team selected'
+        $Script:TE_UI.BannerName.Foreground = Get-ThemeHex 'TextDim'
+        $Script:TE_UI.BannerInfo.Text = 'Search for a team on the left, then choose it from the results.'
+        $Script:TE_UI.Banner.ToolTip = $null
+        return
+    }
+    $Script:TE_UI.BannerName.Text = $team.displayName
+    $Script:TE_UI.BannerName.Foreground = Get-ThemeHex 'Text'
+    $Script:TE_UI.Banner.ToolTip = "$($team.displayName)`nID: $($team.id)"
+    $Script:TE_UI.BannerInfo.Text = if ($Script:TE_Busy) { 'Adding people to this team…' }
+        elseif ($Script:TE_MemberError) { "Could not read members: $Script:TE_MemberError" }
+        elseif ($null -eq $Script:TE_MemberIds) { 'Reading current members…' }
+        else { "$($Script:TE_MemberIds.Count) people already in this team. Anyone you add below joins this team." }
 }
 
 # Teams are searched on request rather than listed up front: a school tenant
@@ -93,6 +117,7 @@ function Complete-TeUsers {
 function Start-TeMembersLoad {
     Stop-EtbAsyncWork $Script:TE_Timer
     $Script:TE_MemberIds = $null
+    $Script:TE_MemberError = $null
     $Script:TE_Rows.Clear()
     Update-TeState
     $team = $Script:TE_UI.Teams.SelectedItem
@@ -111,7 +136,12 @@ function Complete-TeMembersLoad {
     param($Ref)
     $team = $Script:TE_UI.Teams.SelectedItem
     if (-not $team -or $team.id -ne $Ref.TeamId) { return }
-    if ($Ref.Error) { $Script:TE_UI.Status.Text = "Could not read the members of $($team.displayName): $($Ref.Error)"; return }
+    if ($Ref.Error) {
+        $Script:TE_MemberError = $Ref.Error
+        $Script:TE_UI.Status.Text = "Could not read the members of $($team.displayName): $($Ref.Error)"
+        Update-TeBanner
+        return
+    }
     $Script:TE_MemberIds = $Ref.MemberIds
     $Script:TE_UI.Status.Text = "$($team.displayName) has $($Script:TE_MemberIds.Count) members. Add a year group, department, office or individual users; only people not already in the team are listed."
     Update-TeState
@@ -276,9 +306,25 @@ $Script:TeXaml = @'
   </Border>
 
   <Grid Grid.Column="2" Margin="16">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-    <TextBlock x:Name="TeStatus" Foreground="#7878A0" TextWrapping="Wrap" Margin="0,0,0,12"/>
-    <DataGrid x:Name="TeGrid" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Extended"
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <Border x:Name="TeBanner" Background="#242436" BorderBrush="#3C3C5A" BorderThickness="1" CornerRadius="8" Margin="0,0,0,12">
+      <Grid>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="5"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <Border x:Name="TeBannerBar" Background="#3C3C5A" CornerRadius="7,0,0,7"/>
+        <StackPanel Grid.Column="1" Margin="16,12,12,12">
+          <TextBlock Text="SELECTED TEAM" Foreground="#50507A" FontSize="10" FontWeight="Bold"/>
+          <TextBlock x:Name="TeBannerName" Text="No team selected" Foreground="#7878A0" FontSize="20" FontWeight="SemiBold"
+                     TextTrimming="CharacterEllipsis" Margin="0,2,0,4"/>
+          <TextBlock x:Name="TeBannerInfo" Foreground="#7878A0" FontSize="12" TextWrapping="Wrap"/>
+        </StackPanel>
+        <Border x:Name="TeBannerBadge" Grid.Column="2" Background="#2A2A50" CornerRadius="12" Padding="12,4"
+                Margin="0,0,16,0" VerticalAlignment="Center" Visibility="Collapsed">
+          <TextBlock x:Name="TeBannerCount" Foreground="#E2E2F0" FontSize="12" FontWeight="SemiBold"/>
+        </Border>
+      </Grid>
+    </Border>
+    <TextBlock x:Name="TeStatus" Grid.Row="1" Foreground="#7878A0" TextWrapping="Wrap" Margin="0,0,0,12"/>
+    <DataGrid x:Name="TeGrid" Grid.Row="2" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Extended"
               RowStyle="{StaticResource DgRow}" CellStyle="{StaticResource DgCell}"
               VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
       <DataGrid.Columns>
@@ -296,7 +342,7 @@ $Script:TeXaml = @'
         </DataGridTemplateColumn>
       </DataGrid.Columns>
     </DataGrid>
-    <WrapPanel Grid.Row="2" Margin="0,12,0,0">
+    <WrapPanel Grid.Row="3" Margin="0,12,0,0">
       <TextBlock x:Name="TeCount" Foreground="#E2E2F0" VerticalAlignment="Center" Margin="0,0,12,0"/>
       <Button x:Name="TeApply" Content="Add to team" Style="{StaticResource EtbAction}" IsEnabled="False"/>
       <Button x:Name="TeRemove" Content="Remove selected" Style="{StaticResource EtbAction}" IsEnabled="False"/>
@@ -310,7 +356,7 @@ function Initialize-TeamEditorTool {
     $reader = [Xml.XmlReader]::Create([IO.StringReader]::new((Invoke-ThemeXaml $Script:TeXaml)))
     try { $panel = [Windows.Markup.XamlReader]::Load($reader) } finally { $reader.Close() }
     $Script:TE_UI = @{}
-    foreach ($key in 'TeamPicker','Search','Find','Teams','Picker','Years','AddYear','Departments','AddDepartment','Offices','AddOffice','UserSearch','Matches','AddUsers','Status','Grid','Count','Apply','Remove','Clear') {
+    foreach ($key in 'TeamPicker','Search','Find','Teams','Picker','Years','AddYear','Departments','AddDepartment','Offices','AddOffice','UserSearch','Matches','AddUsers','Status','Grid','Count','Apply','Remove','Clear','Banner','BannerBar','BannerName','BannerInfo','BannerBadge','BannerCount') {
         $Script:TE_UI[$key] = $panel.FindName("Te$key")
     }
     $Script:TE_UI.Grid.ItemsSource = $Script:TE_Rows
@@ -345,7 +391,7 @@ function Initialize-TeamEditorTool {
     Register-ConnectCallback 'Start-TeLoad'
     $Script:ResetCallbacks.Add({
         Stop-EtbAsyncWork $Script:TE_Timer; Stop-EtbAsyncWork $Script:TE_SearchTimer
-        $Script:TE_Busy = $false; $Script:TE_MemberIds = $null
+        $Script:TE_Busy = $false; $Script:TE_MemberIds = $null; $Script:TE_MemberError = $null
         $Script:TE_Teams = @(); $Script:TE_Users = @(); $Script:TE_Rows.Clear()
         $Script:TE_UI.Search.Text = ''; $Script:TE_UI.UserSearch.Text = ''
         $Script:TE_UI.Teams.ItemsSource = @(); $Script:TE_UI.Matches.ItemsSource = @()
