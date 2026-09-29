@@ -14,7 +14,7 @@ $Script:TE_MemberIds  = $null   # user IDs already in the selected team; $null u
 $Script:TE_Rows       = [System.Collections.ObjectModel.ObservableCollection[PSObject]]::new()
 $Script:TE_Busy       = $false
 $Script:TE_Timer      = $null
-$Script:TE_TeamsTimer = $null
+$Script:TE_SearchTimer = $null
 
 # Grid rows for the users not already in the team or already listed.
 function Get-TeMissingRows {
@@ -36,9 +36,37 @@ function Update-TeState {
     $Script:TE_UI.Count.Text = "$($Script:TE_Rows.Count) to add"
 }
 
-function Update-TeTeams {
-    $filter = $Script:TE_UI.Search.Text.Trim()
-    $Script:TE_UI.Teams.ItemsSource = @($Script:TE_Teams | Where-Object { -not $filter -or $_.displayName.IndexOf($filter, [StringComparison]::OrdinalIgnoreCase) -ge 0 } | Sort-Object displayName)
+# Teams are searched on request rather than listed up front: a school tenant
+# can hold thousands, and loading them all stalled the window.
+function Start-TeSearch {
+    $text = $Script:TE_UI.Search.Text.Trim() -replace '["\\]', ''
+    if (-not $text -or $Script:TE_Busy) { return }
+    Stop-EtbAsyncWork $Script:TE_SearchTimer
+    $Script:TE_UI.Teams.ItemsSource = @()
+    if ($Script:DemoMode) {
+        $demo = @(
+            [pscustomobject]@{ id = 'demo-team-7'; displayName = 'Year 7 Science 2026' }
+            [pscustomobject]@{ id = 'demo-team-10'; displayName = 'Year 10 Tutor Group 2026' }
+        )
+        Complete-TeSearch @{ Query = $text; Teams = @($demo | Where-Object { $_.displayName.IndexOf($text, [StringComparison]::OrdinalIgnoreCase) -ge 0 }) }
+        return
+    }
+    $Script:TE_UI.Status.Text = "Searching for teams matching '$text'…"
+    $Script:TE_SearchTimer = Start-AsyncWork -Vars @{ Query = $text } -RefSeed @{ Query = $text } -Script {
+        # $search matches words that start with the query, e.g. 2026 finds '7X Maths 2026'.
+        $search = [uri]::EscapeDataString("`"displayName:$Query`"")
+        $Ref['Teams'] = @(Get-EtbGraphCollection -Uri "https://graph.microsoft.com/v1.0/groups?`$search=$search&`$select=id,displayName,resourceProvisioningOptions&`$top=100" -Headers @{ Authorization = "Bearer $Token"; ConsistencyLevel = 'eventual' } |
+            Where-Object { $_.resourceProvisioningOptions -contains 'Team' })
+    } -OnComplete { param($ref); Complete-TeSearch $ref }
+}
+
+function Complete-TeSearch {
+    param($Ref)
+    if ($Ref.Error) { $Script:TE_UI.Status.Text = "Team search failed: $($Ref.Error)"; return }
+    $Script:TE_Teams = @($Ref.Teams | Sort-Object displayName)
+    $Script:TE_UI.Teams.ItemsSource = $Script:TE_Teams
+    $Script:TE_UI.Status.Text = if ($Script:TE_Teams.Count) { "$($Script:TE_Teams.Count) teams match '$($Ref.Query)'. Choose one to see who is missing." }
+        else { "No teams match '$($Ref.Query)'. Search matches the start of words in the name, e.g. 2026 or Maths." }
 }
 
 function Update-TeUserSearch {
@@ -49,26 +77,8 @@ function Update-TeUserSearch {
 }
 
 function Start-TeLoad {
-    if ($Script:DemoMode) {
-        $Script:TE_Teams = @(
-            [pscustomobject]@{ id = 'demo-team-7'; displayName = 'Year 7 Science' }
-            [pscustomobject]@{ id = 'demo-team-10'; displayName = 'Year 10 Tutor Group' }
-        )
-        Update-TeTeams
-        Complete-TeUsers
-        return
-    }
-    Request-EtbUsers -OnReady 'Complete-TeUsers'
-    $Script:TE_UI.Status.Text = 'Loading teams…'
-    $Script:TE_TeamsTimer = Start-AsyncWork -Script {
-        $Ref['Teams'] = @(Get-EtbGraphCollection -Uri "https://graph.microsoft.com/v1.0/groups?`$filter=resourceProvisioningOptions/Any(x:x eq 'Team')&`$select=id,displayName&`$top=999" -Headers @{ Authorization = "Bearer $Token" })
-    } -OnComplete {
-        param($ref)
-        if ($ref.Error) { $Script:TE_UI.Status.Text = "Teams unavailable: $($ref.Error)"; return }
-        $Script:TE_Teams = @($ref.Teams)
-        Update-TeTeams
-        $Script:TE_UI.Status.Text = "$($Script:TE_Teams.Count) teams loaded. Choose one to see who is missing."
-    }
+    if ($Script:DemoMode) { Complete-TeUsers } else { Request-EtbUsers -OnReady 'Complete-TeUsers' }
+    $Script:TE_UI.Status.Text = 'Type part of a team name, then press Enter or Search.'
 }
 
 function Complete-TeUsers {
@@ -239,8 +249,12 @@ $Script:TeXaml = @'
       <StackPanel Margin="12">
         <StackPanel x:Name="TeTeamPicker">
           <TextBlock Text="Team" Foreground="#7878A0" Margin="0,0,0,6"/>
-          <TextBox x:Name="TeSearch" AutomationProperties.Name="Search teams by name"/>
-          <ComboBox x:Name="TeTeams" DisplayMemberPath="displayName" Style="{StaticResource EtbPopulationCombo}" Margin="0,8,0,16" AutomationProperties.Name="Existing team"/>
+          <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <TextBox x:Name="TeSearch" AutomationProperties.Name="Team name to search for"/>
+            <Button x:Name="TeFind" Grid.Column="1" Content="Search" Style="{StaticResource EtbAction}" Margin="8,0,0,0"/>
+          </Grid>
+          <ListBox x:Name="TeTeams" Height="160" DisplayMemberPath="displayName" Margin="0,8,0,16" AutomationProperties.Name="Matching teams"/>
         </StackPanel>
         <StackPanel x:Name="TePicker" IsEnabled="False">
           <TextBlock Text="Year group" Foreground="#7878A0" Margin="0,0,0,6"/>
@@ -296,12 +310,20 @@ function Initialize-TeamEditorTool {
     $reader = [Xml.XmlReader]::Create([IO.StringReader]::new((Invoke-ThemeXaml $Script:TeXaml)))
     try { $panel = [Windows.Markup.XamlReader]::Load($reader) } finally { $reader.Close() }
     $Script:TE_UI = @{}
-    foreach ($key in 'TeamPicker','Search','Teams','Picker','Years','AddYear','Departments','AddDepartment','Offices','AddOffice','UserSearch','Matches','AddUsers','Status','Grid','Count','Apply','Remove','Clear') {
+    foreach ($key in 'TeamPicker','Search','Find','Teams','Picker','Years','AddYear','Departments','AddDepartment','Offices','AddOffice','UserSearch','Matches','AddUsers','Status','Grid','Count','Apply','Remove','Clear') {
         $Script:TE_UI[$key] = $panel.FindName("Te$key")
     }
     $Script:TE_UI.Grid.ItemsSource = $Script:TE_Rows
 
-    $Script:TE_UI.Search.Add_TextChanged({ Invoke-EtbDebounced -Key 'TE_Search' -Command 'Update-TeTeams' })
+    $Script:TE_UI.Find.Add_Click({
+        try { Start-TeSearch } catch { Write-Log "TE search error: $_" 'ERROR' }
+    })
+    $Script:TE_UI.Search.Add_KeyDown({
+        param($searchSender, $searchEvent)
+        if ($searchEvent.Key -ne 'Return') { return }
+        $searchEvent.Handled = $true
+        try { Start-TeSearch } catch { Write-Log "TE search error: $_" 'ERROR' }
+    })
     $Script:TE_UI.Teams.Add_SelectionChanged({
         try { Start-TeMembersLoad } catch { Write-Log "TE team selection error: $_" 'ERROR' }
     })
@@ -322,16 +344,16 @@ function Initialize-TeamEditorTool {
 
     Register-ConnectCallback 'Start-TeLoad'
     $Script:ResetCallbacks.Add({
-        Stop-EtbAsyncWork $Script:TE_Timer; Stop-EtbAsyncWork $Script:TE_TeamsTimer
+        Stop-EtbAsyncWork $Script:TE_Timer; Stop-EtbAsyncWork $Script:TE_SearchTimer
         $Script:TE_Busy = $false; $Script:TE_MemberIds = $null
         $Script:TE_Teams = @(); $Script:TE_Users = @(); $Script:TE_Rows.Clear()
         $Script:TE_UI.Search.Text = ''; $Script:TE_UI.UserSearch.Text = ''
         $Script:TE_UI.Teams.ItemsSource = @(); $Script:TE_UI.Matches.ItemsSource = @()
         foreach ($combo in 'Years','Departments','Offices') { $Script:TE_UI[$combo].Items.Clear(); $Script:TE_UI[$combo].IsEnabled = $false }
-        $Script:TE_UI.Status.Text = 'Connect to a tenant to load teams.'
+        $Script:TE_UI.Status.Text = 'Connect to a tenant, then search for a team.'
         Update-TeState
     })
-    $Script:TE_UI.Status.Text = 'Connect to a tenant to load teams.'
+    $Script:TE_UI.Status.Text = 'Connect to a tenant, then search for a team.'
     Update-TeState
     return $panel
 }

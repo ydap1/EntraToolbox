@@ -247,6 +247,27 @@ try {
         $Script:TE_UI = $null; $Script:TE_Rows.Clear()
     }
     & {
+        $jobs = [Collections.Generic.List[object]]::new()
+        function Start-AsyncWork { param($Vars, $RefSeed, $Script, $OnComplete); $jobs.Add(@{ Vars=$Vars; Ref=$RefSeed; Script=$Script; OnComplete=$OnComplete }) }
+        function Request-EtbUsers { param($OnReady) }
+        function Stop-EtbAsyncWork { param($Timer) }
+        $Script:DemoMode = $false; $Script:TE_Busy = $false
+        $Script:TE_UI = @{ Search = [pscustomobject]@{ Text = '  ' }; Teams = [pscustomobject]@{ ItemsSource = @() }; Status = [pscustomobject]@{ Text = '' } }
+        Start-TeLoad
+        Start-TeSearch
+        Assert ($jobs.Count -eq 0) 'team editor loads no teams until a search is entered'
+        $Script:TE_UI.Search.Text = ' 20"26 '
+        Start-TeSearch
+        $seen = @{}
+        function Get-EtbGraphCollection { param($Uri, $Headers); $seen.Uri = $Uri; $seen.Headers = $Headers; @{ displayName='Maths 2026'; resourceProvisioningOptions=@('Team') }, @{ displayName='Staff 2026'; resourceProvisioningOptions=@() } }
+        $Query = $jobs[0].Vars.Query; $Token = 'fake'; $Ref = $jobs[0].Ref
+        & $jobs[0].Script
+        Assert ([uri]::UnescapeDataString($seen.Uri) -match '\$search="displayName:2026"' -and $seen.Headers.ConsistencyLevel -eq 'eventual' -and $Ref.Teams.Count -eq 1 -and $Ref.Teams[0].displayName -eq 'Maths 2026') 'team search asks Graph for matching names and keeps only Teams'
+        Complete-TeSearch $Ref
+        Assert ($Script:TE_UI.Teams.ItemsSource.Count -eq 1 -and $Script:TE_UI.Status.Text -match "1 teams match '2026'") 'team search results are listed for selection'
+        $Script:TE_UI = $null
+    }
+    & {
         function Get-EtbGraphCollection { param($Uri, $Headers); if ($Uri -match '/teams/') { @{ userId='OWNER-ONLY' }, @{ userId='both' } } else { @{ id='owner-only' }, @{ id='group-only' } } }
         $ids = Get-EtbTeamMemberIds 't' @{}
         Assert ($ids.Count -eq 3 -and $ids.Contains('group-only') -and $ids.Contains('both')) 'team membership combines the Teams roster with its group, ignoring ID case'
