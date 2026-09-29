@@ -55,6 +55,16 @@ function Get-GmPlanSignature {
     (@($Plan | ForEach-Object { "$($_.Id):$($_.Action):$($_.Detail)" } | Sort-Object) -join '|')
 }
 
+# Everyone already in a Team. The Teams roster can lag behind the group it is
+# built on, so both are read; someone in either is treated as already present.
+function Get-EtbTeamMemberIds {
+    param([string]$TeamId, $Headers)
+    $ids = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($m in Get-EtbGraphCollection -Uri "https://graph.microsoft.com/v1.0/teams/$TeamId/members" -Headers $Headers) { if ($m.userId) { [void]$ids.Add($m.userId) } }
+    foreach ($m in Get-EtbGraphCollection -Uri "https://graph.microsoft.com/v1.0/groups/$TeamId/members?`$select=id&`$top=999" -Headers $Headers) { if ($m.id) { [void]$ids.Add($m.id) } }
+    , $ids
+}
+
 function Get-GmSnapshot {
     param([string]$GroupId, $Headers)
     $base = "https://graph.microsoft.com/v1.0/groups/$GroupId"

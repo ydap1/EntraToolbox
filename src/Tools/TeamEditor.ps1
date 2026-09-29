@@ -89,11 +89,11 @@ function Start-TeMembersLoad {
     if (-not $team) { return }
     $Script:TE_UI.Status.Text = "Reading members of $($team.displayName)…"
     if ($Script:DemoMode) {
-        Complete-TeMembersLoad @{ TeamId = $team.id; Members = @($Script:Demo_Users | Select-Object -First 5 | ForEach-Object { [pscustomobject]@{ userId = $_.id } }) }
+        Complete-TeMembersLoad @{ TeamId = $team.id; MemberIds = [System.Collections.Generic.HashSet[string]]::new([string[]]@($Script:Demo_Users | Select-Object -First 5 | ForEach-Object id)) }
         return
     }
     $Script:TE_Timer = Start-AsyncWork -Vars @{ TeamId = $team.id } -RefSeed @{ TeamId = $team.id } -Script {
-        $Ref['Members'] = @(Get-EtbGraphCollection -Uri "https://graph.microsoft.com/v1.0/teams/$TeamId/members" -Headers @{ Authorization = "Bearer $Token" })
+        $Ref['MemberIds'] = Get-EtbTeamMemberIds $TeamId @{ Authorization = "Bearer $Token" }
     } -OnComplete { param($ref); Complete-TeMembersLoad $ref }
 }
 
@@ -102,7 +102,7 @@ function Complete-TeMembersLoad {
     $team = $Script:TE_UI.Teams.SelectedItem
     if (-not $team -or $team.id -ne $Ref.TeamId) { return }
     if ($Ref.Error) { $Script:TE_UI.Status.Text = "Could not read the members of $($team.displayName): $($Ref.Error)"; return }
-    $Script:TE_MemberIds = [System.Collections.Generic.HashSet[string]]::new([string[]]@($Ref.Members | ForEach-Object userId | Where-Object { $_ }))
+    $Script:TE_MemberIds = $Ref.MemberIds
     $Script:TE_UI.Status.Text = "$($team.displayName) has $($Script:TE_MemberIds.Count) members. Add a year group, department, office or individual users; only people not already in the team are listed."
     Update-TeState
 }
@@ -138,9 +138,16 @@ function Start-TeApply {
         -RefSeed @{ TeamName = $team.displayName; Results = @() } `
         -Script {
             $headers = @{ Authorization = "Bearer $Token" }
+            # Re-read now: anyone who joined after the list was built is skipped, not failed.
+            $present = Get-EtbTeamMemberIds $TeamId $headers
             foreach ($m in $Members) {
                 if ($Ref['CancelRequested']) { break }
                 $role = if ($m.IsOwner) { 'owner' } else { 'member' }
+                if ($present.Contains($m.Id)) {
+                    $Ref['Results'] += [pscustomobject]@{ Id = $m.Id; Target = $m.UPN; Role = $role; Result = 'Skipped'; Detail = 'Already in the team.' }
+                    if ($Ref['BulkQueue']) { $Ref['BulkQueue'].Enqueue([pscustomobject]@{ Time = (Get-Date -Format HH:mm:ss); Target = $m.UPN; Action = "Add $role"; Result = 'Skipped'; Detail = 'Already in the team.'; Retry = $null }) }
+                    continue
+                }
                 try {
                     $body = @{
                         '@odata.type'     = '#microsoft.graph.aadUserConversationMember'
@@ -149,9 +156,12 @@ function Start-TeApply {
                     } | ConvertTo-Json
                     $null = Invoke-RestMethod -Uri "https://graph.microsoft.com/v1.0/teams/$TeamId/members" -Method POST -Headers $headers -Body $body -ContentType 'application/json'
                     $Ref['Results'] += [pscustomobject]@{ Id = $m.Id; Target = $m.UPN; Role = $role; Result = 'Succeeded'; Detail = '' }
+                    [void]$present.Add($m.Id)
                 } catch {
                     $status = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
-                    $Ref['Results'] += [pscustomobject]@{ Id = $m.Id; Target = $m.UPN; Role = $role; Result = (Get-EtbWriteResult $status); Detail = $_.Exception.Message }
+                    # Graph reports an existing member as a conflict; that is the outcome wanted.
+                    $result = if ($status -eq 409 -or "$($_.ErrorDetails.Message) $($_.Exception.Message)" -match 'already (exist|a member)') { 'Skipped' } else { Get-EtbWriteResult $status }
+                    $Ref['Results'] += [pscustomobject]@{ Id = $m.Id; Target = $m.UPN; Role = $role; Result = $result; Detail = $(if ($result -eq 'Skipped') { 'Already in the team.' } else { $_.Exception.Message }) }
                 }
             }
         } `
@@ -160,7 +170,7 @@ function Start-TeApply {
             $Script:TE_Busy = $false
             foreach ($result in $ref.Results) {
                 Write-EtbAudit -Tool 'Team Editor' -Action "Add $($result.Role)" -Target $result.Target -Result $result.Result -Detail "Team $($ref.TeamName). $($result.Detail)"
-                if ($result.Result -eq 'Succeeded') {
+                if ($result.Result -in 'Succeeded', 'Skipped') {
                     [void]$Script:TE_MemberIds.Add($result.Id)
                     $row = $Script:TE_Rows | Where-Object Id -eq $result.Id | Select-Object -First 1
                     if ($row) { [void]$Script:TE_Rows.Remove($row) }
@@ -169,9 +179,10 @@ function Start-TeApply {
                 }
             }
             $ok = @($ref.Results | Where-Object Result -eq 'Succeeded').Count
-            $failed = $ref.Results.Count - $ok
+            $skipped = @($ref.Results | Where-Object Result -eq 'Skipped').Count
+            $failed = $ref.Results.Count - $ok - $skipped
             $color = if ($failed -or $ref.CancelRequested -or $ref.Error) { 'Warning' } else { 'Success' }
-            $Script:TE_UI.Status.Text = "$ok added to $($ref.TeamName); $failed failed.$(if ($ref.CancelRequested) { ' Stopped before the end.' }) $($ref.Error) People not added stay in the list."
+            $Script:TE_UI.Status.Text = "$ok added to $($ref.TeamName); $skipped already in the team; $failed failed.$(if ($ref.CancelRequested) { ' Stopped before the end.' }) $($ref.Error) People not added stay in the list."
             Set-MainStatus "Team Editor: $ok added, $failed failed." $color
             Update-TeState
         }

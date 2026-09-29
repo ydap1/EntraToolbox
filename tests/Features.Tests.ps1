@@ -211,6 +211,8 @@ try {
         $Script:TE_Rows.Clear()
         $Script:TE_Rows.Add([pscustomobject]@{ Id='pupil'; UPN='pupil@school.test'; IsOwner=$false })
         $Script:TE_Rows.Add([pscustomobject]@{ Id='teacher'; UPN='teacher@school.test'; IsOwner=$true })
+        $Script:TE_Rows.Add([pscustomobject]@{ Id='late'; UPN='late@school.test'; IsOwner=$false })
+        $Script:TE_Rows.Add([pscustomobject]@{ Id='dup'; UPN='dup@school.test'; IsOwner=$false })
         $Script:DryMode = $false; $Script:DemoMode = $false
         $started = [Collections.Generic.List[object]]::new()
         function Start-AsyncWork { param($BulkName, $BulkTotal, $Vars, $RefSeed, $Script, $OnComplete); $started.Add(@{ Vars=$Vars; Ref=$RefSeed; Script=$Script; OnComplete=$OnComplete }) }
@@ -231,14 +233,23 @@ try {
             if ($Uri -notmatch '/teams/team1/members$' -or $Method -ne 'POST') { throw "unexpected request $Method $Uri" }
             $bodies.Add(($Body | ConvertFrom-Json))
             if ($Body -match 'teacher') { throw 'Graph rejected the owner' }
+            if ($Body -match 'dup') { throw 'One or more added object references already exist' }
         }
+        # 'late' joined the team after the list was built.
+        function Get-EtbTeamMemberIds { param($TeamId, $Headers); , [Collections.Generic.HashSet[string]]::new([string[]]@('in', 'late')) }
         $Members = $job.Vars.Members; $TeamId = $job.Vars.TeamId; $Token = 'fake'; $Ref = $job.Ref
         & $job.Script
-        Assert ($bodies.Count -eq 2 -and @($bodies[0].roles).Count -eq 0 -and $bodies[1].roles -contains 'owner' -and $bodies[0].'user@odata.bind' -match "users\('pupil'\)") 'team editor adds members and owners with the Teams member API'
+        Assert ($bodies.Count -eq 3 -and @($bodies[0].roles).Count -eq 0 -and $bodies[1].roles -contains 'owner' -and $bodies[0].'user@odata.bind' -match "users\('pupil'\)") 'team editor adds members and owners with the Teams member API'
         & $job.OnComplete $Ref
         Assert ($Script:TE_Rows.Count -eq 1 -and $Script:TE_Rows[0].Id -eq 'teacher' -and $Script:TE_MemberIds.Contains('pupil') -and -not $Script:TE_Busy) 'people not added stay listed for another try'
-        Assert (($audit -join ',') -eq 'Add member:pupil@school.test:Succeeded,Add owner:teacher@school.test:Uncertain') 'every team editor outcome is audited with its role'
+        Assert (@($Ref.Results | Where-Object Result -eq 'Skipped').Target -join ',' -eq 'late@school.test,dup@school.test' -and $Script:TE_MemberIds.Contains('late') -and $Script:TE_MemberIds.Contains('dup')) 'people already in the team are skipped, not failed, even when the list was stale'
+        Assert (($audit -join ',') -eq 'Add member:pupil@school.test:Succeeded,Add owner:teacher@school.test:Uncertain,Add member:late@school.test:Skipped,Add member:dup@school.test:Skipped') 'every team editor outcome is audited with its role'
         $Script:TE_UI = $null; $Script:TE_Rows.Clear()
+    }
+    & {
+        function Get-EtbGraphCollection { param($Uri, $Headers); if ($Uri -match '/teams/') { @{ userId='OWNER-ONLY' }, @{ userId='both' } } else { @{ id='owner-only' }, @{ id='group-only' } } }
+        $ids = Get-EtbTeamMemberIds 't' @{}
+        Assert ($ids.Count -eq 3 -and $ids.Contains('group-only') -and $ids.Contains('both')) 'team membership combines the Teams roster with its group, ignoring ID case'
     }
     & {
         . "$root/src/MainWindow.ps1"
