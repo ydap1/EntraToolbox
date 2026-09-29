@@ -535,7 +535,9 @@ function Start-TpCreateTeam {
         Update-TpCreateButton
         return
     }
-    $memberSnap = @($Script:TP_Rows | ForEach-Object {
+    # The signed-in admin joins as owner when the team is created; adding them
+    # again from the member list would only fail.
+    $memberSnap = @($Script:TP_Rows | Where-Object { $_.UPN -ne $adminUpn } | ForEach-Object {
         @{ Id = $_.Id; UPN = $_.UPN; DisplayName = $_.DisplayName; IsOwner = [bool]$_.IsOwner }
     })
 
