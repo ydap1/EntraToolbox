@@ -10,6 +10,13 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.37.2'
+        Date    = '2026-09-29'
+        Changes = @(
+            'Team Editor no longer freezes when opened: type part of a team name (for example 2026) and press Enter or Search to find matching Teams'
+        )
+    }
+    @{
         Version = '0.37.1'
         Date    = '2026-09-29'
         Changes = @(
