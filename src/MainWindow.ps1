@@ -298,10 +298,10 @@ $Script:MainXaml = @'
       <Setter Property="Foreground" Value="#7878A0"/>
       <Setter Property="FontSize" Value="12"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
-      <Setter Property="Margin" Value="8,2"/>
+      <Setter Property="Margin" Value="8,0"/>
       <Setter Property="Focusable" Value="False"/>
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Expander">
-        <Border BorderBrush="#3C3C5A" BorderThickness="0,0,0,1" Padding="0,0,0,4">
+        <Border BorderBrush="#3C3C5A" BorderThickness="0,0,0,1" Padding="0,4,0,4">
           <Grid>
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
             <ToggleButton x:Name="HeaderSite" Content="{TemplateBinding Header}" Foreground="{TemplateBinding Foreground}"
@@ -324,7 +324,11 @@ $Script:MainXaml = @'
                 </ControlTemplate.Triggers>
               </ControlTemplate></ToggleButton.Template>
             </ToggleButton>
-            <ContentPresenter x:Name="SectionTools" Grid.Row="1" ContentSource="Content" Visibility="Collapsed" Margin="0,2,0,6"/>
+            <!-- A guide line from the chevron ties each tool to its category. -->
+            <Border x:Name="SectionTools" Grid.Row="1" Visibility="Collapsed" Margin="15,0,0,8" Padding="4,0,0,0"
+                    BorderBrush="#3C3C5A" BorderThickness="1,0,0,0">
+              <ContentPresenter ContentSource="Content"/>
+            </Border>
           </Grid>
         </Border>
         <ControlTemplate.Triggers><Trigger Property="IsExpanded" Value="True"><Setter TargetName="SectionTools" Property="Visibility" Value="Visible"/></Trigger></ControlTemplate.Triggers>
