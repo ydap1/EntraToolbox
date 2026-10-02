@@ -10,6 +10,13 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.39.2'
+        Date    = '2026-10-02'
+        Changes = @(
+            'The update prompt lists the changes in every release since your version, newest first, not just the latest one'
+        )
+    }
+    @{
         Version = '0.39.1'
         Date    = '2026-10-02'
         Changes = @(
