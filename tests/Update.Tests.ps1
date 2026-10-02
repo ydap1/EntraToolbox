@@ -19,14 +19,24 @@ try {
     $current = (Get-Content (Join-Path $root 'version.txt') -Raw).Trim()
     $history = Get-Content (Join-Path $root 'src/Tools/UpdateHistory.ps1') -Raw
     $notes = @(Get-EtbUpdateNotes $history $current)
-    Assert ($notes.Count -gt 0) 'latest release descriptions are read from the existing update history'
+    Assert ($notes.Count -eq 1 -and $notes[0].Version -eq $current -and $notes[0].Changes.Count -gt 0) 'latest release descriptions are read from the existing update history'
     $Script:NotesExecuted = $false
     $source = @'
 $Script:NotesExecuted = $true
 $Script:IH_History = @(@{ Version = '1.0.0'; Changes = @('A user''s device', 'Second change') })
 '@
     $notes = @(Get-EtbUpdateNotes $source '1.0.0')
-    Assert ($notes.Count -eq 2 -and $notes[0] -eq "A user's device" -and -not $Script:NotesExecuted) 'release notes handle quoted text without executing downloaded PowerShell'
+    Assert ($notes[0].Changes.Count -eq 2 -and $notes[0].Changes[0] -eq "A user's device" -and -not $Script:NotesExecuted) 'release notes handle quoted text without executing downloaded PowerShell'
+    $source = @'
+$Script:IH_History = @(
+    @{ Version = '1.3.0'; Changes = @('Unreleased') }
+    @{ Version = '1.2.0'; Changes = @('Newest') }
+    @{ Version = '1.1.0'; Changes = @('Middle', 'Second middle') }
+    @{ Version = '1.0.0'; Changes = @('Installed') }
+)
+'@
+    $notes = @(Get-EtbUpdateNotes $source '1.2.0' -Since '1.0.0')
+    Assert (($notes.Version -join ',') -eq '1.2.0,1.1.0' -and $notes[1].Changes.Count -eq 2) 'users several releases behind get every missed release, newest first and nothing beyond the update'
     $source = @'
 $Script:IH_History = @(@{ Version = '1.0.0'; Changes = @($(throw 'must not execute')) })
 '@
@@ -48,9 +58,9 @@ $Script:IH_History = @(@{ Version = '1.0.0'; Changes = @($(throw 'must not execu
             return '$Script:IH_History = @(@{ Version = ''99.0.0''; Changes = @(''Device support'') })'
         }
         $update = Get-EtbStartupUpdate $root
-        Assert ($update.Version -eq '99.0.0' -and $update.Commit -eq $commit -and $update.Notes[0] -eq 'Device support') 'update metadata includes the latest version, commit and description'
+        Assert ($update.Version -eq '99.0.0' -and $update.Commit -eq $commit -and $update.Notes[0].Changes[0] -eq 'Device support') 'update metadata includes the latest version, commit and description'
         $notesUnavailable = $true
-        Assert ((Get-EtbStartupUpdate $root).Notes[0] -like '*description unavailable*') 'unavailable release notes are explicitly reported'
+        Assert ((Get-EtbStartupUpdate $root).Notes[0].Changes[0] -like '*description unavailable*') 'unavailable release notes are explicitly reported'
         $version = $current
         $calls.Clear()
         Assert ($null -eq (Get-EtbStartupUpdate $root) -and $calls.Count -eq 2) 'current installations skip notes and do not offer an update'
@@ -69,7 +79,9 @@ $Script:IH_History = @(@{ Version = '1.0.0'; Changes = @($(throw 'must not execu
         function Read-Host { param($Prompt) $messages.Add($Prompt); $answers.Dequeue() }
         function Get-EtbStartupUpdate {
             if ($state.Offline) { throw 'Offline' }
-            if ($state.Available) { [pscustomobject]@{ Local = '1.0.0'; Version = '2.0.0'; Commit = ('a' * 40); Notes = @('Latest device improvement') } }
+            if ($state.Available) { [pscustomobject]@{ Local = '1.0.0'; Version = '2.0.0'; Commit = ('a' * 40); Notes = @(
+                [pscustomobject]@{ Version = '2.0.0'; Changes = @('Latest device improvement') }
+                [pscustomobject]@{ Version = '1.5.0'; Changes = @('Missed improvement') }) } }
         }
         function Install-EtbStartupUpdate {
             param($AppRoot, $Commit)
@@ -82,7 +94,9 @@ $Script:IH_History = @(@{ Version = '1.0.0'; Changes = @($(throw 'must not execu
             $answers.Enqueue($answer)
             Assert ((Invoke-EtbStartupUpdate $root) -and $state.Installs -eq 0) 'No or Enter starts the installed version without Git writes'
         }
-        Assert ($messages.IndexOf('  - Latest device improvement') -lt $messages.IndexOf('Update now? Yes/No [No]')) 'the latest description is printed before requesting consent'
+        $prompt = $messages.IndexOf('Update now? Yes/No [No]')
+        Assert ($messages.Contains('Changes in the 2 releases since your version:') -and $messages.IndexOf('  v2.0.0') -lt $messages.IndexOf('    - Latest device improvement') -and
+            $messages.IndexOf('  v1.5.0') -lt $messages.IndexOf('    - Missed improvement') -and $messages.IndexOf('    - Missed improvement') -lt $prompt) 'every missed release is described, under its version, before requesting consent'
         $answers.Enqueue('invalid'); $answers.Enqueue('YES')
         Assert ((Invoke-EtbStartupUpdate $root) -and $state.Installs -eq 1) 'Yes installs once and permits launching the updated app'
         $state.Fail = $true

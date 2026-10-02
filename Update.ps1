@@ -2,8 +2,11 @@
 # Launch.cmd enters here before loading application code, which may be updated.
 param([Parameter(ValueFromRemainingArguments)][string[]]$LaunchArguments)
 
+# Release notes for every version after $Since up to $Version, newest first, so
+# someone several releases behind sees everything they missed. Without $Since,
+# only $Version itself.
 function Get-EtbUpdateNotes {
-    param([string]$Source, [string]$Version)
+    param([string]$Source, [string]$Version, [string]$Since)
     $errors = $null
     $ast = [Management.Automation.Language.Parser]::ParseInput($Source, [ref]$null, [ref]$errors)
     if ($errors.Count) { throw 'Release notes could not be parsed.' }
@@ -13,16 +16,20 @@ function Get-EtbUpdateNotes {
         $node.Left.VariablePath.UserPath -eq 'Script:IH_History'
     }, $true)
     if (-not $history) { throw 'Release notes were not found.' }
-    foreach ($table in $history.Right.FindAll({ param($node) $node -is [Management.Automation.Language.HashtableAst] }, $true)) {
+    $upto = [version]$Version
+    $after = if ($Since) { [version]$Since } else { $null }
+    $releases = foreach ($table in $history.Right.FindAll({ param($node) $node -is [Management.Automation.Language.HashtableAst] }, $true)) {
         $fields = @{}
         foreach ($pair in $table.KeyValuePairs) {
             if ($pair.Item1 -is [Management.Automation.Language.StringConstantExpressionAst]) {
                 $fields[$pair.Item1.Value] = $pair.Item2.PipelineElements[0].Expression
             }
         }
-        if ($fields.Version -isnot [Management.Automation.Language.StringConstantExpressionAst] -or $fields.Version.Value -ne $Version) { continue }
+        $release = $null
+        if ($fields.Version -isnot [Management.Automation.Language.StringConstantExpressionAst] -or -not [version]::TryParse($fields.Version.Value, [ref]$release)) { continue }
+        if ($release -gt $upto -or $(if ($after) { $release -le $after } else { $release -ne $upto })) { continue }
         if ($fields.Changes -isnot [Management.Automation.Language.ArrayExpressionAst]) { throw 'Release notes are not a literal list.' }
-        foreach ($statement in $fields.Changes.SubExpression.Statements) {
+        $changes = foreach ($statement in $fields.Changes.SubExpression.Statements) {
             $expression = $statement.PipelineElements[0].Expression
             $literals = if ($expression -is [Management.Automation.Language.ArrayLiteralAst]) { $expression.Elements } else { @($expression) }
             foreach ($literal in $literals) {
@@ -31,9 +38,10 @@ function Get-EtbUpdateNotes {
                 $literal.Value -replace '[\x00-\x1f\x7f-\x9f]', ' '
             }
         }
-        return
+        [pscustomobject]@{ Version = $release.ToString(); Changes = @($changes) }
     }
-    throw "No release notes for v$Version."
+    if (-not $releases) { throw "No release notes for v$Version." }
+    @($releases | Sort-Object { [version]$_.Version } -Descending)
 }
 
 function Get-EtbStartupUpdate {
@@ -48,8 +56,8 @@ function Get-EtbStartupUpdate {
     if ([version]$remoteText -le $local) { return $null }
     $notes = try {
         $source = [string](Invoke-RestMethod -Uri "$base/src/Tools/UpdateHistory.ps1" -TimeoutSec 8 -ErrorAction Stop)
-        @(Get-EtbUpdateNotes -Source $source -Version $remoteText)
-    } catch { @('Release description unavailable. See Update History after updating.') }
+        @(Get-EtbUpdateNotes -Source $source -Version $remoteText -Since $local.ToString())
+    } catch { @([pscustomobject]@{ Version = $remoteText; Changes = @('Release description unavailable. See Update History after updating.') }) }
     [pscustomobject]@{ Local = $local.ToString(); Version = $remoteText; Commit = $commit; Notes = @($notes) }
 }
 
@@ -131,8 +139,11 @@ function Invoke-EtbStartupUpdate {
         return $true
     }
     Write-Host "`nUpdate available: v$($update.Local) -> v$($update.Version)" -ForegroundColor Yellow
-    Write-Host 'Latest changes:'
-    foreach ($note in $update.Notes) { Write-Host "  - $note" }
+    Write-Host $(if ($update.Notes.Count -gt 1) { "Changes in the $($update.Notes.Count) releases since your version:" } else { 'Latest changes:' })
+    foreach ($release in $update.Notes) {
+        Write-Host "  v$($release.Version)" -ForegroundColor Cyan
+        foreach ($change in $release.Changes) { Write-Host "    - $change" }
+    }
     do { $answer = (Read-Host 'Update now? Yes/No [No]').Trim() } while ($answer -notmatch '^(y|yes|n|no)?$')
     if ($answer -notmatch '^(y|yes)$') {
         Write-Host '[startup] Update skipped. Opening the installed version.'
