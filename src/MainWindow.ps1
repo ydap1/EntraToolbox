@@ -622,8 +622,8 @@ $Script:MainXaml = @'
       </Grid>
     </Grid>
 
-    <!-- ── Log pane (slide-up) ──────────────────────────────────────────────── -->
-    <Grid Grid.Row="3" Visibility="Collapsed">
+    <!-- ── Log pane: open at start; Log / Ctrl+L hides it ───────────────────── -->
+    <Grid Grid.Row="3" Visibility="Visible">
       <Grid.RowDefinitions>
         <RowDefinition Height="4"/>
         <RowDefinition Height="180" MinHeight="60"/>
@@ -1209,6 +1209,7 @@ function Show-MainWindow {
     # LogPaneGrid is the parent Grid of the RichTextBox (LogPane → Grid → Grid → Grid)
     # Walk up: LogPane.Parent = Grid (inner), .Parent = Border, .Parent = Grid (outer)
     $Script:MainUI.LogPaneGrid = $Script:MainUI.LogPane.Parent.Parent.Parent
+    $Script:MainUI.BtnLog.Background = New-SolidBrush 'Accent'
 
     if ($AppVersion) {
         $Script:MainUI.Version.Text = "v$AppVersion"
