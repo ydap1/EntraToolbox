@@ -7,11 +7,4 @@ config/
 
 # Scratch / local-only files
 Reset-YearGroupPasswords.ps1
-initial.md
-HANDOVER.md
-REVIEW.md
-
-# Claude Code dev tooling
-.claude/
-CLAUDE.md
 docs/
