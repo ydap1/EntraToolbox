@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.39.1'
+        Date    = '2026-10-02'
+        Changes = @(
+            'Updates are no longer blocked by extra files in the toolbox folder; only edits to the toolbox''s own files stop an update, and they are now named'
+            'If an update cannot be installed and nothing was changed, the toolbox opens the installed version instead of closing'
+        )
+    }
+    @{
         Version = '0.39.0'
         Date    = '2026-10-02'
         Changes = @(
