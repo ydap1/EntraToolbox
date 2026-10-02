@@ -1,6 +1,9 @@
 <#
     ImmutableId.ps1 — assign onPremisesImmutableId to cloud-only Entra users.
 
+    The list starts empty: add all users, a department or an office location,
+    then search the list to see who already has an ImmutableId.
+
     Uses a per-row checkbox column so you can pick exactly which accounts get an
     ID.  The DataGrid uses IsHitTestVisible="False" on the checkbox so clicks
     pass through to a PreviewMouseLeftButtonDown handler at the Grid level that
@@ -12,9 +15,9 @@
 
 # ── Shared state ───────────────────────────────────────────────────────────────
 $Script:IID_UI           = @{}
-$Script:IID_Rows         = $null   # ObservableCollection[PSObject]
+$Script:IID_Rows         = [System.Collections.Generic.List[object]]::new()   # every user added to the list
+$Script:IID_AllUsers     = @()     # cloud-only members available to add
 $Script:IID_CheckboxCol  = $null   # reference to col 0 for hit-testing
-$Script:IID_LoadState    = @{ Done = $false; Users = $null; Error = $null }
 $Script:IID_ApplyTimer   = $null
 
 # ── New-ImmutableIdValue ───────────────────────────────────────────────────────
@@ -75,192 +78,156 @@ $Script:IID_Xaml = @'
       <Setter Property="Cursor" Value="Hand"/>
     </Style>
 
-    <Style TargetType="DataGrid">
-      <Setter Property="Background"           Value="#1C1C2A"/>
-      <Setter Property="Foreground"           Value="#E2E2F0"/>
-      <Setter Property="BorderBrush"          Value="#3C3C5A"/>
-      <Setter Property="BorderThickness"      Value="1"/>
-      <Setter Property="RowBackground"        Value="Transparent"/>
-      <Setter Property="AlternatingRowBackground" Value="#181826"/>
-      <Setter Property="GridLinesVisibility"  Value="Horizontal"/>
-      <Setter Property="HorizontalGridLinesBrush" Value="#1E1E32"/>
-      <Setter Property="SelectionMode"        Value="Single"/>
-      <Setter Property="SelectionUnit"        Value="FullRow"/>
-      <Setter Property="CanUserAddRows"       Value="False"/>
-      <Setter Property="CanUserDeleteRows"    Value="False"/>
-      <Setter Property="CanUserResizeRows"    Value="False"/>
-      <Setter Property="AutoGenerateColumns"  Value="False"/>
-      <Setter Property="HeadersVisibility"    Value="Column"/>
-      <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
-    </Style>
-
-    <Style TargetType="DataGridColumnHeader">
-      <Setter Property="Background"    Value="#242436"/>
-      <Setter Property="Foreground"    Value="#7878A0"/>
-      <Setter Property="FontSize"      Value="11"/>
-      <Setter Property="FontWeight"    Value="Bold"/>
-      <Setter Property="Padding"       Value="10,8"/>
-      <Setter Property="BorderBrush"   Value="#3C3C5A"/>
-      <Setter Property="BorderThickness" Value="0,0,1,1"/>
-    </Style>
-
-    <Style x:Key="DgRow" TargetType="DataGridRow">
-      <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="Foreground" Value="#E2E2F0"/>
-      <Setter Property="Cursor" Value="Hand"/>
-      <Style.Triggers>
-        <Trigger Property="IsMouseOver" Value="True">
-          <Setter Property="Background" Value="#1E1E32"/>
-        </Trigger>
-        <Trigger Property="IsSelected" Value="True">
-          <Setter Property="Background" Value="#2A2A50"/>
-        </Trigger>
-      </Style.Triggers>
-    </Style>
-
-    <Style x:Key="DgCell" TargetType="DataGridCell">
-      <Setter Property="Background"        Value="Transparent"/>
-      <Setter Property="Foreground"        Value="#E2E2F0"/>
-      <Setter Property="Padding"           Value="10,6"/>
-      <Setter Property="BorderThickness"   Value="0"/>
-      <Setter Property="VerticalAlignment" Value="Center"/>
-      <Setter Property="FocusVisualStyle"  Value="{x:Null}"/>
-      <Style.Triggers>
-        <Trigger Property="IsSelected" Value="True">
-          <Setter Property="Background" Value="Transparent"/>
-          <Setter Property="Foreground" Value="#E2E2F0"/>
-        </Trigger>
-      </Style.Triggers>
-    </Style>
-
   </Grid.Resources>
 
-  <Grid.RowDefinitions>
-    <RowDefinition Height="Auto"/>
-    <RowDefinition Height="Auto"/>
-    <RowDefinition Height="*"/>
-  </Grid.RowDefinitions>
+  <Grid.ColumnDefinitions>
+    <ColumnDefinition Width="260" MinWidth="200"/>
+    <ColumnDefinition Width="5"/>
+    <ColumnDefinition Width="*"/>
+  </Grid.ColumnDefinitions>
+  <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch"
+                Background="#3C3C5A" Cursor="SizeWE" ResizeBehavior="PreviousAndNext"/>
 
-  <!-- ── Title bar ──────────────────────────────────────────────────────── -->
-  <Border Grid.Row="0" Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1"
-          Padding="20,14">
-    <StackPanel>
-      <TextBlock Text="Immutable ID Assignment" Foreground="White"
-                 FontSize="16" FontWeight="Bold"/>
-      <TextBlock Margin="0,4,0,0" TextWrapping="Wrap" FontSize="12"
-                 Foreground="#7878A0"
-                 Text="Assign or remove the onPremisesImmutableId on cloud-only users. Use the checkboxes to select accounts, then generate and assign IDs — or remove an existing ID from selected users."/>
-    </StackPanel>
-  </Border>
-
-  <!-- ── Filter toolbar ─────────────────────────────────────────────────── -->
-  <Border Grid.Row="1" Background="#1A1A2C" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1"
-          Padding="16,10">
-    <WrapPanel Orientation="Horizontal">
-      <CheckBox x:Name="IidChkEmptyOnly" Content="Show only users without an existing ImmutableId"
-                IsChecked="True" Margin="0,0,24,0" VerticalAlignment="Center"/>
-      <CheckBox x:Name="IidChkOverwrite"
-                Content="Allow overwriting existing ImmutableIds  &#x26A0; permanent" Foreground="#FBBF24"
-                IsChecked="False" VerticalAlignment="Center"/>
-    </WrapPanel>
-  </Border>
-
-  <!-- ── Action toolbar ─────────────────────────────────────────────────── -->
-  <Border Grid.Row="2" Background="#1A1A2C" Padding="12,8">
-    <DockPanel LastChildFill="False">
-
-      <!-- Selection buttons + count -->
-      <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
-        <Button x:Name="IidBtnCheckAll" Content="Select All"
-                Style="{StaticResource Btn}" Background="#3C3C5A" Padding="10,6"
-                ToolTip="Mark every visible row for ID assignment"
-                IsEnabled="False" Margin="0,0,6,0"/>
-        <Button x:Name="IidBtnUncheckAll" Content="Deselect All"
-                Style="{StaticResource Btn}" Background="#3C3C5A" Padding="10,6"
-                ToolTip="Clear all row selections"
-                IsEnabled="False" Margin="0,0,16,0"/>
-        <TextBlock x:Name="IidLblCount" VerticalAlignment="Center"
-                   Foreground="#7878A0" FontSize="12"/>
+  <!-- ── Sidebar: choose who to list ─────────────────────────────────── -->
+  <Border Grid.Column="0" Background="#1C1C2A">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel x:Name="IidPicker" Margin="12" IsEnabled="False">
+        <TextBlock Text="The list starts empty. Add the users you want to check or change."
+                   Foreground="#7878A0" TextWrapping="Wrap" Margin="0,0,0,12"/>
+        <Button x:Name="IidBtnAddAll" Content="Add all users" Style="{StaticResource EtbAction}" Margin="0,0,0,16"/>
+        <TextBlock Text="Department" Foreground="#7878A0" Margin="0,0,0,6"/>
+        <ComboBox x:Name="IidDepartments" Style="{StaticResource EtbPopulationCombo}" AutomationProperties.Name="Department"/>
+        <Button x:Name="IidBtnAddDept" Content="Add department" Style="{StaticResource EtbAction}" Margin="0,8,0,16"/>
+        <TextBlock Text="Office location" Foreground="#7878A0" Margin="0,0,0,6"/>
+        <ComboBox x:Name="IidOffices" Style="{StaticResource EtbPopulationCombo}" AutomationProperties.Name="Office location"/>
+        <Button x:Name="IidBtnAddOffice" Content="Add office location" Style="{StaticResource EtbAction}" Margin="0,8,0,16"/>
+        <Button x:Name="IidBtnClear" Content="Clear list" Style="{StaticResource EtbAction}"/>
       </StackPanel>
-
-      <!-- Action buttons -->
-      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-        <Button x:Name="IidBtnGenerate"
-                Content="Generate IDs for selected rows"
-                Style="{StaticResource Btn}" Background="#6366F1" Padding="12,7"
-                ToolTip="Creates a new random Base64 ImmutableId for each checked row that does not yet have one generated"
-                IsEnabled="False" Margin="0,0,8,0"/>
-        <Button x:Name="IidBtnApply"
-                Content="Assign ImmutableIds to selected rows"
-                Style="{StaticResource Btn}" Background="#EF4444" Padding="12,7"
-                ToolTip="Permanently writes the generated ID to Entra for each checked row that has a generated ID ready"
-                IsEnabled="False" Margin="0,0,8,0"/>
-        <Button x:Name="IidBtnRemove"
-                Content="Remove ImmutableId from selected"
-                Style="{StaticResource Btn}" Background="#7F1D1D" Padding="12,7"
-                ToolTip="Clears onPremisesImmutableId (sets to null) on each checked row that currently has one"
-                IsEnabled="False"/>
-      </StackPanel>
-
-    </DockPanel>
+    </ScrollViewer>
   </Border>
 
-  <!-- ── DataGrid ───────────────────────────────────────────────────────── -->
-  <DataGrid x:Name="IidGrid" Grid.Row="3" Margin="12,10"
-            RowStyle="{StaticResource DgRow}"
-            CellStyle="{StaticResource DgCell}">
-    <DataGrid.Columns>
+  <Grid Grid.Column="2">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+    </Grid.RowDefinitions>
 
-      <!-- col 0: Include checkbox. IsHitTestVisible=False so clicks bubble up -->
-      <DataGridTemplateColumn Header="Include" Width="72" CanUserSort="True"
-                              SortMemberPath="Selected">
-        <DataGridTemplateColumn.CellTemplate>
-          <DataTemplate>
-            <CheckBox IsChecked="{Binding Selected, Mode=OneWay}"
-                      IsHitTestVisible="False"
-                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
-          </DataTemplate>
-        </DataGridTemplateColumn.CellTemplate>
-      </DataGridTemplateColumn>
+    <!-- ── Search and filter toolbar ──────────────────────────────────── -->
+    <Border Grid.Row="0" Background="#1A1A2C" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1"
+            Padding="16,10">
+      <Grid>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="260"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <TextBox x:Name="IidSearch" AutomationProperties.Name="Search the list by name or UPN"
+                 ToolTip="Search the list by name or UPN" VerticalAlignment="Center"/>
+        <WrapPanel Grid.Column="1" Orientation="Horizontal" Margin="16,0,0,0" VerticalAlignment="Center">
+          <CheckBox x:Name="IidChkEmptyOnly" Content="Hide users who already have an ImmutableId"
+                    IsChecked="False" Margin="0,0,24,0" VerticalAlignment="Center"/>
+          <CheckBox x:Name="IidChkOverwrite"
+                    Content="Allow overwriting existing ImmutableIds  &#x26A0; permanent" Foreground="#FBBF24"
+                    IsChecked="False" VerticalAlignment="Center"/>
+        </WrapPanel>
+      </Grid>
+    </Border>
 
-      <DataGridTextColumn Header="Display Name"         Binding="{Binding Name}"      Width="190"/>
-      <DataGridTextColumn Header="User Principal Name"  Binding="{Binding Upn}"       Width="250"/>
-      <DataGridTextColumn Header="Current ImmutableId"  Binding="{Binding CurrentId}" Width="210"
-                          Foreground="#7878A0"/>
-      <DataGridTextColumn Header="New ImmutableId (to be assigned)" Binding="{Binding NewId}" Width="*"/>
+    <!-- ── Action toolbar ─────────────────────────────────────────────── -->
+    <Border Grid.Row="1" Background="#1A1A2C" Padding="12,8">
+      <DockPanel LastChildFill="False">
 
-      <!-- Status with colour-coded text -->
-      <DataGridTemplateColumn Header="Status" Width="120">
-        <DataGridTemplateColumn.CellTemplate>
-          <DataTemplate>
-            <TextBlock Text="{Binding Status}" FontWeight="SemiBold" FontSize="11"
-                       Padding="4,2" VerticalAlignment="Center">
-              <TextBlock.Style>
-                <Style TargetType="TextBlock">
-                  <Setter Property="Foreground" Value="#7878A0"/>
-                  <Style.Triggers>
-                    <DataTrigger Binding="{Binding Status}" Value="Ready">
-                      <Setter Property="Foreground" Value="#6366F1"/>
-                    </DataTrigger>
-                    <DataTrigger Binding="{Binding Status}" Value="Assigned">
-                      <Setter Property="Foreground" Value="#22C55E"/>
-                    </DataTrigger>
-                    <DataTrigger Binding="{Binding Status}" Value="Error">
-                      <Setter Property="Foreground" Value="#EF4444"/>
-                    </DataTrigger>
-                    <DataTrigger Binding="{Binding Status}" Value="Removed">
-                      <Setter Property="Foreground" Value="#94A3B8"/>
-                    </DataTrigger>
-                  </Style.Triggers>
-                </Style>
-              </TextBlock.Style>
-            </TextBlock>
-          </DataTemplate>
-        </DataGridTemplateColumn.CellTemplate>
-      </DataGridTemplateColumn>
+        <!-- Selection buttons + count -->
+        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+          <Button x:Name="IidBtnCheckAll" Content="Select All"
+                  Style="{StaticResource Btn}" Background="#3C3C5A" Padding="10,6"
+                  ToolTip="Tick every row shown by the current search"
+                  IsEnabled="False" Margin="0,0,6,0"/>
+          <Button x:Name="IidBtnUncheckAll" Content="Deselect All"
+                  Style="{StaticResource Btn}" Background="#3C3C5A" Padding="10,6"
+                  ToolTip="Untick every row shown by the current search"
+                  IsEnabled="False" Margin="0,0,16,0"/>
+          <TextBlock x:Name="IidLblCount" VerticalAlignment="Center"
+                     Foreground="#7878A0" FontSize="12"/>
+        </StackPanel>
 
-    </DataGrid.Columns>
-  </DataGrid>
+        <!-- Action buttons -->
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+          <Button x:Name="IidBtnGenerate"
+                  Content="Generate IDs for selected rows"
+                  Style="{StaticResource Btn}" Background="#6366F1" Padding="12,7"
+                  ToolTip="Creates a new random Base64 ImmutableId for each checked row that does not yet have one generated"
+                  IsEnabled="False" Margin="0,0,8,0"/>
+          <Button x:Name="IidBtnApply"
+                  Content="Assign ImmutableIds to selected rows"
+                  Style="{StaticResource Btn}" Background="#EF4444" Padding="12,7"
+                  ToolTip="Permanently writes the generated ID to Entra for each checked row that has a generated ID ready"
+                  IsEnabled="False" Margin="0,0,8,0"/>
+          <Button x:Name="IidBtnRemove"
+                  Content="Remove ImmutableId from selected"
+                  Style="{StaticResource Btn}" Background="#7F1D1D" Padding="12,7"
+                  ToolTip="Clears onPremisesImmutableId (sets to null) on each checked row that currently has one"
+                  IsEnabled="False"/>
+        </StackPanel>
+
+      </DockPanel>
+    </Border>
+
+    <!-- ── DataGrid ─────────────────────────────────────────────────────── -->
+    <DataGrid x:Name="IidGrid" Grid.Row="2" Margin="12,10" CanUserSortColumns="True"
+              RowStyle="{StaticResource DgRow}" CellStyle="{StaticResource DgCell}"
+              VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+      <DataGrid.Columns>
+
+        <!-- col 0: Include checkbox. IsHitTestVisible=False so clicks bubble up -->
+        <DataGridTemplateColumn Header="Include" Width="72" SortMemberPath="Selected">
+          <DataGridTemplateColumn.CellTemplate>
+            <DataTemplate>
+              <CheckBox IsChecked="{Binding Selected, Mode=OneWay}"
+                        IsHitTestVisible="False"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </DataTemplate>
+          </DataGridTemplateColumn.CellTemplate>
+        </DataGridTemplateColumn>
+
+        <DataGridTextColumn Header="Display Name"         Binding="{Binding Name}"       Width="170" SortMemberPath="Name"/>
+        <DataGridTextColumn Header="User Principal Name"  Binding="{Binding Upn}"        Width="230" SortMemberPath="Upn"/>
+        <DataGridTextColumn Header="Department"           Binding="{Binding Department}" Width="100" SortMemberPath="Department"/>
+        <DataGridTextColumn Header="Office"               Binding="{Binding Office}"     Width="110" SortMemberPath="Office"/>
+        <DataGridTextColumn Header="Current ImmutableId"  Binding="{Binding CurrentId}"  Width="200" SortMemberPath="CurrentId"
+                            Foreground="#7878A0"/>
+        <DataGridTextColumn Header="New ImmutableId (to be assigned)" Binding="{Binding NewId}" Width="*" SortMemberPath="NewId"/>
+
+        <!-- Status with colour-coded text -->
+        <DataGridTemplateColumn Header="Status" Width="110" SortMemberPath="Status">
+          <DataGridTemplateColumn.CellTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding Status}" FontWeight="SemiBold" FontSize="11"
+                         Padding="4,2" VerticalAlignment="Center">
+                <TextBlock.Style>
+                  <Style TargetType="TextBlock">
+                    <Setter Property="Foreground" Value="#7878A0"/>
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding Status}" Value="Ready">
+                        <Setter Property="Foreground" Value="#6366F1"/>
+                      </DataTrigger>
+                      <DataTrigger Binding="{Binding Status}" Value="Assigned">
+                        <Setter Property="Foreground" Value="#22C55E"/>
+                      </DataTrigger>
+                      <DataTrigger Binding="{Binding Status}" Value="Error">
+                        <Setter Property="Foreground" Value="#EF4444"/>
+                      </DataTrigger>
+                      <DataTrigger Binding="{Binding Status}" Value="Removed">
+                        <Setter Property="Foreground" Value="#94A3B8"/>
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </TextBlock.Style>
+              </TextBlock>
+            </DataTemplate>
+          </DataGridTemplateColumn.CellTemplate>
+        </DataGridTemplateColumn>
+
+      </DataGrid.Columns>
+    </DataGrid>
+  </Grid>
 
 </Grid>
 '@
@@ -278,6 +245,8 @@ function New-IidRow {
         Id          = $User.id
         Name        = $User.displayName
         Upn         = $User.userPrincipalName
+        Department  = $User.department
+        Office      = $User.officeLocation
         CurrentId   = if ($CurrentId) { $CurrentId } else { '—' }
         HasExisting = [bool]$CurrentId
         NewId       = $NewId
@@ -286,43 +255,57 @@ function New-IidRow {
     }
 }
 
-# ── Rebuild rows from raw load ─────────────────────────────────────────────────
-function Rebuild-IidRows {
-    if (-not $Script:IID_LoadState.Done -or -not $Script:IID_LoadState.Users) { return }
-    $emptyOnly = $Script:IID_UI.ChkEmptyOnly.IsChecked
-
-    # Preserve existing per-user selections and generated IDs
-    $prevSel = @{}
-    $prevNew = @{}
-    if ($Script:IID_Rows) {
-        foreach ($r in $Script:IID_Rows) {
-            $prevSel[$r.Id] = $r.Selected
-            $prevNew[$r.Id] = $r.NewId
-        }
+# Rows matching the search text and the hide-existing filter.
+function Select-IidRows {
+    param([object[]]$Rows, [string]$Query, [bool]$HideExisting)
+    foreach ($r in $Rows) {
+        if ($HideExisting -and $r.HasExisting) { continue }
+        if ($Query -and "$($r.Name)".IndexOf($Query, [StringComparison]::OrdinalIgnoreCase) -lt 0 -and
+            "$($r.Upn)".IndexOf($Query, [StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
+        $r
     }
+}
 
-    $Script:IID_Rows.Clear()
-    foreach ($u in $Script:IID_LoadState.Users) {
+# Adds users to the list, skipping anyone already in it. Users without an
+# ImmutableId start ticked, as they are the usual target.
+function Add-IidUsers {
+    param([object[]]$Users)
+    $listed = [System.Collections.Generic.HashSet[string]]::new([string[]]@($Script:IID_Rows | ForEach-Object Id))
+    $added = 0
+    foreach ($u in $Users) {
+        if (-not $u.id -or -not $listed.Add($u.id)) { continue }
         $cid = $u.onPremisesImmutableId
-        if ($emptyOnly -and $cid) { continue }
-        $defaultSel = -not [bool]$cid
-        $sel = if ($prevSel.ContainsKey($u.id)) { $prevSel[$u.id] } else { $defaultSel }
-        $nid = if ($prevNew.ContainsKey($u.id))  { $prevNew[$u.id]  } else { '' }
-        $Script:IID_Rows.Add((New-IidRow -User $u -Selected $sel -CurrentId $cid -NewId $nid))
+        $Script:IID_Rows.Add((New-IidRow -User $u -Selected (-not [bool]$cid) -CurrentId $cid))
+        $added++
     }
+    Update-IidView
+    Write-IidLog "Immutable ID: added $added user(s) to the list$(if ($Users.Count -gt $added) { "; $($Users.Count - $added) already listed" })." 'TextDim'
+}
 
-    $Script:IID_UI.Grid.Items.Refresh()
+# Shows the filtered rows, keeping the user's column sort.
+function Update-IidView {
+    $grid  = $Script:IID_UI.Grid
+    $sorts = @($grid.Items.SortDescriptions)
+    $dirs  = @{}
+    foreach ($col in $grid.Columns) { if ($null -ne $col.SortDirection) { $dirs[$col.SortMemberPath] = $col.SortDirection } }
+    $shown = @(Select-IidRows -Rows $Script:IID_Rows -Query $Script:IID_UI.Search.Text.Trim() -HideExisting ([bool]$Script:IID_UI.ChkEmptyOnly.IsChecked))
+    $grid.ItemsSource = [System.Collections.Generic.List[object]]::new([object[]]$shown)
+    foreach ($sort in $sorts) { $grid.Items.SortDescriptions.Add($sort) }
+    foreach ($col in $grid.Columns) { if ($dirs.ContainsKey($col.SortMemberPath)) { $col.SortDirection = $dirs[$col.SortMemberPath] } }
     Update-IidCounts
 }
 
 # ── Count / button state ───────────────────────────────────────────────────────
 function Update-IidCounts {
     $total      = $Script:IID_Rows.Count
+    $shown      = if ($Script:IID_UI.Grid.ItemsSource) { $Script:IID_UI.Grid.ItemsSource.Count } else { 0 }
     $checked    = ($Script:IID_Rows | Where-Object Selected).Count
     $ready      = ($Script:IID_Rows | Where-Object { $_.Selected -and $_.NewId -and $_.NewId -ne '' }).Count
     $removable  = ($Script:IID_Rows | Where-Object { $_.Selected -and $_.HasExisting }).Count
 
-    $Script:IID_UI.LblCount.Text = "$total shown  ·  $checked selected  ·  $ready ready to assign"
+    $Script:IID_UI.LblCount.Text = if ($total) { "$total in list  ·  $shown shown  ·  $checked selected  ·  $ready ready to assign" } else { 'No users in the list yet.' }
+    $Script:IID_UI.BtnCheckAll.IsEnabled   = $shown -gt 0
+    $Script:IID_UI.BtnUncheckAll.IsEnabled = $shown -gt 0
 
     $anyPending = ($Script:IID_Rows | Where-Object { $_.Selected -and (-not $_.NewId -or $_.NewId -eq '') }).Count -gt 0
     $Script:IID_UI.BtnGenerate.IsEnabled = $anyPending
@@ -333,7 +316,7 @@ function Update-IidCounts {
 # ── Select All / Deselect All ─────────────────────────────────────────────────
 function Set-IidAllSelected {
     param([bool]$Value)
-    foreach ($r in $Script:IID_Rows) { $r.Selected = $Value }
+    foreach ($r in $Script:IID_UI.Grid.ItemsSource) { $r.Selected = $Value }
     $Script:IID_UI.Grid.Items.Refresh()
     Update-IidCounts
 }
@@ -574,56 +557,45 @@ Type YES (all capitals) to confirm.
     }
 }
 
-# ── Load from Graph (async) ────────────────────────────────────────────────────
+# ── Load users (shared cache) ──────────────────────────────────────────────────
 function Start-IidLoad {
-    $Script:IID_Rows.Clear()
-    $Script:IID_UI.Grid.Items.Refresh()
-    $Script:IID_UI.LblCount.Text           = 'Loading users…'
-    $Script:IID_UI.BtnGenerate.IsEnabled   = $false
-    $Script:IID_UI.BtnApply.IsEnabled      = $false
-    $Script:IID_UI.BtnCheckAll.IsEnabled   = $false
-    $Script:IID_UI.BtnUncheckAll.IsEnabled = $false
-    Write-IidLog 'Loading cloud-only users from Entra…' 'Accent'
-
+    $Script:IID_UI.Picker.IsEnabled = $false
+    $Script:IID_UI.LblCount.Text    = 'Loading users…'
     Request-EtbUsers -OnReady 'Complete-IidLoad'
 }
 
 function Complete-IidLoad {
     try {
         if ($Script:UserCache.Error) {
-            Write-IidLog "Load failed: $($Script:UserCache.Error)" 'Danger'
-            Write-Log "ImmutableId: load error: $($Script:UserCache.Error)" 'ERROR'
+            Write-IidLog "Immutable ID: load failed: $($Script:UserCache.Error)" 'Danger'
             $Script:IID_UI.LblCount.Text = 'Load failed.'
             return
         }
-        $Script:IID_LoadState.Users = @($Script:UserCache.Users | Where-Object {
-            $_.userType -eq 'Member' -and -not $_.onPremisesSyncEnabled
-        })
-        $Script:IID_LoadState.Done  = $true
-        Write-Log "ImmutableId: loaded $($Script:IID_LoadState.Users.Count) cloud-only members" 'INFO'
-        Rebuild-IidRows
-        $Script:IID_UI.BtnCheckAll.IsEnabled   = $true
-        $Script:IID_UI.BtnUncheckAll.IsEnabled = $true
-        Write-IidLog "Loaded $($Script:IID_Rows.Count) user(s)." 'Success'
+        Set-IidUsers @($Script:UserCache.Users | Where-Object { $_.userType -eq 'Member' -and -not $_.onPremisesSyncEnabled })
     } catch {
         Write-Log "ImmutableId load error: $_" 'ERROR'
     }
 }
 
+function Set-IidUsers {
+    param([object[]]$Users)
+    $Script:IID_AllUsers = $Users
+    Set-EtbPopulationCombo -ComboBox $Script:IID_UI.Departments -Users $Users -Mode Department
+    Set-EtbPopulationCombo -ComboBox $Script:IID_UI.Offices -Users $Users -Mode OfficeLocation
+    $Script:IID_UI.Picker.IsEnabled = $true
+    Update-IidCounts
+    Write-Log "ImmutableId: $($Users.Count) cloud-only members available" 'INFO'
+}
+
 # ── Demo stubs ─────────────────────────────────────────────────────────────────
 function Start-IidLoadDemo {
-    $Script:IID_LoadState.Users = @(
-        [PSCustomObject]@{ id='u1'; displayName='Alice Johnson'; userPrincipalName='alice@contoso.academy'; onPremisesImmutableId='';         onPremisesSyncEnabled=$false }
-        [PSCustomObject]@{ id='u2'; displayName='Bob Smith';     userPrincipalName='bob@contoso.academy';   onPremisesImmutableId='';         onPremisesSyncEnabled=$false }
-        [PSCustomObject]@{ id='u3'; displayName='Carol White';   userPrincipalName='carol@contoso.academy'; onPremisesImmutableId='abc123=='; onPremisesSyncEnabled=$false }
-        [PSCustomObject]@{ id='u4'; displayName='Dave Brown';    userPrincipalName='dave@contoso.academy';  onPremisesImmutableId='';         onPremisesSyncEnabled=$false }
-        [PSCustomObject]@{ id='u5'; displayName='Emma Davis';    userPrincipalName='emma@contoso.academy';  onPremisesImmutableId='xyz987=='; onPremisesSyncEnabled=$false }
-    )
-    $Script:IID_LoadState.Done = $true
-    Rebuild-IidRows
-    $Script:IID_UI.BtnCheckAll.IsEnabled   = $true
-    $Script:IID_UI.BtnUncheckAll.IsEnabled = $true
-    Write-IidLog '[DEMO] 5 Contoso Academy users loaded (2 already have an ImmutableId).' 'TextDim'
+    # Every fourth demo user already has an ID, so search and the hide filter have something to show.
+    $i = 0
+    Set-IidUsers @($Script:Demo_Users | ForEach-Object {
+        $u = $_ | Select-Object *
+        $u | Add-Member -NotePropertyName onPremisesImmutableId -NotePropertyValue $(if (($i++ % 4) -eq 0) { New-ImmutableIdValue } else { '' }) -Force
+        $u
+    })
 }
 
 function Start-IidApplyDemo {
@@ -663,6 +635,14 @@ function Initialize-ImmutableIdTool {
 
     $Script:IID_UI = @{
         Grid          = $panel.FindName('IidGrid')
+        Picker        = $panel.FindName('IidPicker')
+        BtnAddAll     = $panel.FindName('IidBtnAddAll')
+        Departments   = $panel.FindName('IidDepartments')
+        BtnAddDept    = $panel.FindName('IidBtnAddDept')
+        Offices       = $panel.FindName('IidOffices')
+        BtnAddOffice  = $panel.FindName('IidBtnAddOffice')
+        BtnClear      = $panel.FindName('IidBtnClear')
+        Search        = $panel.FindName('IidSearch')
         LblCount      = $panel.FindName('IidLblCount')
         BtnGenerate   = $panel.FindName('IidBtnGenerate')
         BtnApply      = $panel.FindName('IidBtnApply')
@@ -674,8 +654,6 @@ function Initialize-ImmutableIdTool {
         # Log removed — use the global Log pane
     }
 
-    $Script:IID_Rows = [System.Collections.ObjectModel.ObservableCollection[PSObject]]::new()
-    $Script:IID_UI.Grid.ItemsSource = $Script:IID_Rows
     $Script:IID_CheckboxCol = $Script:IID_UI.Grid.Columns[0]
 
     # ── Checkbox toggle: PreviewMouseLeftButtonDown on the Grid ────────────────
@@ -706,10 +684,23 @@ function Initialize-ImmutableIdTool {
     })
 
     $Script:IID_UI.ChkEmptyOnly.Add_Checked({
-        try { Rebuild-IidRows } catch { Write-Log "IID EmptyOnly checked error: $_" 'ERROR' }
+        try { Update-IidView } catch { Write-Log "IID EmptyOnly checked error: $_" 'ERROR' }
     })
     $Script:IID_UI.ChkEmptyOnly.Add_Unchecked({
-        try { Rebuild-IidRows } catch { Write-Log "IID EmptyOnly unchecked error: $_" 'ERROR' }
+        try { Update-IidView } catch { Write-Log "IID EmptyOnly unchecked error: $_" 'ERROR' }
+    })
+    $Script:IID_UI.Search.Add_TextChanged({ Invoke-EtbDebounced -Key 'IID_Search' -Command 'Update-IidView' })
+    $Script:IID_UI.BtnAddAll.Add_Click({
+        try { Add-IidUsers $Script:IID_AllUsers } catch { Write-Log "IID add all error: $_" 'ERROR' }
+    })
+    $Script:IID_UI.BtnAddDept.Add_Click({
+        try { Add-IidUsers @($Script:IID_UI.Departments.SelectedItem.DataContext.Users) } catch { Write-Log "IID add department error: $_" 'ERROR' }
+    })
+    $Script:IID_UI.BtnAddOffice.Add_Click({
+        try { Add-IidUsers @($Script:IID_UI.Offices.SelectedItem.DataContext.Users) } catch { Write-Log "IID add office error: $_" 'ERROR' }
+    })
+    $Script:IID_UI.BtnClear.Add_Click({
+        try { $Script:IID_Rows.Clear(); Update-IidView } catch { Write-Log "IID clear error: $_" 'ERROR' }
     })
     $Script:IID_UI.ChkOverwrite.Add_Checked({
         try { Write-IidLog 'Overwrite enabled — existing ImmutableIds may be replaced.' 'Warning' } catch {}
@@ -742,8 +733,11 @@ function Initialize-ImmutableIdTool {
         try {
             if ($Script:IID_ApplyTimer) { $Script:IID_ApplyTimer.Stop(); $Script:IID_ApplyTimer = $null }
             $Script:IID_Rows.Clear()
-            $Script:IID_LoadState.Done  = $false
-            $Script:IID_LoadState.Users = $null
+            $Script:IID_AllUsers = @()
+            $Script:IID_UI.Grid.ItemsSource = $null
+            $Script:IID_UI.Search.Text = ''
+            $Script:IID_UI.Picker.IsEnabled = $false
+            foreach ($combo in 'Departments','Offices') { $Script:IID_UI[$combo].Items.Clear(); $Script:IID_UI[$combo].IsEnabled = $false }
             $Script:IID_UI.LblCount.Text             = ''
             $Script:IID_UI.BtnGenerate.IsEnabled     = $false
             $Script:IID_UI.BtnApply.IsEnabled        = $false

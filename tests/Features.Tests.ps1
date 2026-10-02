@@ -262,6 +262,20 @@ try {
         $Script:TE_UI = $null; $Script:TE_Rows.Clear()
     }
     & {
+        Assert ($Script:IID_Rows.Count -eq 0) 'the immutable ID list starts empty'
+        function Update-IidView { }
+        function Write-AppLog { param($Msg, $Color) }
+        $people = @(
+            [pscustomobject]@{ id='a'; displayName='Ann'; userPrincipalName='ann@school.test'; department='7A'; officeLocation='Year 7'; onPremisesImmutableId='' }
+            [pscustomobject]@{ id='b'; displayName='Ben'; userPrincipalName='ben@school.test'; department='Staff'; officeLocation='Main'; onPremisesImmutableId='abc==' }
+        )
+        Add-IidUsers @($people[0])
+        Add-IidUsers $people
+        Assert ($Script:IID_Rows.Count -eq 2 -and $Script:IID_Rows[0].Selected -and -not $Script:IID_Rows[1].Selected -and $Script:IID_Rows[1].HasExisting -and $Script:IID_Rows[0].Office -eq 'Year 7') 'adding overlapping groups lists each user once, ticking only those without an ImmutableId'
+        Assert ((@(Select-IidRows $Script:IID_Rows 'BEN@' $false).Name -join ',') -eq 'Ben' -and @(Select-IidRows $Script:IID_Rows 'ben' $true).Count -eq 0 -and @(Select-IidRows $Script:IID_Rows '' $false).Count -eq 2) 'immutable ID search matches name or UPN and can hide users who already have one'
+        $Script:IID_Rows.Clear()
+    }
+    & {
         $jobs = [Collections.Generic.List[object]]::new()
         function Start-AsyncWork { param($Vars, $RefSeed, $Script, $OnComplete); $jobs.Add(@{ Vars=$Vars; Ref=$RefSeed; Script=$Script; OnComplete=$OnComplete }) }
         function Request-EtbUsers { param($OnReady) }
