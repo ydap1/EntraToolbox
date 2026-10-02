@@ -64,7 +64,7 @@ $Script:IH_History = @(@{ Version = '1.0.0'; Changes = @($(throw 'must not execu
     & {
         $messages = [Collections.Generic.List[string]]::new()
         $answers = [Collections.Generic.Queue[string]]::new()
-        $state = @{ Installs = 0; Available = $true; Offline = $false; Fail = $false }
+        $state = @{ Installs = 0; Available = $true; Offline = $false; Fail = $false; Partial = $false; Changed = $false }
         function Write-Host { param($Object, $ForegroundColor) $messages.Add([string]$Object) }
         function Read-Host { param($Prompt) $messages.Add($Prompt); $answers.Dequeue() }
         function Get-EtbStartupUpdate {
@@ -74,8 +74,10 @@ $Script:IH_History = @(@{ Version = '1.0.0'; Changes = @($(throw 'must not execu
         function Install-EtbStartupUpdate {
             param($AppRoot, $Commit)
             $state.Installs++
+            if ($state.Partial) { $state.Changed = $true }
             if ($state.Fail) { throw 'Local edits' }
         }
+        function Get-EtbInstallState { param($AppRoot) if ($state.Changed) { 'after' } else { 'before' } }
         foreach ($answer in 'No', '', 'n') {
             $answers.Enqueue($answer)
             Assert ((Invoke-EtbStartupUpdate $root) -and $state.Installs -eq 0) 'No or Enter starts the installed version without Git writes'
@@ -85,7 +87,11 @@ $Script:IH_History = @(@{ Version = '1.0.0'; Changes = @($(throw 'must not execu
         Assert ((Invoke-EtbStartupUpdate $root) -and $state.Installs -eq 1) 'Yes installs once and permits launching the updated app'
         $state.Fail = $true
         $answers.Enqueue('y')
-        Assert (-not (Invoke-EtbStartupUpdate $root)) 'an unsuccessful update prevents launching potentially partial files'
+        Assert ((Invoke-EtbStartupUpdate $root) -and $messages -match 'No application files were changed') 'a refused update still opens the unchanged installed version'
+        $state.Partial = $true
+        $answers.Enqueue('y')
+        Assert (-not (Invoke-EtbStartupUpdate $root)) 'an update that stopped part-way prevents launching potentially partial files'
+        $state.Partial = $false; $state.Changed = $false
         $state.Available = $false
         Assert (Invoke-EtbStartupUpdate $root) 'up-to-date startup does not ask for input'
         $state.Offline = $true
@@ -119,10 +125,12 @@ $Script:IH_History = @(@{ Version = '1.0.0'; Changes = @($(throw 'must not execu
             if ($Arguments[0] -eq 'fetch') { return & $realGit $AppRoot @('fetch', '--no-tags', $origin, 'main') }
             & $realGit $AppRoot $Arguments
         }
+        Set-Content (Join-Path $checkout 'version.txt') 'edited locally'
+        $before = Get-EtbInstallState $checkout
+        Assert-Throws { Install-EtbStartupUpdate $checkout $tip } 'edited locally: version.txt'
+        Assert ((Get-EtbInstallState $checkout) -eq $before) 'a refused update leaves the installed state unchanged'
+        $null = Invoke-EtbUpdateGit $checkout @('checkout', '--', 'version.txt')
         Set-Content (Join-Path $checkout 'notes.txt') 'local notes'
-        Assert-Throws { Install-EtbStartupUpdate $checkout $tip } 'Local changes'
-        Assert ((Get-Content (Join-Path $checkout 'notes.txt')) -eq 'local notes') 'untracked user files remain untouched'
-        Remove-Item (Join-Path $checkout 'notes.txt')
         $null = Invoke-EtbUpdateGit $checkout @('switch', '-c', 'feature')
         Assert-Throws { Install-EtbStartupUpdate $checkout $tip } 'only run on main'
         $null = Invoke-EtbUpdateGit $checkout @('switch', 'main')
@@ -130,6 +138,7 @@ $Script:IH_History = @(@{ Version = '1.0.0'; Changes = @($(throw 'must not execu
         Install-EtbStartupUpdate $checkout $tip
         Assert ((Get-Content (Join-Path $checkout 'version.txt')) -eq '2.0.0' -and (Invoke-EtbUpdateGit $checkout @('rev-parse', 'HEAD')) -eq $tip) 'a clean Git clone fast-forwards to exactly the reviewed commit'
         Assert ((Get-Content (Join-Path $checkout 'config/tenants.json')) -eq 'keep tenant configuration') 'updates preserve ignored tenant configuration'
+        Assert ((Get-Content (Join-Path $checkout 'notes.txt')) -eq 'local notes') 'untracked user files do not block an update and remain untouched'
         $null = Invoke-EtbUpdateGit $origin @('commit', '--amend', '-m', 'test: rewrite published history')
         $rewritten = Invoke-EtbUpdateGit $origin @('rev-parse', 'HEAD')
         Assert-Throws { Install-EtbStartupUpdate $checkout $rewritten } 'Installed Git history has diverged'

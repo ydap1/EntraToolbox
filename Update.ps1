@@ -95,7 +95,13 @@ function Install-EtbStartupUpdate {
     if ($branch -ne 'main') { throw 'Automatic updates only run on main. Your current branch has not been changed.' }
     $remote = Invoke-EtbUpdateGit $AppRoot @('remote', 'get-url', 'origin')
     if ($remote -notmatch '^(https://github\.com/|git@github\.com:)ydap1/EntraToolbox(\.git)?/?$') { throw 'Origin does not point to the official EntraToolbox repository.' }
-    if (Invoke-EtbUpdateGit $AppRoot @('status', '--porcelain', '--untracked-files=all')) { throw 'Local changes or untracked files found. Commit or move them before updating; nothing has been reset.' }
+    # Untracked files are left alone: the fast-forward below refuses, before
+    # writing anything, if the update would overwrite one.
+    $edited = Invoke-EtbUpdateGit $AppRoot @('status', '--porcelain', '--untracked-files=no')
+    if ($edited) {
+        $files = @($edited -split "`n" | ForEach-Object { $_ -replace '^\s*\S{1,2}\s+', '' })
+        throw "Application files were edited locally: $(($files | Select-Object -First 5) -join ', ')$(if ($files.Count -gt 5) { ' …' }). Undo those edits (git checkout -- <file>) or commit them, then update again. Nothing was changed."
+    }
     $null = Invoke-EtbUpdateGit $AppRoot @('fetch', '--no-tags', 'origin', 'main')
     $fetched = Invoke-EtbUpdateGit $AppRoot @('rev-parse', 'FETCH_HEAD')
     if ($fetched -ne $Commit) { throw 'The available update changed while the prompt was open. Relaunch to review the latest description.' }
@@ -103,6 +109,14 @@ function Install-EtbStartupUpdate {
     # Refuse to overwrite even ignored files if a release starts tracking them.
     $null = Invoke-EtbUpdateGit $AppRoot @('merge', '--ff-only', '--no-edit', '--no-overwrite-ignore', $Commit)
     if ((Invoke-EtbUpdateGit $AppRoot @('rev-parse', 'HEAD')) -ne $Commit) { throw 'The installed revision could not be verified.' }
+}
+
+# Commit plus tracked-file state, to tell whether a failed update changed anything.
+function Get-EtbInstallState {
+    param([string]$AppRoot)
+    try {
+        (Invoke-EtbUpdateGit $AppRoot @('rev-parse', 'HEAD')) + "`n" + (Invoke-EtbUpdateGit $AppRoot @('status', '--porcelain', '--untracked-files=no'))
+    } catch { $null }
 }
 
 function Invoke-EtbStartupUpdate {
@@ -125,13 +139,20 @@ function Invoke-EtbStartupUpdate {
         return $true
     }
     Write-Host '[startup] Updating…' -ForegroundColor Yellow
+    $before = Get-EtbInstallState $AppRoot
     try {
         Install-EtbStartupUpdate -AppRoot $AppRoot -Commit $update.Commit
         Write-Host "[startup] Updated to v$($update.Version). Starting Entra Toolbox." -ForegroundColor Green
         return $true
     } catch {
         Write-Host "[startup] Update not completed: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host 'The app will not start after an unsuccessful update. Resolve the issue and relaunch, or choose No to use the installed version.' -ForegroundColor Yellow
+        # Most failures are refusals made before any file is written; the
+        # installed version is then intact and safe to open.
+        if ((Get-EtbInstallState $AppRoot) -eq $before) {
+            Write-Host "[startup] No application files were changed. Opening the installed version v$($update.Local)." -ForegroundColor Yellow
+            return $true
+        }
+        Write-Host 'The update stopped part-way, so the app will not start. Resolve the issue and relaunch, or choose No to use the installed version.' -ForegroundColor Yellow
         return $false
     }
 }
