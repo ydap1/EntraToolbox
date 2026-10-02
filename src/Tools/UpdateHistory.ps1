@@ -10,6 +10,17 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.39.0'
+        Date    = '2026-10-02'
+        Changes = @(
+            'Immutable ID starts with an empty list: add all users, a department or an office location, then search by name or username to see who already has an ImmutableId'
+            'Immutable ID shows each user''s department and office, every column can be sorted, and the grid no longer covers its action buttons'
+            'The activity log is open when the toolbox starts; hide it with Log or Ctrl+L'
+            'Sidebar tools are visibly grouped under their category'
+            'Date pickers in Sign-In Logs and Change History follow the colour theme'
+        )
+    }
+    @{
         Version = '0.38.0'
         Date    = '2026-09-29'
         Changes = @(
