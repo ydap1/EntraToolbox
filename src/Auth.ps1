@@ -864,6 +864,132 @@ $Script:ThemeSharedStyles = [ordered]@{
   </Setter>
 </Style>
 "@
+    # Added only to documents containing a DatePicker (see Invoke-ThemeXaml). The stock
+    # calendar template hard-codes a white frame and dark text, so it is replaced whole.
+    '<Style x:Key="EtbCalendarDay"' = @"
+<Style x:Key="EtbCalendarDay" TargetType="CalendarDayButton">
+  <Setter Property="Foreground" Value="$($Script:Theme.Text)"/>
+  <Setter Property="FontSize" Value="12"/>
+  <Setter Property="MinWidth" Value="30"/>
+  <Setter Property="MinHeight" Value="26"/>
+  <Setter Property="Cursor" Value="Hand"/>
+  <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CalendarDayButton">
+    <Border x:Name="Bd" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="4" Margin="1">
+      <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="4,2"/>
+    </Border>
+    <ControlTemplate.Triggers>
+      <Trigger Property="IsInactive" Value="True"><Setter Property="Foreground" Value="$($Script:Theme.Muted)"/></Trigger>
+      <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="$($Script:Theme.Hover)"/></Trigger>
+      <Trigger Property="IsToday" Value="True"><Setter Property="Foreground" Value="$($Script:Theme.Accent)"/><Setter Property="FontWeight" Value="Bold"/></Trigger>
+      <Trigger Property="IsSelected" Value="True"><Setter TargetName="Bd" Property="Background" Value="$($Script:Theme.Selected)"/><Setter TargetName="Bd" Property="BorderBrush" Value="$($Script:Theme.Accent)"/></Trigger>
+      <Trigger Property="IsBlackedOut" Value="True"><Setter Property="Opacity" Value="0.4"/></Trigger>
+    </ControlTemplate.Triggers>
+  </ControlTemplate></Setter.Value></Setter>
+</Style>
+<Style x:Key="EtbCalendarMonth" TargetType="CalendarButton">
+  <Setter Property="Foreground" Value="$($Script:Theme.Text)"/>
+  <Setter Property="FontSize" Value="12"/>
+  <Setter Property="MinWidth" Value="48"/>
+  <Setter Property="MinHeight" Value="36"/>
+  <Setter Property="Cursor" Value="Hand"/>
+  <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CalendarButton">
+    <Border x:Name="Bd" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="4" Margin="2">
+      <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+    </Border>
+    <ControlTemplate.Triggers>
+      <Trigger Property="IsInactive" Value="True"><Setter Property="Foreground" Value="$($Script:Theme.Muted)"/></Trigger>
+      <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="$($Script:Theme.Hover)"/></Trigger>
+      <Trigger Property="HasSelectedDays" Value="True"><Setter TargetName="Bd" Property="BorderBrush" Value="$($Script:Theme.Accent)"/></Trigger>
+    </ControlTemplate.Triggers>
+  </ControlTemplate></Setter.Value></Setter>
+</Style>
+<Style x:Key="EtbCalendarItem" TargetType="CalendarItem">
+  <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CalendarItem">
+    <ControlTemplate.Resources>
+      <DataTemplate x:Key="{x:Static CalendarItem.DayTitleTemplateResourceKey}">
+        <TextBlock Text="{Binding}" Foreground="$($Script:Theme.Muted)" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,4"/>
+      </DataTemplate>
+    </ControlTemplate.Resources>
+    <Border x:Name="PART_Root" Background="$($Script:Theme.Card)" BorderBrush="$($Script:Theme.Border)" BorderThickness="1" CornerRadius="6" Padding="6">
+      <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <Button x:Name="PART_PreviousButton" Focusable="False" Cursor="Hand" Width="28" Height="26" ToolTip="Previous">
+          <Button.Template><ControlTemplate TargetType="Button">
+            <Border x:Name="b" Background="Transparent" CornerRadius="4"><Path Data="M 5,0 L 0,5 L 5,10" Stroke="$($Script:Theme.TextDim)" StrokeThickness="1.5" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+            <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Background" Value="$($Script:Theme.Hover)"/></Trigger></ControlTemplate.Triggers>
+          </ControlTemplate></Button.Template>
+        </Button>
+        <Button x:Name="PART_HeaderButton" Grid.Column="1" Focusable="False" Cursor="Hand" HorizontalAlignment="Stretch">
+          <Button.Template><ControlTemplate TargetType="Button">
+            <Border x:Name="b" Background="Transparent" CornerRadius="4" Padding="8,4">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextElement.Foreground="$($Script:Theme.Text)" TextElement.FontWeight="SemiBold"/>
+            </Border>
+            <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Background" Value="$($Script:Theme.Hover)"/></Trigger></ControlTemplate.Triggers>
+          </ControlTemplate></Button.Template>
+        </Button>
+        <Button x:Name="PART_NextButton" Grid.Column="2" Focusable="False" Cursor="Hand" Width="28" Height="26" ToolTip="Next">
+          <Button.Template><ControlTemplate TargetType="Button">
+            <Border x:Name="b" Background="Transparent" CornerRadius="4"><Path Data="M 0,0 L 5,5 L 0,10" Stroke="$($Script:Theme.TextDim)" StrokeThickness="1.5" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+            <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Background" Value="$($Script:Theme.Hover)"/></Trigger></ControlTemplate.Triggers>
+          </ControlTemplate></Button.Template>
+        </Button>
+        <Grid x:Name="PART_MonthView" Grid.Row="1" Grid.ColumnSpan="3" Margin="0,6,0,0" HorizontalAlignment="Center">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+          <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        </Grid>
+        <Grid x:Name="PART_YearView" Grid.Row="1" Grid.ColumnSpan="3" Margin="0,6,0,0" HorizontalAlignment="Center" Visibility="Hidden">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+          <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        </Grid>
+      </Grid>
+    </Border>
+  </ControlTemplate></Setter.Value></Setter>
+</Style>
+<Style x:Key="EtbCalendar" TargetType="Calendar">
+  <Setter Property="Foreground" Value="$($Script:Theme.Text)"/>
+  <Setter Property="CalendarItemStyle" Value="{StaticResource EtbCalendarItem}"/>
+  <Setter Property="CalendarDayButtonStyle" Value="{StaticResource EtbCalendarDay}"/>
+  <Setter Property="CalendarButtonStyle" Value="{StaticResource EtbCalendarMonth}"/>
+</Style>
+<Style TargetType="DatePickerTextBox">
+  <Setter Property="Foreground" Value="$($Script:Theme.Text)"/>
+  <Setter Property="CaretBrush" Value="$($Script:Theme.Text)"/>
+  <Setter Property="Background" Value="Transparent"/>
+  <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="DatePickerTextBox">
+    <ScrollViewer x:Name="PART_ContentHost" Margin="8,0,0,0" VerticalAlignment="Center" Focusable="False"/>
+  </ControlTemplate></Setter.Value></Setter>
+</Style>
+<Style TargetType="DatePicker">
+  <Setter Property="Foreground" Value="$($Script:Theme.Text)"/>
+  <Setter Property="Background" Value="$($Script:Theme.Card)"/>
+  <Setter Property="BorderBrush" Value="$($Script:Theme.Border)"/>
+  <Setter Property="BorderThickness" Value="1"/>
+  <Setter Property="Height" Value="32"/>
+  <Setter Property="CalendarStyle" Value="{StaticResource EtbCalendar}"/>
+  <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="DatePicker">
+    <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4">
+      <Grid x:Name="PART_Root">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <DatePickerTextBox x:Name="PART_TextBox" Foreground="{TemplateBinding Foreground}" VerticalContentAlignment="Center"/>
+        <Button x:Name="PART_Button" Grid.Column="1" Focusable="False" Cursor="Hand" Width="28" ToolTip="Choose a date">
+          <Button.Template><ControlTemplate TargetType="Button">
+            <Border x:Name="b" Background="Transparent" CornerRadius="0,4,4,0"><Path Data="M 0,0 L 4,4 L 8,0 Z" Fill="$($Script:Theme.TextDim)" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+            <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Background" Value="$($Script:Theme.Hover)"/></Trigger></ControlTemplate.Triggers>
+          </ControlTemplate></Button.Template>
+        </Button>
+        <Popup x:Name="PART_Popup" AllowsTransparency="True" Placement="Bottom" PlacementTarget="{Binding ElementName=Bd}" StaysOpen="False"/>
+      </Grid>
+    </Border>
+    <ControlTemplate.Triggers>
+      <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="BorderBrush" Value="$($Script:Theme.Accent)"/></Trigger>
+      <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="Bd" Property="BorderBrush" Value="$($Script:Theme.Accent)"/></Trigger>
+      <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5"/></Trigger>
+    </ControlTemplate.Triggers>
+  </ControlTemplate></Setter.Value></Setter>
+</Style>
+"@
 }
 
 function Get-ThemeHex([string]$Semantic) {
@@ -907,6 +1033,7 @@ function Invoke-ThemeXaml([string]$Xaml) {
     # Must run before the ListBox template pass below so an injected ListBox
     # style still receives the virtualization/disabled-state template.
     $shared = -join @(foreach ($marker in $Script:ThemeSharedStyles.Keys) {
+        if ($marker -eq '<Style x:Key="EtbCalendarDay"' -and -not $Xaml.Contains('<DatePicker')) { continue }
         if (-not $Xaml.Contains($marker)) { $Script:ThemeSharedStyles[$marker] }
     })
     # Only the outermost dictionary — the first one to close. A document can
