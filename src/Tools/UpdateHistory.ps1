@@ -10,6 +10,15 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.39.3'
+        Date    = '2026-10-05'
+        Changes = @(
+            'Leaver Workflow revokes sign-in sessions again; Graph had started rejecting the request'
+            'Leaver Workflow skips dynamic, synced, role-assignable and mail-enabled groups (such as a dynamic All Users group) and lists them as skipped instead of failed'
+            'Intune device sync in Last Device sends the request in the form Graph now expects'
+        )
+    }
+    @{
         Version = '0.39.2'
         Date    = '2026-10-02'
         Changes = @(
