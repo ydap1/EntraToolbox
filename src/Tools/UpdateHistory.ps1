@@ -10,6 +10,13 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.40.0'
+        Date    = '2026-10-05'
+        Changes = @(
+            'Leaver Workflow can remove a leaver''s directly assigned licences; group-assigned licences are listed and go when the group membership does'
+        )
+    }
+    @{
         Version = '0.39.3'
         Date    = '2026-10-05'
         Changes = @(
