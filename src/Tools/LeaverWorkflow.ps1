@@ -3,7 +3,8 @@
     Dot-sourced by Start.ps1.
     Exposes Initialize-LeaverWorkflowTool.
 
-    Actions: disable account, revoke sign-in sessions, remove from all direct group memberships.
+    Actions: disable account, revoke sign-in sessions, remove from all direct group memberships,
+    remove directly assigned licences.
     Each step is individually togglable. Dry-run aware.
 #>
 
@@ -193,8 +194,9 @@ function Start-LwRun {
     $doDisable = [bool]($Script:LW_UI.ChkDisable.IsChecked)
     $doRevoke  = [bool]($Script:LW_UI.ChkRevoke.IsChecked)
     $doGroups  = [bool]($Script:LW_UI.ChkGroups.IsChecked)
+    $doLicences = [bool]($Script:LW_UI.ChkLicences.IsChecked)
 
-    if (-not $doDisable -and -not $doRevoke -and -not $doGroups) {
+    if (-not $doDisable -and -not $doRevoke -and -not $doGroups -and -not $doLicences) {
         Write-LwLog 'No actions selected — tick at least one.' 'Warning'
         return
     }
@@ -204,10 +206,11 @@ function Start-LwRun {
         if ($doDisable) { Write-LwLog '[DRY] Would disable account (accountEnabled = false)' 'Warning' }
         if ($doRevoke)  { Write-LwLog '[DRY] Would revoke all sign-in sessions' 'Warning' }
         if ($doGroups)  { Write-LwLog '[DRY] Would remove from all direct group memberships' 'Warning' }
+        if ($doLicences) { Write-LwLog '[DRY] Would remove all directly assigned licences' 'Warning' }
         return
     }
 
-    $steps = @($(if ($doDisable) { 'disable the account' }), $(if ($doRevoke) { 'revoke all sign-in sessions' }), $(if ($doGroups) { 'remove all direct group memberships' })) | Where-Object { $_ }
+    $steps = @($(if ($doDisable) { 'disable the account' }), $(if ($doRevoke) { 'revoke all sign-in sessions' }), $(if ($doGroups) { 'remove all direct group memberships' }), $(if ($doLicences) { 'remove all directly assigned licences (a mailbox is deleted 30 days after losing its Exchange licence)' })) | Where-Object { $_ }
     if (-not (Confirm-EtbAction "Run the leaver workflow for $($user.displayName) ($($user.userPrincipalName))?`nThis will $($steps -join ', ')." 'Confirm leaver workflow')) { return }
 
     $Script:LW_UI.BtnRun.IsEnabled    = $false
@@ -223,6 +226,7 @@ function Start-LwRun {
             DoDisable     = $doDisable
             DoRevoke      = $doRevoke
             DoGroups      = $doGroups
+            DoLicences    = $doLicences
             DisableDone   = $false
             DisableErr    = $null
             RevokeDone    = $false
@@ -233,6 +237,9 @@ function Start-LwRun {
             # id + name of every group actually removed, so the membership can
             # be put back if the workflow was run against the wrong account.
             RemovedDetail = [System.Collections.Generic.List[object]]::new()
+            LicencesRemoved = [System.Collections.Generic.List[string]]::new()
+            LicencesFailed  = [System.Collections.Generic.List[string]]::new()
+            LicencesKept    = [System.Collections.Generic.List[string]]::new()
         } `
         -Script {
             if ($Ref['DoDisable'] -and -not $Ref['CancelRequested']) {
@@ -280,6 +287,35 @@ function Start-LwRun {
                     }
                 }
             }
+
+            if ($Ref['DoLicences'] -and -not $Ref['CancelRequested']) {
+                # Caught here so a failed read cannot hide the group results or skip their snapshot.
+                try {
+                    $headers = @{ Authorization = "Bearer $Token" }
+                    $states  = @((Invoke-RestMethod -Uri ("https://graph.microsoft.com/v1.0/users/$UserId" + '?$select=licenseAssignmentStates') -Headers $headers -ErrorAction Stop).licenseAssignmentStates)
+                    $names   = @{}
+                    foreach ($d in Get-EtbGraphCollection -Uri "https://graph.microsoft.com/v1.0/users/$UserId/licenseDetails?`$select=skuId,skuPartNumber" -Headers $headers) { $names[$d.skuId] = $d.skuPartNumber }
+                    # Group-assigned licences cannot be removed from the user; they go with the group membership.
+                    foreach ($id in @($states | Where-Object { $_.assignedByGroup } | ForEach-Object { $_.skuId } | Select-Object -Unique)) {
+                        $Ref['LicencesKept'].Add($(if ($names[$id]) { $names[$id] } else { $id }))
+                    }
+                    foreach ($id in @($states | Where-Object { -not $_.assignedByGroup } | ForEach-Object { $_.skuId } | Select-Object -Unique)) {
+                        if ($Ref['CancelRequested']) { break }
+                        $name = if ($names[$id]) { $names[$id] } else { $id }
+                        try {
+                            Invoke-RestMethod `
+                                -Uri "https://graph.microsoft.com/v1.0/users/$UserId/assignLicense" `
+                                -Headers @{ Authorization = "Bearer $Token"; 'Content-Type' = 'application/json' } `
+                                -Method POST -Body (@{ addLicenses = @(); removeLicenses = @($id) } | ConvertTo-Json) -ErrorAction Stop
+                            $Ref['LicencesRemoved'].Add($name)
+                        } catch {
+                            $Ref['LicencesFailed'].Add("${name}: $($_.Exception.Message)")
+                        }
+                    }
+                } catch {
+                    $Ref['LicencesFailed'].Add("Could not read licences: $($_.Exception.Message)")
+                }
+            }
         } -OnComplete {
             param($ref)
             try {
@@ -321,9 +357,21 @@ function Start-LwRun {
                                        -Detail "$nr removed, $nf failed, $ns skipped"
                         Save-LwGroupSnapshot -User $Script:LW_SelectedUser -Groups $ref['RemovedDetail']
                     }
+                    if ($ref['DoLicences'] -and ($ref['LicencesRemoved'].Count -or $ref['LicencesFailed'].Count -or -not $ref['CancelRequested'])) {
+                        foreach ($l in $ref['LicencesRemoved']) { Write-LwLog "Removed licence: $l" 'Success' }
+                        foreach ($l in $ref['LicencesFailed'])  { Write-LwLog "Licence removal failed: $l" 'Danger' }
+                        foreach ($l in $ref['LicencesKept'])    { Write-LwLog "Group-assigned licence left to its group: $l" 'Muted' }
+                        $nr = $ref['LicencesRemoved'].Count
+                        $nf = $ref['LicencesFailed'].Count
+                        Write-LwLog "Licences: $nr removed, $nf failed" 'Text'
+                        # The removed licence names are the only record for reassigning them.
+                        Write-EtbAudit -Tool 'Leaver Workflow' -Action 'Remove licences' `
+                                       -Target $upn -Result $(if ($nf -gt 0 -or $ref['CancelRequested']) { 'Partial' } else { 'OK' }) `
+                                       -Detail "$nr removed ($($ref['LicencesRemoved'] -join ', ')), $nf failed"
+                    }
                     $displayName = if ($Script:LW_SelectedUser) { $Script:LW_SelectedUser.displayName } else { 'user' }
                     $summary = "Leaver workflow $(if ($ref.CancelRequested) { 'stopped' } else { 'complete' }) for $displayName"
-                    $failed = $ref.DisableErr -or $ref.RevokeErr -or $ref.GroupsFailed.Count -gt 0
+                    $failed = $ref.DisableErr -or $ref.RevokeErr -or $ref.GroupsFailed.Count -gt 0 -or $ref.LicencesFailed.Count -gt 0
                     if ($failed) { $summary += ' — some actions failed; check the activity log.' }
                     $color = if ($failed -or $ref.CancelRequested) { 'Warning' } else { 'Success' }
                     Write-LwLog $summary $color
@@ -490,6 +538,16 @@ $Script:LwXaml = @'
           </CheckBox>
         </Border>
 
+        <Border Background="#242436" CornerRadius="6" Padding="16,14" Margin="0,0,0,10">
+          <CheckBox x:Name="LwChkLicences" IsChecked="True" Foreground="#E2E2F0" Cursor="Hand">
+            <StackPanel Margin="6,0,0,0">
+              <TextBlock Text="Remove licences" Foreground="#E2E2F0" FontSize="13" FontWeight="SemiBold"/>
+              <TextBlock Foreground="#7878A0" FontSize="11" Margin="0,3,0,0" TextWrapping="Wrap"
+                         Text="Removes directly assigned licences. Group-assigned licences go with the group membership. A mailbox is deleted 30 days after losing its Exchange licence; convert it to a shared mailbox first if it must be kept."/>
+            </StackPanel>
+          </CheckBox>
+        </Border>
+
         <TextBlock Foreground="#3C3C5A" FontSize="11" TextWrapping="Wrap" Margin="0,10,0,0"
                    Text="Results are shown in the global Log pane (Log button in the toolbar)."/>
       </StackPanel>
@@ -514,6 +572,7 @@ function Initialize-LeaverWorkflowTool {
         ChkDisable = $content.FindName('LwChkDisable')
         ChkRevoke  = $content.FindName('LwChkRevoke')
         ChkGroups  = $content.FindName('LwChkGroups')
+        ChkLicences = $content.FindName('LwChkLicences')
     }
 
     $Script:LW_UI.UserSearch.Add_TextChanged({

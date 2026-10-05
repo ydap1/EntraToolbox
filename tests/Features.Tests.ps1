@@ -146,7 +146,7 @@ try {
         }
         $Script:LW_SelectedUser=@{ id='u'; displayName='Pupil'; userPrincipalName='u@school.test' }
         $Script:LW_UI=@{}
-        foreach($name in 'ChkDisable','ChkRevoke','ChkGroups') { $Script:LW_UI[$name]=[pscustomobject]@{ IsChecked=$true } }
+        foreach($name in 'ChkDisable','ChkRevoke','ChkGroups','ChkLicences') { $Script:LW_UI[$name]=[pscustomobject]@{ IsChecked=$true } }
         foreach($name in 'BtnRun','UserSearch','UserList') { $Script:LW_UI[$name]=[pscustomobject]@{ IsEnabled=$true } }
         $Script:DryMode=$false; $Script:DemoMode=$false
         $started=[Collections.Generic.List[int]]::new()
@@ -170,14 +170,22 @@ try {
         }
         function Get-EtbGraphCollection {
             param($Uri,$Headers)
+            if ($Uri -match '/licenseDetails') { @{ skuId='s1'; skuPartNumber='DIRECT_SKU' }; @{ skuId='s2'; skuPartNumber='GROUP_SKU' }; return }
             @{ '@odata.type'='#microsoft.graph.group'; id='dyn'; displayName='All Users'; groupTypes=@('DynamicMembership'); securityEnabled=$true }
             @{ '@odata.type'='#microsoft.graph.group'; id='sec'; displayName='All Staff'; groupTypes=@(); securityEnabled=$true; mailEnabled=$false }
         }
-        $deleted=[Collections.Generic.List[string]]::new()
-        function Invoke-RestMethod { param($Uri,$Headers,$Method,$Body,$ErrorAction); if ($Method -eq 'DELETE') { $deleted.Add($Uri) } }
+        $deleted=[Collections.Generic.List[string]]::new(); $posted=[Collections.Generic.List[object]]::new()
+        function Invoke-RestMethod {
+            param($Uri,$Headers,$Method,$Body,$ErrorAction)
+            if ($Method -eq 'DELETE') { $deleted.Add($Uri) }
+            elseif ($Method -eq 'POST') { $posted.Add(($Body | ConvertFrom-Json)) }
+            else { @{ licenseAssignmentStates=@(@{ skuId='s1'; assignedByGroup=$null }, @{ skuId='s2'; assignedByGroup='dyn' }) } }
+        }
         foreach($name in 'ChkDisable','ChkRevoke') { $Script:LW_UI[$name].IsChecked=$false }
         Start-LwRun
         Assert ($deleted.Count -eq 1 -and $deleted[0] -match '/groups/sec/' -and @($messages | Where-Object { $_ -match 'Skipped group.*All Users' }).Count -eq 1) 'leaver skips groups Graph will not edit and removes the rest'
+        Assert ($posted.Count -eq 1 -and $posted[0].removeLicenses -is [array] -and $posted[0].removeLicenses[0] -eq 's1' -and @($posted[0].addLicenses).Count -eq 0 -and
+                @($messages | Where-Object { $_ -match 'Removed licence: DIRECT_SKU' }).Count -eq 1 -and @($messages | Where-Object { $_ -match 'left to its group: GROUP_SKU' }).Count -eq 1) 'leaver removes direct licences and leaves group-assigned ones to their group'
         $Script:LW_UI=$null; $Script:LW_SelectedUser=$null
     }
     Assert ((Get-EtbWriteResult 403) -eq 'Failed' -and (Get-EtbWriteResult 415) -eq 'Failed' -and (Get-EtbWriteResult 504) -eq 'Uncertain' -and (Get-EtbWriteResult 0) -eq 'Uncertain') 'write failures distinguish rejection from uncertain delivery'
