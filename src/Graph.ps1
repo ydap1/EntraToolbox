@@ -54,6 +54,8 @@ function Invoke-RestMethod {
         TimeoutSec = $TimeoutSec; MaximumRedirection = 0; ErrorAction = 'Stop'; StatusCodeVariable = 'etbStatus'
     }
     if ($PSBoundParameters.ContainsKey('Body')) { $request.Body = $Body }
+    # Graph answers a bodyless action POST (revokeSignInSessions, syncDevice) with 415.
+    elseif ($Method -eq 'POST') { $request.Body = '{}'; $ContentType = 'application/json' }
     if ($ContentType) { $request.ContentType = $ContentType }
     if ($ResponseHeadersVariable) { $request.ResponseHeadersVariable = 'responseHeaders' }
     for ($attempt = 0; ; $attempt++) {
@@ -88,7 +90,7 @@ function Invoke-RestMethod {
 
 function Get-EtbWriteResult {
     param([int]$Status)
-    if ($Status -in 400,401,403,404,405,409,412,422,429) { return 'Failed' }
+    if ($Status -in 400,401,403,404,405,409,412,415,422,429) { return 'Failed' }
     return 'Uncertain'
 }
 

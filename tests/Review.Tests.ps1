@@ -559,7 +559,7 @@ try {
                 $counts[$path] = 1 + $counts[$path]
                 $ctx.Response.ContentType = 'application/json'
                 $ctx.Response.Headers.Add('Location', '/created')
-                $status = if ($path -eq '/accepted') { 202 } elseif ($path -eq '/write') { 503 } elseif ($path -eq '/retry' -and $counts[$path] -eq 1) { 429 } else { 200 }
+                $status = if ($path -eq '/accepted') { 202 } elseif ($path -eq '/action' -and $ctx.Request.ContentType -notlike 'application/json*') { 415 } elseif ($path -eq '/write') { 503 } elseif ($path -eq '/retry' -and $counts[$path] -eq 1) { 429 } else { 200 }
                 $ctx.Response.StatusCode = $status
                 $ctx.Response.Headers.Add('Retry-After', '1')
                 $payload = if ($path -eq '/pages') {
@@ -588,6 +588,9 @@ try {
         $null=Invoke-RestMethod -Uri "http://localhost:$port/accepted" -Method POST
         $null=$Ref.BulkQueue.TryDequeue([ref]$captured)
         Assert ($captured.Result -eq 'Accepted') 'HTTP 202 acceptance is not reported as completed provisioning'
+        $null=Invoke-RestMethod -Uri "http://localhost:$port/action" -Method POST
+        $null=$Ref.BulkQueue.TryDequeue([ref]$captured)
+        Assert ($captured.Result -eq 'Succeeded') 'bodyless action POSTs send JSON so Graph does not answer 415'
         $Ref=$null
         Assert ($counts['/write'] -eq 1) 'ambiguous writes are never replayed'
         $pages = @(Get-EtbGraphCollection -Uri "http://localhost:$port/pages")

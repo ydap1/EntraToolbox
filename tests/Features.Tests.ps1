@@ -164,7 +164,7 @@ try {
         Assert ($audit.Count -eq 0 -and @($messages | Where-Object { $_ -match 'stopped' }).Count -gt 0) 'stopping a leaver before its first step cannot log or audit unperformed changes as successful'
         $Script:LW_UI=$null; $Script:LW_SelectedUser=$null
     }
-    Assert ((Get-EtbWriteResult 403) -eq 'Failed' -and (Get-EtbWriteResult 504) -eq 'Uncertain' -and (Get-EtbWriteResult 0) -eq 'Uncertain') 'write failures distinguish rejection from uncertain delivery'
+    Assert ((Get-EtbWriteResult 403) -eq 'Failed' -and (Get-EtbWriteResult 415) -eq 'Failed' -and (Get-EtbWriteResult 504) -eq 'Uncertain' -and (Get-EtbWriteResult 0) -eq 'Uncertain') 'write failures distinguish rejection from uncertain delivery'
     $Ref = @{ BulkQueue = [Collections.Concurrent.ConcurrentQueue[object]]::new(); BulkLabels = @{ user1 = 'pupil@school.test' } }
     Publish-EtbWriteResult @{ Uri = 'https://graph.microsoft.com/v1.0/users/user1'; Method = 'PATCH'; Body = '{"passwordProfile":{"password":"secret"}}' } 'Failed' 'secret echoed'
     $row = $null; $null = $Ref.BulkQueue.TryDequeue([ref]$row)
