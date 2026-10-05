@@ -229,6 +229,7 @@ function Start-LwRun {
             RevokeErr     = $null
             GroupsRemoved = [System.Collections.Generic.List[string]]::new()
             GroupsFailed  = [System.Collections.Generic.List[string]]::new()
+            GroupsSkipped = [System.Collections.Generic.List[string]]::new()
             # id + name of every group actually removed, so the membership can
             # be put back if the workflow was run against the wrong account.
             RemovedDetail = [System.Collections.Generic.List[object]]::new()
@@ -260,11 +261,13 @@ function Start-LwRun {
             }
 
             if ($Ref['DoGroups'] -and -not $Ref['CancelRequested']) {
-                $groups = @(Get-EtbGraphCollection -Uri "https://graph.microsoft.com/v1.0/users/$UserId/memberOf?`$select=id,displayName&`$top=999" -Headers @{ Authorization = "Bearer $Token" } |
+                $groups = @(Get-EtbGraphCollection -Uri "https://graph.microsoft.com/v1.0/users/$UserId/memberOf?`$select=id,displayName,groupTypes,securityEnabled,mailEnabled,isAssignableToRole,onPremisesSyncEnabled&`$top=999" -Headers @{ Authorization = "Bearer $Token" } |
                     Where-Object { $_.'@odata.type' -eq '#microsoft.graph.group' })
 
                 foreach ($grp in $groups) {
                     if ($Ref['CancelRequested']) { break }
+                    # Graph refuses membership edits on these (403); they are managed at their source.
+                    try { Assert-GmEditableGroup $grp } catch { $Ref['GroupsSkipped'].Add($grp.displayName); continue }
                     try {
                         Invoke-RestMethod `
                             -Uri "https://graph.microsoft.com/v1.0/groups/$($grp.id)/members/$UserId/`$ref" `
@@ -308,12 +311,14 @@ function Start-LwRun {
                     if ($ref['DoGroups'] -and ($ref['GroupsRemoved'].Count -or $ref['GroupsFailed'].Count -or -not $ref['CancelRequested'])) {
                         foreach ($g in $ref['GroupsRemoved']) { Write-LwLog "Removed from group: $g" 'Success' }
                         foreach ($g in $ref['GroupsFailed'])  { Write-LwLog "Group removal failed: $g" 'Danger' }
+                        foreach ($g in $ref['GroupsSkipped']) { Write-LwLog "Skipped group (dynamic, synced, role-assignable or mail-enabled; manage at source): $g" 'Warning' }
                         $nr = $ref['GroupsRemoved'].Count
                         $nf = $ref['GroupsFailed'].Count
-                        Write-LwLog "Groups: $nr removed, $nf failed" 'Text'
+                        $ns = $ref['GroupsSkipped'].Count
+                        Write-LwLog "Groups: $nr removed, $nf failed, $ns skipped" 'Text'
                         Write-EtbAudit -Tool 'Leaver Workflow' -Action 'Remove all group memberships' `
                                        -Target $upn -Result $(if ($nf -gt 0 -or $ref['CancelRequested']) { 'Partial' } else { 'OK' }) `
-                                       -Detail "$nr removed, $nf failed"
+                                       -Detail "$nr removed, $nf failed, $ns skipped"
                         Save-LwGroupSnapshot -User $Script:LW_SelectedUser -Groups $ref['RemovedDetail']
                     }
                     $displayName = if ($Script:LW_SelectedUser) { $Script:LW_SelectedUser.displayName } else { 'user' }

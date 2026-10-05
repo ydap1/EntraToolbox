@@ -162,6 +162,22 @@ try {
         }
         Start-LwRun
         Assert ($audit.Count -eq 0 -and @($messages | Where-Object { $_ -match 'stopped' }).Count -gt 0) 'stopping a leaver before its first step cannot log or audit unperformed changes as successful'
+        function Start-AsyncWork {
+            param($BulkName,$Vars,$RefSeed,$Script,$OnComplete)
+            $Ref=$RefSeed; $UserId=$Vars.UserId; $Token='fake'
+            & $Script
+            & $OnComplete $Ref
+        }
+        function Get-EtbGraphCollection {
+            param($Uri,$Headers)
+            @{ '@odata.type'='#microsoft.graph.group'; id='dyn'; displayName='All Users'; groupTypes=@('DynamicMembership'); securityEnabled=$true }
+            @{ '@odata.type'='#microsoft.graph.group'; id='sec'; displayName='All Staff'; groupTypes=@(); securityEnabled=$true; mailEnabled=$false }
+        }
+        $deleted=[Collections.Generic.List[string]]::new()
+        function Invoke-RestMethod { param($Uri,$Headers,$Method,$Body,$ErrorAction); if ($Method -eq 'DELETE') { $deleted.Add($Uri) } }
+        foreach($name in 'ChkDisable','ChkRevoke') { $Script:LW_UI[$name].IsChecked=$false }
+        Start-LwRun
+        Assert ($deleted.Count -eq 1 -and $deleted[0] -match '/groups/sec/' -and @($messages | Where-Object { $_ -match 'Skipped group.*All Users' }).Count -eq 1) 'leaver skips groups Graph will not edit and removes the rest'
         $Script:LW_UI=$null; $Script:LW_SelectedUser=$null
     }
     Assert ((Get-EtbWriteResult 403) -eq 'Failed' -and (Get-EtbWriteResult 415) -eq 'Failed' -and (Get-EtbWriteResult 504) -eq 'Uncertain' -and (Get-EtbWriteResult 0) -eq 'Uncertain') 'write failures distinguish rejection from uncertain delivery'
