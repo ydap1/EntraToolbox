@@ -439,11 +439,6 @@ try {
     $Ref = @{ Token = 'REFRESHED' }
     Assert-Throws { Invoke-RestMethod -Uri 'https://graph.microsoft.com/v1.0/users' -Headers @{ Authorization = 'Bearer DEMO' } } 'Demo mode'
     $Ref = $null
-    $Script:AppFont = 'Font & "quoted"'
-    $fontXaml = Invoke-ThemeXaml '<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"><TextBlock FontFamily="Segoe UI"/></Grid>'
-    $null = [xml]$fontXaml
-    Assert ($fontXaml -like '*&amp;*' -and $fontXaml -like '*&quot;*') 'saved font names are safely escaped in XAML'
-    $Script:AppFont = 'Segoe UI'
     $Script:Theme.Accent = '#F59E0B'
     $accentXaml = Invoke-ThemeXaml '<Button Background="#6366F1" Foreground="White"/>'
     Assert ($accentXaml -like '*Foreground="#000000"*') 'amber action buttons use contrasting dark text'

@@ -361,8 +361,8 @@ function Start-AsyncWork {
     return $timer
 }
 
-# ── App settings (small key/value store, e.g. last-used tenant, theme, font) ────
-# Defined before the Theme section below because theme/font selection reads them
+# ── App settings (small key/value store, e.g. last-used tenant, theme) ─────────
+# Defined before the Theme section below because theme selection reads them
 # at dot-source time.
 function Get-AppSettingsPath {
     $dir = Join-Path $Global:AppRoot 'config'
@@ -404,7 +404,7 @@ function Set-EtbFileContent {
 # Colours live in one place: $Script:Theme maps a semantic name to its hex value, and
 # $Script:ThemeMap maps every legacy hex literal still embedded in the XAML here-strings
 # to its new value so Invoke-ThemeXaml can re-skin the whole UI centrally.
-# The active preset and font are chosen in the Appearance page and persisted via
+# The active preset is chosen in the Appearance page and persisted via
 # Set-AppSetting; because colours are baked into each panel's XAML at load time,
 # a change takes effect on the next launch (Appearance offers Apply & Restart).
 $Script:ThemeBase = @{
@@ -466,13 +466,6 @@ $Script:Theme = $Script:ThemeBase.Clone()
 foreach ($k in $Script:ThemePresets[$Script:ThemeName].Keys) {
     $Script:Theme[$k] = $Script:ThemePresets[$Script:ThemeName][$k]
 }
-
-# UI font (first choice; Segoe UI stays as the fallback in the font stack).
-$Script:AppFont = 'Segoe UI'
-try {
-    $savedFont = Get-AppSetting -Name 'FontName'
-    if ($savedFont) { $Script:AppFont = [string]$savedFont }
-} catch {}
 
 # Legacy-hex → new-hex translation applied to every XAML string at load time.
 $Script:ThemeMap = [ordered]@{
@@ -1023,10 +1016,6 @@ function Invoke-ThemeXaml([string]$Xaml) {
         }
         return $tag.Replace('<Button ', "<Button Foreground=`"$accentForeground`" ")
     })
-    if ($Script:AppFont -and $Script:AppFont -ne 'Segoe UI') {
-        $font = [System.Security.SecurityElement]::Escape("$Script:AppFont, Segoe UI")
-        $Xaml = $Xaml.Replace('FontFamily="Segoe UI"', "FontFamily=`"$font`"")
-    }
     $Xaml = $Xaml.Replace('</Grid.Resources>',   "$Script:ThemeScrollBarStyle</Grid.Resources>")
     $Xaml = $Xaml.Replace('</Window.Resources>', "$Script:ThemeScrollBarStyle</Window.Resources>")
     # Add each shared style the document does not already declare for itself.

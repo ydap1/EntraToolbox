@@ -1296,7 +1296,7 @@ function Show-MainWindow {
         @{ Type = 'tool'; Name = 'BulkResults'; Title = 'Bulk Results'; Desc = 'Progress, stop, export and recover bulk operations' }
         @{ Type = 'tool'; Name = 'ChangeHistory'; Title = 'Change History'; Desc = 'Search local changes by date, operator, user and action' }
         @{ Type = 'cat'; Label = 'App' }
-        @{ Type = 'tool'; Name = 'Appearance';  Title = 'Appearance';           Desc = 'Theme and font settings' }
+        @{ Type = 'tool'; Name = 'Appearance';  Title = 'Appearance';           Desc = 'Colour theme' }
         @{ Type = 'tool'; Name = 'Changelog';   Title = 'Update History';       Desc = 'Version changelog and release notes' }
     )
 

@@ -3,22 +3,15 @@
     Dot-sourced by Start.ps1.
     Exposes Initialize-AppearanceTool.
 
-    Lets the user pick a colour theme preset and UI font. Choices are persisted
-    via Set-AppSetting ('ThemeName' / 'FontName') and read by Auth.ps1 at startup.
-    Because colours and fonts are baked into each panel's XAML at load time, a
+    Lets the user pick a colour theme preset. The choice is persisted via
+    Set-AppSetting ('ThemeName') and read by Auth.ps1 at startup.
+    Because colours are baked into each panel's XAML at load time, a
     change takes effect on the next launch — Apply & Restart relaunches the app.
 #>
 
 $Script:AP_UI       = $null
 $Script:AP_SelTheme = $null
 $Script:AP_Cards    = @{}   # preset name → card Border
-
-# Candidate UI fonts; only those actually installed are offered (Fredoka and
-# Segoe UI are always listed — the font stack falls back to Segoe UI anyway).
-$Script:AP_FontCandidates = @(
-    'Fredoka', 'Segoe UI', 'Bahnschrift', 'Calibri', 'Trebuchet MS',
-    'Verdana', 'Comfortaa', 'Nunito', 'Quicksand', 'Poppins'
-)
 
 function Set-ApThemeSelection {
     param([string]$Name)
@@ -40,12 +33,8 @@ function Set-ApThemeSelection {
 
 function Save-ApSettings {
     param([switch]$Restart)
-    $font = $Script:AppFont
-    $sel  = $Script:AP_UI.FontList.SelectedItem
-    if ($sel) { $font = [string]$sel.Tag }
     Set-AppSetting -Name 'ThemeName' -Value $Script:AP_SelTheme
-    Set-AppSetting -Name 'FontName'  -Value $font
-    Write-Log "Appearance: saved theme '$($Script:AP_SelTheme)', font '$font'" 'INFO'
+    Write-Log "Appearance: saved theme '$($Script:AP_SelTheme)'" 'INFO'
     if ($Restart) {
         Write-AppLog 'Restarting to apply appearance changes...' 'Accent'
         Start-Process 'pwsh.exe' `
@@ -53,7 +42,7 @@ function Save-ApSettings {
             -WorkingDirectory $Global:AppRoot
         $Script:MainUI.Window.Close()
     } else {
-        Write-AppLog "Appearance saved — theme '$($Script:AP_SelTheme)', font '$font'. Changes apply on next launch." 'Success'
+        Write-AppLog "Appearance saved — theme '$($Script:AP_SelTheme)'. Changes apply on next launch." 'Success'
         $Script:AP_UI.Status.Text = 'Saved. Changes apply on next launch.'
     }
 }
@@ -91,54 +80,16 @@ $Script:ApXaml = @'
       </Setter>
     </Style>
 
-    <Style TargetType="ListBox">
-      <Setter Property="Background"      Value="Transparent"/>
-      <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="Padding"         Value="0"/>
-    </Style>
-
-    <Style TargetType="ListBoxItem">
-      <Setter Property="Foreground"                 Value="#E2E2F0"/>
-      <Setter Property="Background"                 Value="Transparent"/>
-      <Setter Property="Padding"                    Value="12,8"/>
-      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-      <Setter Property="Cursor"                     Value="Hand"/>
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="ListBoxItem">
-            <Border x:Name="bd" Background="{TemplateBinding Background}"
-                    Padding="{TemplateBinding Padding}" CornerRadius="5">
-              <ContentPresenter VerticalAlignment="Center"/>
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="bd" Property="Background" Value="#1E1E38"/>
-              </Trigger>
-              <Trigger Property="IsSelected" Value="True">
-                <Setter TargetName="bd" Property="Background" Value="#2A2A50"/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-
   </Grid.Resources>
 
   <ScrollViewer VerticalScrollBarVisibility="Auto">
     <StackPanel Margin="28,22,28,28" MaxWidth="760" HorizontalAlignment="Left">
       <TextBlock Text="Appearance" FontSize="18" FontWeight="Bold" Foreground="#E2E2F0"/>
-      <TextBlock Text="Colours and fonts are baked in when panels load, so changes apply after a restart."
+      <TextBlock Text="Colours are baked in when panels load, so changes apply after a restart."
                  Foreground="#50507A" FontSize="11" Margin="0,4,0,20"/>
 
       <TextBlock Text="THEME" Foreground="#50507A" FontSize="10" FontWeight="Bold" Margin="0,0,0,8"/>
       <WrapPanel x:Name="ApThemePanel"/>
-
-      <TextBlock Text="FONT" Foreground="#50507A" FontSize="10" FontWeight="Bold" Margin="0,20,0,8"/>
-      <Border Background="#1C1C2A" BorderBrush="#3C3C5A" BorderThickness="1" CornerRadius="8" Padding="6">
-        <ListBox x:Name="ApFontList" Height="240"
-                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
-      </Border>
 
       <StackPanel Orientation="Horizontal" Margin="0,22,0,0">
         <Button x:Name="ApBtnApply" Content="Apply &amp; Restart" Style="{StaticResource Btn}"
@@ -161,7 +112,6 @@ function Initialize-AppearanceTool {
 
     $Script:AP_UI = @{
         ThemePanel = $content.FindName('ApThemePanel')
-        FontList   = $content.FindName('ApFontList')
         BtnApply   = $content.FindName('ApBtnApply')
         BtnSave    = $content.FindName('ApBtnSave')
         Status     = $content.FindName('ApStatus')
@@ -225,21 +175,6 @@ function Initialize-AppearanceTool {
         $Script:AP_Cards[$name] = $card
     }
     Set-ApThemeSelection -Name $Script:AP_SelTheme
-
-    # ── Font list (each entry rendered in its own font) ─────────────────────────
-    $installed = @([System.Windows.Media.Fonts]::SystemFontFamilies | ForEach-Object { $_.Source })
-    foreach ($font in $Script:AP_FontCandidates) {
-        if ($font -notin @('Fredoka', 'Segoe UI') -and $font -notin $installed) { continue }
-        $tb            = [System.Windows.Controls.TextBlock]::new()
-        $tb.Text       = "$font   —   The quick brown fox jumps over 0123"
-        $tb.FontFamily = [System.Windows.Media.FontFamily]::new("$font, Segoe UI")
-        $tb.FontSize   = 14
-        $lbi         = [System.Windows.Controls.ListBoxItem]::new()
-        $lbi.Content = $tb
-        $lbi.Tag     = $font
-        [void]$Script:AP_UI.FontList.Items.Add($lbi)
-        if ($font -eq $Script:AppFont) { $Script:AP_UI.FontList.SelectedItem = $lbi }
-    }
 
     $Script:AP_UI.BtnApply.Add_Click({
         try { Save-ApSettings -Restart }
