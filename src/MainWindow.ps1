@@ -780,7 +780,9 @@ $Script:AddTenantXaml = @'
         WindowStyle="ToolWindow" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False"
-        Background="#1C1C2A" FontFamily="Segoe UI" FontSize="13">
+        Background="#1C1C2A" FontFamily="Segoe UI" FontSize="13"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType">
   <Window.Resources>
     <Style x:Key="Btn" TargetType="Button">
       <Setter Property="Foreground"      Value="White"/>

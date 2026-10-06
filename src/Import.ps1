@@ -15,7 +15,9 @@ $Script:ImportXaml = @'
         Title="Import user list" Width="470" Height="430"
         WindowStyle="ToolWindow" ResizeMode="CanResize"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
-        Background="#1C1C2A" FontFamily="Segoe UI" FontSize="13">
+        Background="#1C1C2A" FontFamily="Segoe UI" FontSize="13"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType">
   <Window.Resources>
     <Style x:Key="Btn" TargetType="Button">
       <Setter Property="Foreground"      Value="White"/>
