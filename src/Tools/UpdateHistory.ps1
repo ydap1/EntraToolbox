@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.41.0'
+        Date    = '2026-10-06'
+        Changes = @(
+            'The toolbox uses Segoe UI, the Windows interface font, everywhere; the font picker in Appearance is gone and any previously chosen font is ignored'
+            'Text in the Add Tenant and Import dialogs is as crisp as in the main window'
+        )
+    }
+    @{
         Version = '0.40.0'
         Date    = '2026-10-05'
         Changes = @(
