@@ -71,7 +71,7 @@ function New-NavCategory {
 }
 
 function New-NavItem {
-    param([string]$Name, [string]$Title, [string]$Subtitle, $Section)
+    param([string]$Name, [string]$Title, [string]$Subtitle, $Section, [int]$Icon)
     $button = [System.Windows.Controls.Button]::new()
     $button.Style = $Script:MainUI.Window.FindResource('NavButton')
     $button.Tag = $Name
@@ -81,7 +81,17 @@ function New-NavItem {
     $titleTb.Text = $Title
     $titleTb.TextWrapping = 'Wrap'
     $titleTb.VerticalAlignment = 'Center'
-    $titleTb.Margin = [System.Windows.Thickness]::new(12, 0, 0, 0)
+    $titleTb.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
+    # Windows' built-in icon font: Fluent Icons on Windows 11, MDL2 Assets on Windows 10.
+    $iconTb = [System.Windows.Controls.TextBlock]::new()
+    $iconTb.Text = [string][char]$Icon
+    $iconTb.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe Fluent Icons, Segoe MDL2 Assets')
+    $iconTb.FontSize = 16
+    $iconTb.Width = 20
+    $iconTb.TextAlignment = 'Center'
+    $iconTb.VerticalAlignment = 'Center'
+    $iconTb.Margin = [System.Windows.Thickness]::new(12, 0, 0, 0)
+    $iconTb.Foreground = New-SolidBrush 'TextDim'
     $indicator = [System.Windows.Controls.Border]::new()
     $indicator.Width = 3
     $indicator.Height = 20
@@ -93,8 +103,10 @@ function New-NavItem {
     $markColumn = [System.Windows.Controls.ColumnDefinition]::new()
     $markColumn.Width = [System.Windows.GridLength]::new(3)
     [void]$row.ColumnDefinitions.Add($markColumn)
+    [void]$row.ColumnDefinitions.Add([System.Windows.Controls.ColumnDefinition]@{ Width = [System.Windows.GridLength]::Auto })
     [void]$row.ColumnDefinitions.Add([System.Windows.Controls.ColumnDefinition]::new())
-    [System.Windows.Controls.Grid]::SetColumn($titleTb, 1)
+    [System.Windows.Controls.Grid]::SetColumn($iconTb, 1)
+    [System.Windows.Controls.Grid]::SetColumn($titleTb, 2)
     [void]$row.Children.Add($indicator)
     [void]$row.Children.Add($titleTb)
     # Pin toggle: visible on hover, or always once pinned. Ctrl+D does the same from the keyboard.
@@ -104,8 +116,9 @@ function New-NavItem {
     $star.FontSize = 14
     $star.VerticalAlignment = 'Center'
     $star.Margin = [System.Windows.Thickness]::new(8, 0, 2, 0)
-    [System.Windows.Controls.Grid]::SetColumn($star, 2)
+    [System.Windows.Controls.Grid]::SetColumn($star, 3)
     [void]$row.Children.Add($star)
+    [void]$row.Children.Add($iconTb)  # after the star, which the hover handlers find as Children[2]
     $star.Add_MouseLeftButtonDown({
         param($starSender, $starEvent)
         # Handled here so the surrounding nav button does not also navigate.
@@ -144,7 +157,7 @@ function New-NavItem {
         $navEvent.Handled = $true
     })
     Set-NavStar $star
-    return @{ Name = $Name; Border = $button; TitleTb = $titleTb; Title = $Title; Subtitle = $Subtitle; Indicator = $indicator; Section = $Section; Star = $star }
+    return @{ Name = $Name; Border = $button; TitleTb = $titleTb; IconTb = $iconTb; Title = $Title; Subtitle = $Subtitle; Indicator = $indicator; Section = $Section; Star = $star }
 }
 
 function Set-NavStar {
@@ -178,7 +191,7 @@ function Update-NavPinned {
     foreach ($name in $pinned) { [void]$Script:NavPinned.Add($name) }
     for ($i = 0; $i -lt $pinned.Count; $i++) {
         $def = $Script:NavDefs[$pinned[$i]]
-        $item = New-NavItem -Name $pinned[$i] -Title $def.Title -Subtitle $def.Desc -Section $section
+        $item = New-NavItem -Name $pinned[$i] -Title $def.Title -Subtitle $def.Desc -Section $section -Icon $def.Icon
         [void]$section.Content.Children.Add($item.Border)
         # First in the list so arrow-key navigation starts with pinned tools.
         $Script:NavItems.Insert($i, $item)
@@ -247,12 +260,14 @@ function Set-NavSelection {
             $item.Section.IsExpanded = $true
             $item.Section.Foreground = $accentBrush
             $item.TitleTb.Foreground = $textBrush
+            $item.IconTb.Foreground  = $accentBrush
             $Script:MainUI.ToolTitle.Text = $item.Title
             $Script:MainUI.ToolDescription.Text = $item.Subtitle
         } else {
             $item.Border.Background  = [System.Windows.Media.Brushes]::Transparent
             $item.Border.BorderBrush = [System.Windows.Media.Brushes]::Transparent
             $item.TitleTb.Foreground = $textBrush
+            $item.IconTb.Foreground  = $dimBrush
             $item.TitleTb.FontWeight = [System.Windows.FontWeights]::Normal
             $item.Indicator.Visibility = 'Hidden'
         }
@@ -1341,32 +1356,32 @@ function Show-MainWindow {
     # ── Build nav sidebar ─────────────────────────────────────────────────────
     $navDef = @(
         @{ Type = 'cat'; Label = 'User support' }
-        @{ Type = 'tool'; Name = 'Overview'; Title = 'User Overview'; Desc = 'Account, groups, licences, devices and recent sign-ins' }
-        @{ Type = 'tool'; Name = 'UserReset';   Title = 'User Password Reset';  Desc = 'Reset a single account password' }
-        @{ Type = 'tool'; Name = 'Licence';     Title = 'Licence Assignment';   Desc = 'View and assign Microsoft 365 licences' }
-        @{ Type = 'tool'; Name = 'Leaver';      Title = 'Leaver Workflow';      Desc = 'Disable, revoke sessions, remove from groups' }
+        @{ Type = 'tool'; Name = 'Overview'; Title = 'User Overview'; Desc = 'Account, groups, licences, devices and recent sign-ins'; Icon = 0xE77B }
+        @{ Type = 'tool'; Name = 'UserReset';   Title = 'User Password Reset';  Desc = 'Reset a single account password'; Icon = 0xE8D7 }
+        @{ Type = 'tool'; Name = 'Licence';     Title = 'Licence Assignment';   Desc = 'View and assign Microsoft 365 licences'; Icon = 0xEB95 }
+        @{ Type = 'tool'; Name = 'Leaver';      Title = 'Leaver Workflow';      Desc = 'Disable, revoke sessions, remove from groups'; Icon = 0xE8F8 }
         @{ Type = 'cat'; Label = 'Bulk user changes' }
-        @{ Type = 'tool'; Name = 'YearGroup';   Title = 'Year Group Passwords'; Desc = 'Reset passwords by year group or department' }
-        @{ Type = 'tool'; Name = 'BulkLicence'; Title = 'Bulk Licences'; Desc = 'Preview and apply licences to a user roster' }
-        @{ Type = 'tool'; Name = 'BulkUpn';     Title = 'Bulk UPN Change';      Desc = 'Move users to a different verified domain' }
-        @{ Type = 'tool'; Name = 'ImmutableId'; Title = 'Immutable ID';         Desc = 'Assign immutable ID to user' }
+        @{ Type = 'tool'; Name = 'YearGroup';   Title = 'Year Group Passwords'; Desc = 'Reset passwords by year group or department'; Icon = 0xE72E }
+        @{ Type = 'tool'; Name = 'BulkLicence'; Title = 'Bulk Licences'; Desc = 'Preview and apply licences to a user roster'; Icon = 0xE8F1 }
+        @{ Type = 'tool'; Name = 'BulkUpn';     Title = 'Bulk UPN Change';      Desc = 'Move users to a different verified domain'; Icon = 0xE715 }
+        @{ Type = 'tool'; Name = 'ImmutableId'; Title = 'Immutable ID';         Desc = 'Assign immutable ID to user'; Icon = 0xE8EC }
         @{ Type = 'cat'; Label = 'Groups & Teams' }
-        @{ Type = 'tool'; Name = 'GroupManager'; Title = 'Group Manager'; Desc = 'Compare an existing group with a user roster and review membership changes' }
-        @{ Type = 'tool'; Name = 'GroupCopy';   Title = 'Group Copy';           Desc = 'Copy memberships from one user to another' }
-        @{ Type = 'tool'; Name = 'SecurityGroup'; Title = 'Security Group Creator'; Desc = 'Create a security group from year groups, departments, individual users or CSV' }
-        @{ Type = 'tool'; Name = 'Teams';        Title = 'Teams Provisioning';  Desc = 'Create Teams from year groups, departments or individual users' }
-        @{ Type = 'tool'; Name = 'TeamEditor';   Title = 'Team Editor';         Desc = 'Add missing students or staff to an existing Team' }
+        @{ Type = 'tool'; Name = 'GroupManager'; Title = 'Group Manager'; Desc = 'Compare an existing group with a user roster and review membership changes'; Icon = 0xF168 }
+        @{ Type = 'tool'; Name = 'GroupCopy';   Title = 'Group Copy';           Desc = 'Copy memberships from one user to another'; Icon = 0xE8C8 }
+        @{ Type = 'tool'; Name = 'SecurityGroup'; Title = 'Security Group Creator'; Desc = 'Create a security group from year groups, departments, individual users or CSV'; Icon = 0xE902 }
+        @{ Type = 'tool'; Name = 'Teams';        Title = 'Teams Provisioning';  Desc = 'Create Teams from year groups, departments or individual users'; Icon = 0xE8F2 }
+        @{ Type = 'tool'; Name = 'TeamEditor';   Title = 'Team Editor';         Desc = 'Add missing students or staff to an existing Team'; Icon = 0xE8FA }
         @{ Type = 'cat'; Label = 'Devices' }
-        @{ Type = 'tool'; Name = 'LastDevice';  Title = 'Last Device';          Desc = 'Login history and stale device detection' }
-        @{ Type = 'tool'; Name = 'DevComp';     Title = 'Device Compliance';    Desc = 'Compliance overview with failure reasons' }
+        @{ Type = 'tool'; Name = 'LastDevice';  Title = 'Last Device';          Desc = 'Login history and stale device detection'; Icon = 0xE7F8 }
+        @{ Type = 'tool'; Name = 'DevComp';     Title = 'Device Compliance';    Desc = 'Compliance overview with failure reasons'; Icon = 0xF552 }
         @{ Type = 'cat'; Label = 'Reports & activity' }
-        @{ Type = 'tool'; Name = 'SignIn';       Title = 'Sign-In Logs';        Desc = 'Browse Entra ID sign-in events' }
-        @{ Type = 'tool'; Name = 'SecureScore'; Title = 'Secure Score';         Desc = 'Microsoft Secure Score with control breakdown' }
-        @{ Type = 'tool'; Name = 'BulkResults'; Title = 'Bulk Results'; Desc = 'Progress, stop, export and recover bulk operations' }
-        @{ Type = 'tool'; Name = 'ChangeHistory'; Title = 'Change History'; Desc = 'Search local changes by date, operator, user and action' }
+        @{ Type = 'tool'; Name = 'SignIn';       Title = 'Sign-In Logs';        Desc = 'Browse Entra ID sign-in events'; Icon = 0xE9F9 }
+        @{ Type = 'tool'; Name = 'SecureScore'; Title = 'Secure Score';         Desc = 'Microsoft Secure Score with control breakdown'; Icon = 0xEA18 }
+        @{ Type = 'tool'; Name = 'BulkResults'; Title = 'Bulk Results'; Desc = 'Progress, stop, export and recover bulk operations'; Icon = 0xE9D5 }
+        @{ Type = 'tool'; Name = 'ChangeHistory'; Title = 'Change History'; Desc = 'Search local changes by date, operator, user and action'; Icon = 0xE81C }
         @{ Type = 'cat'; Label = 'App' }
-        @{ Type = 'tool'; Name = 'Appearance';  Title = 'Appearance';           Desc = 'Colour theme' }
-        @{ Type = 'tool'; Name = 'Changelog';   Title = 'Update History';       Desc = 'Version changelog and release notes' }
+        @{ Type = 'tool'; Name = 'Appearance';  Title = 'Appearance';           Desc = 'Colour theme'; Icon = 0xE790 }
+        @{ Type = 'tool'; Name = 'Changelog';   Title = 'Update History';       Desc = 'Version changelog and release notes'; Icon = 0xE777 }
     )
 
     $Script:NavPinnedSection = New-NavCategory -Label 'Pinned'
@@ -1379,7 +1394,7 @@ function Show-MainWindow {
             $section = New-NavCategory -Label $def.Label
             [void]$Script:MainUI.NavPanel.Children.Add($section)
         } else {
-            $item = New-NavItem -Name $def.Name -Title $def.Title -Subtitle $def.Desc -Section $section
+            $item = New-NavItem -Name $def.Name -Title $def.Title -Subtitle $def.Desc -Section $section -Icon $def.Icon
             [void]$section.Content.Children.Add($item.Border)
             $Script:NavItems.Add($item)
         }
