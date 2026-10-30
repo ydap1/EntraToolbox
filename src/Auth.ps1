@@ -1202,19 +1202,27 @@ function Remove-SavedTenant {
     param([Parameter(Mandatory)][string]$TenantId)
     $remaining = @(Get-SavedTenants | Where-Object { $_.TenantId -ne $TenantId })
     Set-EtbFileContent (Get-TenantsConfigPath) (ConvertTo-Json @($remaining) -Depth 3)
+    # The saved sign-ins for both modes go with the profile.
+    foreach ($gdap in $false, $true) {
+        Remove-Item (Get-TenantCacheFile -TenantId $TenantId -Gdap $gdap) -Force -ErrorAction SilentlyContinue
+    }
 }
 
+# GDAP and Global Admin sign-ins are kept apart, so GDAP mode never silently
+# signs in with an admin account saved in Global Admin mode (or the reverse).
 function Get-TenantCacheFile {
-    param([string]$TenantId)
+    param([string]$TenantId, [bool]$Gdap = $Script:GdapMode)
     $cacheDir = Join-Path $Global:AppRoot 'config\msal_cache'
     if (-not (Test-Path $cacheDir)) { New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null }
-    Join-Path $cacheDir "token_cache_$($TenantId -replace '[^a-zA-Z0-9]','').bin"
+    Join-Path $cacheDir "token_cache_$($TenantId -replace '[^a-zA-Z0-9]','')$(if ($Gdap) { '_gdap' }).bin"
 }
+
+function Get-TenantAccountHintName { if ($Script:GdapMode) { 'GdapAccountHint' } else { 'AccountHint' } }
 
 function Get-TenantAccountHint {
     param([string]$TenantId)
     $t = @(Get-SavedTenants) | Where-Object { $_.TenantId -eq $TenantId } | Select-Object -First 1
-    if ($t -and $t.AccountHint) { return $t.AccountHint }
+    if ($t -and $t.(Get-TenantAccountHintName)) { return $t.(Get-TenantAccountHintName) }
     return $null
 }
 
@@ -1223,7 +1231,7 @@ function Set-TenantAccountHint {
     $all = @(Get-SavedTenants)
     foreach ($t in $all) {
         if ($t.TenantId -eq $TenantId) {
-            $t | Add-Member -NotePropertyName 'AccountHint' -NotePropertyValue $AccountHint -Force
+            $t | Add-Member -NotePropertyName (Get-TenantAccountHintName) -NotePropertyValue $AccountHint -Force
         }
     }
     Set-EtbFileContent (Get-TenantsConfigPath) (ConvertTo-Json @($all) -Depth 3)
@@ -1320,6 +1328,7 @@ function Start-TenantConnectAsync {
     $rs.SessionStateProxy.SetVariable('ClientId',     $clientId)
     $rs.SessionStateProxy.SetVariable('Scopes',       $scopes)
     $rs.SessionStateProxy.SetVariable('CacheDir',     $cacheDir)
+    $rs.SessionStateProxy.SetVariable('CacheSuffix',  $(if ($Script:GdapMode) { '_gdap' } else { '' }))  # as Get-TenantCacheFile
     $rs.SessionStateProxy.SetVariable('AccountHint',  $accountHint)
     $rs.SessionStateProxy.SetVariable('ExistingApp',  $existingApp)
 
@@ -1349,7 +1358,7 @@ function Start-TenantConnectAsync {
                 $resolvedTid = $Matches[1]
             }
             $AuthRef['TenantId'] = $resolvedTid
-            $CacheFile = Join-Path $CacheDir ("token_cache_" + ($resolvedTid -replace '[^a-zA-Z0-9]', '') + '.bin')
+            $CacheFile = Join-Path $CacheDir ("token_cache_" + ($resolvedTid -replace '[^a-zA-Z0-9]', '') + $CacheSuffix + '.bin')
 
             $app = if ($ExistingApp) { $ExistingApp } else {
                 New-MsalClientApplication -ClientId $ClientId -TenantId $resolvedTid

@@ -36,7 +36,19 @@ try {
     Assert (@(Get-SavedTenants).Count -eq 0 -and (Test-Path "$tenantsPath.corrupt")) 'an unreadable tenants file is set aside instead of blocking startup'
     Save-Tenant -TenantId 'tenant-a' -DisplayName 'A'
     Assert ((Get-SavedTenants).TenantId -eq 'tenant-a' -and -not (Test-Path "$tenantsPath.tmp")) 'tenant profiles are saved through a completed replacement file'
+    Set-TenantAccountHint -TenantId 'tenant-a' -AccountHint 'admin@school.test'
+    $gaCache = Get-TenantCacheFile -TenantId 'tenant-a'; Set-Content $gaCache 'ga'
+    $Script:GdapMode = $true
+    $gdapCache = Get-TenantCacheFile -TenantId 'tenant-a'
+    Assert (-not (Get-TenantAccountHint -TenantId 'tenant-a') -and $gdapCache -ne $gaCache) 'GDAP mode never reuses a Global Admin sign-in'
+    Set-TenantAccountHint -TenantId 'tenant-a' -AccountHint 'tech@partner.test'; Set-Content $gdapCache 'gdap'
+    Disconnect-Tenant -TenantId 'tenant-a'
+    Assert (-not (Test-Path $gdapCache) -and -not (Get-TenantAccountHint -TenantId 'tenant-a')) 'disconnecting in GDAP mode clears the GDAP sign-in'
+    $Script:GdapMode = $false
+    Assert ((Get-TenantAccountHint -TenantId 'tenant-a') -eq 'admin@school.test' -and (Test-Path $gaCache)) 'disconnecting in GDAP mode keeps the Global Admin sign-in'
+    Set-Content $gdapCache 'gdap'
     Remove-SavedTenant -TenantId 'tenant-a'
+    Assert (-not (Test-Path $gaCache) -and -not (Test-Path $gdapCache)) 'removing a tenant deletes the saved sign-ins for both modes'
 
     . "$root/src/Import.ps1"
     . "$root/src/Tools/PasswordReset.ps1"
