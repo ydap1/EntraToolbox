@@ -10,6 +10,13 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.42.1'
+        Date    = '2026-10-30'
+        Changes = @(
+            'GDAP mode no longer signs in silently with an admin account saved in Global Admin mode; each mode keeps its own saved sign-ins, Disconnect clears only the current mode''s, and removing a tenant clears both'
+        )
+    }
+    @{
         Version = '0.42.0'
         Date    = '2026-10-30'
         Changes = @(
