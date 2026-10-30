@@ -10,6 +10,13 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.43.0'
+        Date    = '2026-10-30'
+        Changes = @(
+            'Every tool in the sidebar has an icon from Windows'' built-in icon font; the selected tool''s icon is highlighted'
+        )
+    }
+    @{
         Version = '0.42.1'
         Date    = '2026-10-30'
         Changes = @(
