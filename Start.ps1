@@ -80,7 +80,7 @@ Write-Log "Art's Entra Toolbox $Global:AppVersion starting (PS $($PSVersionTable
 Initialize-TokenCacheHelper
 
 try {
-    Show-MainWindow -AppVersion $Global:AppVersion
+    if (Select-EtbSignInMode) { Show-MainWindow -AppVersion $Global:AppVersion }
 } catch {
     Write-Log "Fatal error in Show-MainWindow: $_" 'ERROR'
     Write-Log $_.ScriptStackTrace 'ERROR'

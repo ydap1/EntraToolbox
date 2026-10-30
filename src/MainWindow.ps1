@@ -879,6 +879,72 @@ $Script:AddTenantXaml = @'
 </Window>
 '@
 
+# ── Sign-in mode picker (shown at launch) ──────────────────────────────────────
+$Script:SignInModeXaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Art's Entra Toolbox" Width="400" SizeToContent="Height"
+        ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
+        Background="#1C1C2A" FontFamily="Segoe UI" FontSize="13"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType">
+  <Window.Resources>
+    <Style x:Key="ModeBtn" TargetType="Button">
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="bd" Background="#242436" BorderBrush="#3C3C5A" BorderThickness="1"
+                    CornerRadius="6" Padding="14,10">
+              <ContentPresenter HorizontalAlignment="Left"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="bd" Property="BorderBrush" Value="#6366F1"/>
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="bd" Property="BorderBrush" Value="#6366F1"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </Window.Resources>
+  <StackPanel Margin="20,18,20,20">
+    <TextBlock Text="How are you signing in?" Foreground="#E2E2F0" FontSize="15" FontWeight="SemiBold"
+               Margin="0,0,0,14"/>
+    <Button x:Name="ModeNormal" Style="{StaticResource ModeBtn}" Margin="0,0,0,8">
+      <StackPanel>
+        <TextBlock Text="Global Admin" Foreground="#E2E2F0" FontWeight="SemiBold"/>
+        <TextBlock Text="An admin account in each school's tenant." Foreground="#7878A0" FontSize="11"
+                   Margin="0,2,0,0"/>
+      </StackPanel>
+    </Button>
+    <Button x:Name="ModeGdap" Style="{StaticResource ModeBtn}">
+      <StackPanel>
+        <TextBlock Text="GDAP" Foreground="#E2E2F0" FontWeight="SemiBold"/>
+        <TextBlock Text="Your partner account, with GDAP access to each school." Foreground="#7878A0"
+                   FontSize="11" Margin="0,2,0,0"/>
+      </StackPanel>
+    </Button>
+  </StackPanel>
+</Window>
+'@
+
+# Returns $false when the picker is closed without a choice.
+function Select-EtbSignInMode {
+    Add-Type -AssemblyName PresentationFramework
+    $reader = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new((Invoke-ThemeXaml $Script:SignInModeXaml)))
+    $win    = [System.Windows.Markup.XamlReader]::Load($reader)
+    $win.FindName('ModeNormal').Add_Click({ $Script:GdapMode = $false; [System.Windows.Window]::GetWindow($this).DialogResult = $true })
+    $win.FindName('ModeGdap').Add_Click({ $Script:GdapMode = $true; [System.Windows.Window]::GetWindow($this).DialogResult = $true })
+    $win.Add_ContentRendered({ [void]$this.FindName('ModeNormal').Focus() })
+    $chosen = [bool]$win.ShowDialog()
+    if ($chosen) { Write-Log "Sign-in mode: $(if ($Script:GdapMode) { 'GDAP' } else { 'Global Admin' })" 'INFO' }
+    return $chosen
+}
+
 # ── Tenant combo helpers ───────────────────────────────────────────────────────
 function Update-TenantCombo {
     $tenants = @(Get-SavedTenants)
@@ -1221,6 +1287,7 @@ function Show-MainWindow {
         $Script:MainUI.Version.Text = "v$AppVersion"
         $window.Title = "Art's Entra Toolbox — v$AppVersion"
     }
+    if ($Script:GdapMode) { $Script:MainUI.Version.Text += '  ·  GDAP'; $window.Title += ' (GDAP)' }
 
     # ── Register lazy-init maps (panels built on first nav click) ────────────
     $Script:NavInitializers = @{

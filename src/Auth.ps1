@@ -28,6 +28,9 @@ function Write-Log {
 # Set by MainWindow after XAML is loaded; tools call Write-AppLog.
 $Script:AppLogBox = $null
 $Script:DryMode   = $false
+# Chosen at launch: $true when signing in with a partner account through GDAP
+# rather than an admin account that lives in each school's tenant.
+$Script:GdapMode  = $false
 
 function Write-AppLog {
     param(
