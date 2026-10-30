@@ -79,7 +79,7 @@ try {
             $grid = [pscustomobject]@{ ItemsSource = $rows; SelectedItems = @() }
             $grid | Add-Member ScriptMethod SelectAll { $this.SelectedItems = @($this.ItemsSource) }
             $ui = @{ Grid = $grid; RbLive = [pscustomobject]@{ IsChecked = $false }; TeamName = [pscustomobject]@{ Text = 'Test' } }
-            foreach ($name in 'BtnSelectAll','BtnSelectNone','BtnImport','BtnExport','BtnPrint','PnlStats','BtnRun','BtnCreate','BtnClear','LblSelection') {
+            foreach ($name in 'BtnSelectAll','BtnSelectNone','BtnImport','BtnExport','BtnPrint','PnlStats','BtnRun','BtnCreate','BtnClear','LblSelection','LblOwnerHint','BtnLoad','BtnLoadDept') {
                 $ui[$name] = [pscustomobject]@{ IsEnabled = $false; Visibility = ''; Content = ''; Background = ''; Text = '' }
             }
             Set-Variable "${tool}_UI" -Scope Script -Value $ui
@@ -92,6 +92,24 @@ try {
         Set-TpPopulation -Choice $year
         Assert ($Script:TP_Rows.Count -eq 1) 'Teams population cannot change during creation'
         $Script:TP_Creating = $false
+        $Script:GdapMode = $true
+        Update-TpCreateButton
+        Assert (-not $Script:TP_UI.BtnCreate.IsEnabled -and $Script:TP_UI.LblOwnerHint.Visibility -eq 'Visible') 'GDAP mode blocks team creation until an owner is ticked'
+        Set-TpPopulation -Choice $year
+        ($Script:TP_Rows | Where-Object Id -eq 'b').IsOwner = $true
+        Update-TpCreateButton
+        Assert ($Script:TP_UI.BtnCreate.IsEnabled -and $Script:TP_UI.LblOwnerHint.Visibility -eq 'Collapsed') 'a ticked owner allows GDAP team creation'
+        $seen = @{}
+        function Start-AsyncWork { param($BulkName, $BulkTotal, $IntervalMs, $Vars, $RefSeed, $Script, $OnProgress, $OnComplete) $seen.Vars = $Vars }
+        $Script:TP_UI.Grid | Add-Member ScriptMethod CommitEdit { param($Unit, $Exit) $true }
+        if (-not ('System.Windows.Controls.DataGridEditingUnit' -as [type])) {
+            Add-Type 'namespace System.Windows.Controls { public enum DataGridEditingUnit { Cell, Row } }'
+        }
+        $Script:TP_UI.RbClass = [pscustomobject]@{ IsChecked = $true }
+        Start-TpCreateTeam
+        Assert ($seen.Vars.OwnerUpn -eq 'ben@school.test' -and (@($seen.Vars.MemberSnap).UPN -join ',') -eq 'ann@school.test') 'GDAP teams are created by the ticked owner, who is not added a second time'
+        $Script:TP_Creating = $false
+        $Script:GdapMode = $false
         $Script:CurrentTenantId = 'test-tenant'
         Set-PwPopulation -Choice $year -RememberYear
         Assert ($Script:PwReset_Rows.Count -eq 2 -and $Script:PwReset_UI.Grid.SelectedItems.Count -eq 2) 'password reset year loading selects every class in the year'
@@ -155,7 +173,7 @@ try {
         }
         foreach ($Template in 'educationClass', 'standard') {
             $calls = [Collections.Generic.List[object]]::new()
-            $Token = 'test'; $TeamName = 'Private team'; $AdminUpn = 'admin@school.test'; $MemberSnap = @()
+            $Token = 'test'; $TeamName = 'Private team'; $OwnerUpn = 'admin@school.test'; $MemberSnap = @()
             $Ref = @{ Log = [Collections.Concurrent.ConcurrentQueue[string]]::new() }
             & $worker
             if ($Template -eq 'educationClass') {

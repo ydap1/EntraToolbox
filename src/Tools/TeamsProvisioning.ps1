@@ -18,7 +18,10 @@ function Write-TpLog {
 function Update-TpCreateButton {
     $nameOk  = -not [string]::IsNullOrWhiteSpace($Script:TP_UI.TeamName.Text)
     $hasRows = $Script:TP_Rows.Count -gt 0
-    $Script:TP_UI.BtnCreate.IsEnabled = ($nameOk -and $hasRows -and -not $Script:TP_Creating)
+    # GDAP accounts aren't users in the school's tenant, so a ticked member must own the team.
+    $ownerOk = -not $Script:GdapMode -or @($Script:TP_Rows | Where-Object IsOwner).Count -gt 0
+    $Script:TP_UI.LblOwnerHint.Visibility = if ($ownerOk) { 'Collapsed' } else { 'Visible' }
+    $Script:TP_UI.BtnCreate.IsEnabled = ($nameOk -and $hasRows -and $ownerOk -and -not $Script:TP_Creating)
     $Script:TP_UI.BtnClear.IsEnabled = ($hasRows -and -not $Script:TP_Creating)
 }
 
@@ -412,6 +415,8 @@ $Script:TpXaml = @'
         <TextBlock Text="ACTIONS" Style="{StaticResource SectionLbl}"/>
         <Button x:Name="TpBtnCreate" Content="Create Team" IsEnabled="False"
                 Style="{StaticResource PrimaryBtn}" Background="#6366F1" Padding="0,10"/>
+        <TextBlock x:Name="TpLblOwnerHint" Text="GDAP mode: tick at least one owner in the member list."
+                   Foreground="#FBBF24" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" Visibility="Collapsed"/>
 
         <Border x:Name="TpPnlStats" CornerRadius="6" Background="#242436"
                 Padding="14,12" Margin="0,14,0,0" Visibility="Collapsed">
@@ -527,17 +532,21 @@ function Start-TpCreateTeam {
     $teamName   = $Script:TP_UI.TeamName.Text.Trim()
     $isClass    = $Script:TP_UI.RbClass.IsChecked
     $template   = if ($isClass) { 'educationClass' } else { 'standard' }
-    $adminUpn   = Get-TenantAccountHint -TenantId $Script:CurrentTenantId
-    if (-not $adminUpn) {
-        Write-TpLog 'Cannot create team: admin UPN not available. Disconnect and reconnect to refresh.' 'Danger'
-        Set-MainStatus 'Team creation failed: admin UPN unavailable.' 'Danger'
+    # The team is created with one owner: the signed-in admin, or under GDAP
+    # (where that account isn't in the tenant) the first ticked owner.
+    $ownerUpn   = if ($Script:GdapMode) { ($Script:TP_Rows | Where-Object IsOwner | Select-Object -First 1).UPN }
+                  else { Get-TenantAccountHint -TenantId $Script:CurrentTenantId }
+    if (-not $ownerUpn) {
+        $why = if ($Script:GdapMode) { 'no owner ticked in the member list' } else { 'admin UPN not available. Disconnect and reconnect to refresh' }
+        Write-TpLog "Cannot create team: $why." 'Danger'
+        Set-MainStatus 'Team creation failed: no owner.' 'Danger'
         $Script:TP_Creating = $false
         Update-TpCreateButton
         return
     }
-    # The signed-in admin joins as owner when the team is created; adding them
-    # again from the member list would only fail.
-    $memberSnap = @($Script:TP_Rows | Where-Object { $_.UPN -ne $adminUpn } | ForEach-Object {
+    # The creating owner joins when the team is created; adding them again
+    # from the member list would only fail.
+    $memberSnap = @($Script:TP_Rows | Where-Object { $_.UPN -ne $ownerUpn } | ForEach-Object {
         @{ Id = $_.Id; UPN = $_.UPN; DisplayName = $_.DisplayName; IsOwner = [bool]$_.IsOwner }
     })
 
@@ -558,7 +567,7 @@ function Start-TpCreateTeam {
         -Vars @{
             TeamName   = $teamName
             Template   = $template
-            AdminUpn   = $adminUpn
+            OwnerUpn   = $ownerUpn
             MemberSnap = $memberSnap
         } `
         -RefSeed @{
@@ -583,7 +592,7 @@ function Start-TpCreateTeam {
                     @{
                         '@odata.type'     = '#microsoft.graph.aadUserConversationMember'
                         roles             = @('owner')
-                        'user@odata.bind' = "https://graph.microsoft.com/v1.0/users('$AdminUpn')"
+                        'user@odata.bind' = "https://graph.microsoft.com/v1.0/users('$OwnerUpn')"
                     }
                 )
             }
@@ -765,6 +774,7 @@ function Initialize-TeamsProvisioningTool {
         LblTeamStatus = $content.FindName('TpLblTeamStatus')
         LblAdded      = $content.FindName('TpLblMembersAdded')
         LblFailed     = $content.FindName('TpLblMembersFailed')
+        LblOwnerHint  = $content.FindName('TpLblOwnerHint')
         Grid          = $content.FindName('TpGrid')
         # LogBox removed — use Write-AppLog to the global Log pane
     }
@@ -850,6 +860,16 @@ function Initialize-TeamsProvisioningTool {
         try { Clear-TpMembers } catch { Write-Log "TP clear members error: $_" 'ERROR' }
     })
 
+    # Owner ticks gate Create in GDAP mode. Deferred so the binding has
+    # written IsOwner back to the row before it's read.
+    foreach ($evt in [System.Windows.Controls.Primitives.ToggleButton]::CheckedEvent,
+                     [System.Windows.Controls.Primitives.ToggleButton]::UncheckedEvent) {
+        $Script:TP_UI.Grid.AddHandler($evt, [System.Windows.RoutedEventHandler]{
+            try { Invoke-EtbDebounced -Key 'TP_Owner' -Command 'Update-TpCreateButton' -Ms 50 }
+            catch { Write-Log "TP owner toggle error: $_" 'ERROR' }
+        })
+    }
+
     # Grid selection -> update label
     $Script:TP_UI.Grid.Add_SelectionChanged({
         try { Update-TpSelectionLabel } catch { Write-Log "TP Grid SelectionChanged error: $_" 'ERROR' }
@@ -878,7 +898,9 @@ function Initialize-TeamsProvisioningTool {
         $Script:TP_UI.Search.Text              = ''
         $Script:TP_UI.SearchList.Items.Clear()
         $Script:TP_UI.RbYearGroup.IsChecked    = $true
+        Update-TpCreateButton
     })
+    Update-TpCreateButton
 
     Write-TpLog 'Teams Provisioning ready. Select a tenant to begin.' 'Muted'
     return $content
