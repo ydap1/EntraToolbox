@@ -10,7 +10,7 @@ cd EntraToolbox
 .\Launch.cmd
 ```
 
-The first launch downloads the required sign-in module, so you’ll need an internet connection. Click **+** in the tenant bar, enter your tenant ID, verified domain or admin email, and sign in. For later launches, double-click **Launch.cmd** in the cloned folder.
+The first launch downloads the required sign-in module, so you’ll need an internet connection. At each launch, choose **Global Admin** (an admin account in each school's tenant) or **GDAP** (your partner account). Click **+** in the tenant bar, enter your tenant ID, verified domain or admin email, and sign in. In GDAP mode, enter the school's domain or tenant ID rather than your own email, and Teams Provisioning needs at least one ticked owner, because the team is created with that owner instead of you. For later launches, double-click **Launch.cmd** in the cloned folder.
 
 There’s no separate app installer or Azure app registration. Use **Demo** to explore with sample data before connecting a tenant.
 

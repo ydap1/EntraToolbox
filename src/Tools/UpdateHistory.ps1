@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.42.0'
+        Date    = '2026-10-30'
+        Changes = @(
+            'Choose Global Admin or GDAP sign-in when the toolbox opens; GDAP mode shows next to the version'
+            'In GDAP mode, Teams Provisioning won''t create a team until at least one member is ticked as owner, and the team is created with that owner instead of you'
+        )
+    }
+    @{
         Version = '0.41.0'
         Date    = '2026-10-06'
         Changes = @(
