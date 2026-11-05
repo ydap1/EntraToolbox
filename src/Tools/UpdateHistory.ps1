@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.44.0'
+        Date    = '2026-11-05'
+        Changes = @(
+            'Bulk UPN Change can find students by the form in brackets at the end of their display name: type 3 for all of Year 3, R for all of Reception, or one form such as 3B, RA or NPM, then add every match at once'
+            'Bulk UPN Change search works again after switching or disconnecting tenants'
+        )
+    }
+    @{
         Version = '0.43.0'
         Date    = '2026-10-30'
         Changes = @(

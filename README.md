@@ -19,7 +19,7 @@ There’s no separate app installer or Azure app registration. Use **Demo** to e
 ## Tools
 
 - **Users:** account overview, individual password resets and bulk resets by year group, department or office location, leaver workflow (disable, revoke sessions, remove groups and licences) and group membership restore.
-- **Bulk changes:** licence assignment, UPN changes and immutable IDs.
+- **Bulk changes:** licence assignment, UPN changes (pick students by the form in their display name, such as 3B, or a whole year) and immutable IDs.
 - **Groups & Teams:** copy or reconcile memberships, create security groups with users or devices, provision Class or Standard Teams, and add missing students or staff to existing Teams. Creation errors show Graph’s explanation.
 - **Devices:** Intune device lookup, stale devices, sign-in time reports and compliance details.
 - **Reports:** sign-in logs, local change history, bulk results and Microsoft Secure Score.
