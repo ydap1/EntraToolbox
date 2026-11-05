@@ -780,7 +780,8 @@ function Initialize-BulkUpnChangeTool {
     $Script:ResetCallbacks.Add({
         if ($Script:BUC_LoadTimer)   { $Script:BUC_LoadTimer.Stop();   $Script:BUC_LoadTimer   = $null }
         if ($Script:BUC_ApplyTimer)  { $Script:BUC_ApplyTimer.Stop();  $Script:BUC_ApplyTimer  = $null }
-        if ($Script:BUC_SearchTimer) { $Script:BUC_SearchTimer.Stop(); $Script:BUC_SearchTimer = $null }
+        # Stopped, not cleared: the search box handler reuses it after the next connect.
+        if ($Script:BUC_SearchTimer) { $Script:BUC_SearchTimer.Stop() }
         $Script:BUC_AllUsers = @()
         $Script:BUC_Domains  = @()
         $Script:BUC_Depts    = @()
