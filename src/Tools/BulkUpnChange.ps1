@@ -128,8 +128,16 @@ function Add-BucByField {
     }
 }
 
+# Students' display names end with their form in brackets, e.g. Jane Doe (3B).
+# '3' matches every Year 3 form and 'R' all of Reception; '3B', 'RA' or 'NPM' match one form.
+function Test-BucFormMatch {
+    param([string]$DisplayName, [string]$Form)
+    $DisplayName -match '\(([^()]+)\)\s*$' -and $Matches[1].Trim().StartsWith($Form, [StringComparison]::OrdinalIgnoreCase)
+}
+
 function Update-BucUserFilter {
-    $q = $Script:BUC_UI.Search.Text.Trim()
+    $q    = $Script:BUC_UI.Search.Text.Trim()
+    $form = $Script:BUC_UI.FormSearch.Text.Trim(' ', '(', ')')
     $Script:BUC_UI.UserList.Items.Clear()
 
     $added = [System.Collections.Generic.HashSet[string]]::new()
@@ -140,6 +148,7 @@ function Update-BucUserFilter {
             $_.displayName -like "*$q*" -or $_.userPrincipalName -like "*$q*"
         }
     }
+    if ($form) { $list = $list | Where-Object { Test-BucFormMatch $_.displayName $form } }
     foreach ($u in $list) {
         if ($added.Contains($u.id)) { continue }
         $lbi         = [System.Windows.Controls.ListBoxItem]::new()
@@ -147,6 +156,9 @@ function Update-BucUserFilter {
         $lbi.Tag     = $u
         [void]$Script:BUC_UI.UserList.Items.Add($lbi)
     }
+    $shown = $Script:BUC_UI.UserList.Items.Count
+    $Script:BUC_UI.BtnAddForm.IsEnabled = $form -and $shown -gt 0
+    $Script:BUC_UI.BtnAddForm.Content   = if ($form -and $shown) { "Add $shown from form →" } else { 'Add form →' }
 }
 
 function Add-BucSelected {
@@ -195,8 +207,9 @@ function Update-BucButtons {
 function Start-BucLoad {
     if ($Script:DemoMode) { Start-BucLoadDemo; return }
 
-    $Script:BUC_UI.Search.IsEnabled   = $false
-    $Script:BUC_UI.UserList.IsEnabled = $false
+    $Script:BUC_UI.Search.IsEnabled     = $false
+    $Script:BUC_UI.FormSearch.IsEnabled = $false
+    $Script:BUC_UI.UserList.IsEnabled   = $false
     $Script:BUC_UI.DomainCombo.Items.Clear()
     Write-BucLog 'Loading users and verified domains...' 'TextDim'
 
@@ -242,8 +255,9 @@ function Complete-BucUsers {
 
                 Update-BucGroupCombos
                 Update-BucUserFilter
-                $Script:BUC_UI.Search.IsEnabled   = $true
-                $Script:BUC_UI.UserList.IsEnabled = $true
+                $Script:BUC_UI.Search.IsEnabled     = $true
+                $Script:BUC_UI.FormSearch.IsEnabled = $true
+                $Script:BUC_UI.UserList.IsEnabled   = $true
                 $n = $Script:BUC_AllUsers.Count; $nd = $Script:BUC_Domains.Count
                 Write-BucLog "Loaded $n cloud-only user(s) and $nd verified domain(s)." 'Success'
                 Set-MainStatus "BUC: $n users loaded." 'Success'
@@ -335,10 +349,10 @@ function Start-BucApply {
 # ── Demo stubs ─────────────────────────────────────────────────────────────────
 function Start-BucLoadDemo {
     $Script:BUC_AllUsers = @(
-        [PSCustomObject]@{ id='d1'; displayName='Alice Smith';  userPrincipalName='alice@contoso.edu';  department='Year 10'; officeLocation='Main Building' }
-        [PSCustomObject]@{ id='d2'; displayName='Bob Jones';    userPrincipalName='bob@contoso.edu';    department='Year 10'; officeLocation='Main Building' }
-        [PSCustomObject]@{ id='d3'; displayName='Carol White';  userPrincipalName='carol@contoso.edu';  department='Year 11'; officeLocation='Sixth Form Centre' }
-        [PSCustomObject]@{ id='d4'; displayName='Dave Black';   userPrincipalName='dave@contoso.edu';   department='Year 11'; officeLocation='Sixth Form Centre' }
+        [PSCustomObject]@{ id='d1'; displayName='Alice Smith (3A)'; userPrincipalName='alice@contoso.edu';  department='Year 10'; officeLocation='Main Building' }
+        [PSCustomObject]@{ id='d2'; displayName='Bob Jones (3B)';   userPrincipalName='bob@contoso.edu';    department='Year 10'; officeLocation='Main Building' }
+        [PSCustomObject]@{ id='d3'; displayName='Carol White (RA)'; userPrincipalName='carol@contoso.edu';  department='Year 11'; officeLocation='Sixth Form Centre' }
+        [PSCustomObject]@{ id='d4'; displayName='Dave Black (NPM)'; userPrincipalName='dave@contoso.edu';   department='Year 11'; officeLocation='Sixth Form Centre' }
         [PSCustomObject]@{ id='d5'; displayName='Eve Green';    userPrincipalName='eve@contoso.edu';    department='Staff';   officeLocation='Admin Block' }
         [PSCustomObject]@{ id='d6'; displayName='Frank Hall';   userPrincipalName='frank@contoso.edu';  department='Staff';   officeLocation='Admin Block' }
     )
@@ -348,8 +362,9 @@ function Start-BucLoadDemo {
     $Script:BUC_UI.DomainCombo.SelectedIndex = 0
     Update-BucGroupCombos
     Update-BucUserFilter
-    $Script:BUC_UI.Search.IsEnabled   = $true
-    $Script:BUC_UI.UserList.IsEnabled = $true
+    $Script:BUC_UI.Search.IsEnabled     = $true
+    $Script:BUC_UI.FormSearch.IsEnabled = $true
+    $Script:BUC_UI.UserList.IsEnabled   = $true
     Write-BucLog "Demo: loaded $($Script:BUC_AllUsers.Count) users and $($Script:BUC_Domains.Count) domains." 'Success'
 }
 
@@ -533,6 +548,13 @@ $Script:BucXaml = @'
       <Border Grid.Row="0" Padding="12,12,12,10" BorderBrush="#3C3C5A" BorderThickness="0,0,0,1">
         <ScrollViewer MaxHeight="240" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel>
+          <TextBlock Text="BY FORM" Foreground="#50507A" FontSize="10"
+                     FontWeight="Bold" Margin="0,0,0,6"/>
+          <TextBox x:Name="BucFormSearch" IsEnabled="False" Height="34"
+                   ToolTip="Form in brackets at the end of the display name: 3 for all of Year 3, R for all of Reception, or one form like 3B, RA or NPM"/>
+          <Button x:Name="BucBtnAddForm" Content="Add form →" IsEnabled="False"
+                  Style="{StaticResource PrimaryBtn}" Background="#6366F1"
+                  Padding="12,8" Margin="0,6,0,14" HorizontalAlignment="Stretch"/>
           <TextBlock Text="BY YEAR GROUP" Foreground="#50507A" FontSize="10"
                      FontWeight="Bold" Margin="0,0,0,6"/>
           <ComboBox x:Name="BucYearCombo" Style="{StaticResource EtbPopulationCombo}" IsEnabled="False"/>
@@ -661,6 +683,8 @@ function Initialize-BulkUpnChangeTool {
         OfficeCombo = $content.FindName('BucOfficeCombo')
         BtnAddOffice= $content.FindName('BucBtnAddOffice')
         Search      = $content.FindName('BucSearch')
+        FormSearch  = $content.FindName('BucFormSearch')
+        BtnAddForm  = $content.FindName('BucBtnAddForm')
         UserList    = $content.FindName('BucUserList')
         BtnAdd      = $content.FindName('BucBtnAdd')
         BtnImport   = $content.FindName('BucBtnImport')
@@ -686,6 +710,23 @@ function Initialize-BulkUpnChangeTool {
             $Script:BUC_SearchTimer.Stop()
             $Script:BUC_SearchTimer.Start()
         } catch { Write-Log "BUC Search TextChanged error: $_" 'ERROR' }
+    })
+
+    $Script:BUC_UI.FormSearch.Add_TextChanged({
+        try {
+            $Script:BUC_SearchTimer.Stop()
+            $Script:BUC_SearchTimer.Start()
+        } catch { Write-Log "BUC FormSearch TextChanged error: $_" 'ERROR' }
+    })
+
+    # Adds every user the form search is showing.
+    $Script:BUC_UI.BtnAddForm.Add_Click({
+        try {
+            $n = $Script:BUC_UI.UserList.Items.Count
+            $Script:BUC_UI.UserList.SelectAll()
+            Add-BucSelected
+            Write-BucLog "Added $n user(s) from form: $($Script:BUC_UI.FormSearch.Text.Trim())" 'Text'
+        } catch { Write-Log "BUC BtnAddForm click error: $_" 'ERROR' }
     })
 
     $Script:BUC_UI.UserList.Add_SelectionChanged({
@@ -798,6 +839,8 @@ function Initialize-BulkUpnChangeTool {
         $Script:BUC_UI.BtnAddOffice.IsEnabled  = $false
         $Script:BUC_UI.Search.Text             = ''
         $Script:BUC_UI.Search.IsEnabled        = $false
+        $Script:BUC_UI.FormSearch.Text         = ''
+        $Script:BUC_UI.FormSearch.IsEnabled    = $false
         $Script:BUC_UI.UserList.Items.Clear()
         $Script:BUC_UI.UserList.IsEnabled      = $false
         $Script:BUC_UI.DomainCombo.Items.Clear()

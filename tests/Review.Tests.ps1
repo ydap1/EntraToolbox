@@ -154,6 +154,9 @@ try {
         Add-BucByField -Field YearGroup -ComboBox ([pscustomobject]@{ SelectedItem = [pscustomobject]@{ Tag = 7 } })
         Add-BucByField -Field department -ComboBox ([pscustomobject]@{ SelectedItem = [pscustomobject]@{ Tag = '7A' } })
         Assert ($Script:BUC_Rows.Count -eq 2 -and $Script:BUC_Rows[0].NewUpn -eq 'ann@new.school.test') 'bulk UPN year selection sets the target domain and deduplicates an overlapping department'
+        $inForm = { param($name, $form) Test-BucFormMatch $name $form }
+        Assert ((& $inForm 'Jane Doe (3B)' '3') -and (& $inForm 'Jane Doe (3SM)' '3') -and (& $inForm 'Jane Doe (RC)' 'r') -and (& $inForm 'Jane (Janey) Doe (NPM)' 'NPM') -and (& $inForm 'Jane Doe (3B) ' '3b')) 'form search matches the year or form in brackets at the end of a display name'
+        Assert (-not (& $inForm 'Jane Doe (4B)' '3') -and -not (& $inForm 'Jane Doe (RA)' 'RB') -and -not (& $inForm 'Jane (3B) Doe' '3') -and -not (& $inForm 'Mr Smith' '3')) 'form search ignores other years, other forms and names without a form'
         foreach ($tool in 'TP', 'PwReset', 'BUC') {
             (Get-Variable "${tool}_Rows" -Scope Script -ValueOnly).Clear()
             Set-Variable "${tool}_UI" -Scope Script -Value $null
