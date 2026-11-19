@@ -86,7 +86,7 @@ function Add-BucFromList {
     Update-BucButtons
     Write-BucLog "Added $added user(s) from the list." 'Text'
     foreach ($miss in $lookup.Missing) {
-        Write-BucLog "Not found in this tenant: $miss" 'Warning'
+        Write-BucLog "Not matched: $miss" 'Warning'
     }
 }
 

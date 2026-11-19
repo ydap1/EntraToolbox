@@ -86,23 +86,19 @@ function Select-PwRowsFromList {
         Write-PwLog 'Load a year group, department or office location first, then select from a list.' 'Warning'
         return
     }
-    $upns = @(Show-EtbUpnImport)
-    if ($upns.Count -eq 0) { return }
+    $entries = @(Show-EtbUpnImport)
+    if ($entries.Count -eq 0) { return }
 
-    $wanted = [System.Collections.Generic.HashSet[string]]::new(
-        [string[]]$upns, [System.StringComparer]::OrdinalIgnoreCase)
-
+    $lookup = Select-EtbUsersByUpn -Upns $entries -Users @($Script:PwReset_Rows | ForEach-Object {
+        [pscustomobject]@{ id = $_.Id; displayName = $_.DisplayName; userPrincipalName = $_.UPN; Row = $_ }
+    })
     $Script:PwReset_UI.Grid.UnselectAll()
-    $found = 0
-    foreach ($row in $Script:PwReset_Rows) {
-        if ($wanted.Contains([string]$row.UPN)) {
-            $Script:PwReset_UI.Grid.SelectedItems.Add($row) | Out-Null
-            $found++
-        }
-    }
-    $missing = $upns.Count - $found
+    foreach ($m in $lookup.Matched) { $Script:PwReset_UI.Grid.SelectedItems.Add($m.Row) | Out-Null }
+    $found   = $lookup.Matched.Count
+    $missing = $lookup.Missing.Count
     $color   = if ($missing -gt 0) { 'Warning' } else { 'Success' }
-    Write-PwLog "Selected $found of $($upns.Count) from the list; $missing not in the loaded group." $color
+    foreach ($miss in $lookup.Missing) { Write-PwLog "Not matched in the loaded group: $miss" 'Warning' }
+    Write-PwLog "Selected $found of $($entries.Count) from the list; $missing not in the loaded group." $color
     Update-PwSelectionLabel
 }
 
@@ -432,7 +428,7 @@ $Script:PwResetXaml = @'
         <Button x:Name="PwBtnImport" Content="Select From List…" IsEnabled="False"
                 Style="{StaticResource PrimaryBtn}" Background="#242436"
                 Foreground="#7878A0" Padding="0,8" Margin="0,6,0,0" FontSize="12"
-                ToolTip="Tick only the loaded students whose usernames appear in a pasted list or CSV"/>
+                ToolTip="Tick only the loaded students whose usernames or display names appear in a pasted list or CSV"/>
 
         <!-- Selection controls -->
         <Grid Margin="0,6,0,0">

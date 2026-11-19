@@ -452,6 +452,16 @@ try {
     Assert ((@(Get-EtbUpnsFromCsv -Path $csvPath))[0] -eq 'ann@school.test') 'CSV import finds the username column whatever it is called'
     $lookup = Select-EtbUsersByUpn -Users @([pscustomobject]@{ userPrincipalName = 'ann@school.test'; id = '1' }) -Upns @('ANN@school.test', 'gone@school.test')
     Assert ($lookup.Matched.Count -eq 1 -and $lookup.Missing -eq 'gone@school.test') 'unmatched names are reported rather than silently dropped'
+    $entries = @(Get-EtbUserEntriesFromText "Jane Doe (3B)`r`n jsmith@school.test `n`"Ann Lee`"`n`n")
+    Assert (($entries -join '|') -eq 'Jane Doe (3B)|jsmith@school.test|Ann Lee') 'pasted lines become usernames or display names'
+    $pupils = @(
+        [pscustomobject]@{ id = '1'; displayName = 'Jane Doe (3B)'; userPrincipalName = 'jdoe1@school.test' }
+        [pscustomobject]@{ id = '2'; displayName = 'Jane Doe (5A)'; userPrincipalName = 'jdoe2@school.test' }
+        [pscustomobject]@{ id = '3'; displayName = 'Ann Lee (RA)'; userPrincipalName = 'ann@school.test' }
+    )
+    $lookup = Select-EtbUsersByUpn -Users $pupils -Upns @('jane doe (3b)', 'Ann  Lee', 'ann@school.test', 'Jane Doe', 'Nobody')
+    Assert ((@($lookup.Matched.id) -join ',') -eq '1,3') 'display names match with or without the form, and a user listed twice is added once'
+    Assert ($lookup.Missing.Count -eq 2 -and $lookup.Missing[0] -like 'Jane Doe (matches 2 users: *' -and $lookup.Missing[1] -eq 'Nobody') 'a name shared by several users is reported instead of guessed'
 
     # ── Change record ─────────────────────────────────────────────────────────
     $Script:CurrentTenantId   = 'tenant-under-test'

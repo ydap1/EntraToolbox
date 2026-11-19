@@ -62,8 +62,8 @@ function Initialize-EtbRoster {
         $selection = Select-EtbUsersByUpn -Users $r.Users -Upns $upns
         $r.ImportError = $selection.Missing.Count -gt 0
         if ($r.ImportError) {
-            $r.UI.Status.Text = "Nothing imported: $($selection.Missing.Count) unmatched usernames. Correct the list and import again, or Clear all."
-            foreach ($upn in $selection.Missing) { Write-AppLog "User not found: $upn" 'Warning' }
+            $r.UI.Status.Text = "Nothing imported: $($selection.Missing.Count) entries not matched. Correct the list and import again, or Clear all."
+            foreach ($upn in $selection.Missing) { Write-AppLog "Not matched: $upn" 'Warning' }
             Update-EtbRoster $r
         } else {
             Add-EtbRosterUsers $r $selection.Matched

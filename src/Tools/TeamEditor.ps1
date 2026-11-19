@@ -311,6 +311,7 @@ $Script:TeXaml = @'
           <TextBox x:Name="TeUserSearch" AutomationProperties.Name="Find users"/>
           <ListBox x:Name="TeMatches" Height="100" DisplayMemberPath="userPrincipalName" SelectionMode="Extended" Margin="0,6,0,8"/>
           <Button x:Name="TeAddUsers" Content="Add selected users" Style="{StaticResource EtbAction}"/>
+          <Button x:Name="TeImport" Content="Paste users / import CSV…" Style="{StaticResource EtbAction}" Margin="0,8,0,0"/>
         </StackPanel>
       </StackPanel>
     </ScrollViewer>
@@ -367,7 +368,7 @@ function Initialize-TeamEditorTool {
     $reader = [Xml.XmlReader]::Create([IO.StringReader]::new((Invoke-ThemeXaml $Script:TeXaml)))
     try { $panel = [Windows.Markup.XamlReader]::Load($reader) } finally { $reader.Close() }
     $Script:TE_UI = @{}
-    foreach ($key in 'TeamPicker','Search','Find','Teams','Picker','Years','AddYear','Departments','AddDepartment','Offices','AddOffice','UserSearch','Matches','AddUsers','Status','Grid','Count','Apply','Remove','Clear','Banner','BannerBar','BannerName','BannerInfo','BannerBadge','BannerCount') {
+    foreach ($key in 'TeamPicker','Search','Find','Teams','Picker','Years','AddYear','Departments','AddDepartment','Offices','AddOffice','UserSearch','Matches','AddUsers','Import','Status','Grid','Count','Apply','Remove','Clear','Banner','BannerBar','BannerName','BannerInfo','BannerBadge','BannerCount') {
         $Script:TE_UI[$key] = $panel.FindName("Te$key")
     }
     $Script:TE_UI.Grid.ItemsSource = $Script:TE_Rows
@@ -390,6 +391,9 @@ function Initialize-TeamEditorTool {
     $Script:TE_UI.UserSearch.Add_TextChanged({ Invoke-EtbDebounced -Key 'TE_UserSearch' -Command 'Update-TeUserSearch' })
     $Script:TE_UI.AddUsers.Add_Click({ Add-TeUsers @($Script:TE_UI.Matches.SelectedItems) })
     $Script:TE_UI.Matches.Add_MouseDoubleClick({ Add-TeUsers @($Script:TE_UI.Matches.SelectedItems) })
+    $Script:TE_UI.Import.Add_Click({
+        try { Add-TeUsers @(Read-EtbUserList $Script:TE_Users) } catch { Write-Log "TE import error: $_" 'ERROR' }
+    })
     $Script:TE_UI.Remove.Add_Click({
         foreach ($row in @($Script:TE_UI.Grid.SelectedItems)) { [void]$Script:TE_Rows.Remove($row) }
         Update-TeState

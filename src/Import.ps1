@@ -5,8 +5,8 @@
     Every bulk tool could only pick users by department, office, or one search
     at a time, but the lists that actually arrive come out of the MIS as a CSV
     or a column pasted from a spreadsheet. Show-EtbUpnImport takes either and
-    hands back UPNs; Select-EtbUsersByUpn then matches them against whatever
-    user list the calling tool already holds.
+    hands back UPNs or pasted display names; Select-EtbUsersByUpn then matches
+    them against whatever user list the calling tool already holds.
 #>
 
 $Script:ImportXaml = @'
@@ -59,7 +59,7 @@ $Script:ImportXaml = @'
     </Grid.RowDefinitions>
 
     <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,8"
-               Text="Paste usernames, one per line — or import a CSV and pick the column holding them. Anything that is not a UPN is ignored."/>
+               Text="Paste usernames or display names, one per line, or import a CSV of usernames. A name can leave out the form: Jane Doe finds Jane Doe (3B)."/>
 
     <TextBox x:Name="ImpText" Grid.Row="1"
              AcceptsReturn="True" AcceptsTab="False"
@@ -103,6 +103,21 @@ function Get-EtbUpnsFromText {
     @($seen)
 }
 
+# What the operator pasted: the UPNs on a line, or else the whole line as a
+# display name, since a column of names copied from the MIS has no UPNs.
+function Get-EtbUserEntriesFromText {
+    param([string]$Text)
+    $seen = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($line in ("$Text" -split '\r?\n')) {
+        $upns = @(Get-EtbUpnsFromText $line)
+        foreach ($upn in $upns) { [void]$seen.Add($upn) }
+        $name = $line.Trim().Trim('"').Trim()
+        if (-not $upns.Count -and $name) { [void]$seen.Add($name) }
+    }
+    @($seen)
+}
+
 # Reads every field of a CSV rather than guessing a column name: schools export
 # the UPN under "UPN", "Email", "UserPrincipalName" or something bespoke.
 function Get-EtbUpnsFromCsv {
@@ -121,7 +136,7 @@ $Script:ImpBox    = $null
 $Script:ImpStatus = $null
 $Script:ImpResult = @()
 
-# Returns the UPNs the operator chose, or an empty array if they cancelled.
+# Returns the UPNs and names the operator chose, or an empty array if they cancelled.
 function Show-EtbUpnImport {
     $reader = [System.Xml.XmlReader]::Create(
         [System.IO.StringReader]::new((Invoke-ThemeXaml $Script:ImportXaml)))
@@ -159,12 +174,12 @@ function Show-EtbUpnImport {
 
     $Script:ImpWin.FindName('ImpOk').Add_Click({
         try {
-            $upns = @(Get-EtbUpnsFromText $Script:ImpBox.Text)
-            if ($upns.Count -eq 0) {
-                $Script:ImpStatus.Text = 'No usernames recognised. Each one needs to look like name@domain.'
+            $entries = @(Get-EtbUserEntriesFromText $Script:ImpBox.Text)
+            if ($entries.Count -eq 0) {
+                $Script:ImpStatus.Text = 'Paste at least one username or display name.'
                 return
             }
-            $Script:ImpResult        = $upns
+            $Script:ImpResult        = $entries
             $Script:ImpWin.DialogResult = $true
         } catch { Write-Log "Import confirm error: $_" 'ERROR' }
     })
@@ -173,23 +188,53 @@ function Show-EtbUpnImport {
     return @($Script:ImpResult)
 }
 
-# Splits a UPN list against a tool's loaded users. Returning the misses matters
-# as much as the hits: a leaver already removed, or a typo in the spreadsheet,
-# should be named rather than quietly dropped from the batch.
+# Splits a UPN or display-name list against a tool's loaded users. Returning the
+# misses matters as much as the hits: a leaver already removed, or a typo in the
+# spreadsheet, should be named rather than quietly dropped from the batch. A name
+# shared by several users is a miss too, so the wrong student is never picked.
 function Select-EtbUsersByUpn {
     param(
         [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Users,
         [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Upns
     )
-    $byUpn = @{}
+    $nameKey = { param($n) ("$n" -replace '\s+', ' ').Trim().ToLowerInvariant() }
+    $byUpn  = @{}
+    $byName = @{}
     foreach ($user in $Users) {
         if ($user.userPrincipalName) { $byUpn[$user.userPrincipalName.ToLower()] = $user }
+        $full = & $nameKey $user.displayName
+        if (-not $full) { continue }
+        # Keyed by the full name and by the name without its form: 'jane doe (3b)' and 'jane doe'.
+        foreach ($key in @($full, ($full -replace '\s*\([^()]*\)$', '')) | Select-Object -Unique) {
+            if (-not $byName[$key]) { $byName[$key] = [System.Collections.Generic.List[object]]::new() }
+            $byName[$key].Add($user)
+        }
     }
+    $ids     = [System.Collections.Generic.HashSet[string]]::new()
     $matched = [System.Collections.Generic.List[object]]::new()
     $missing = [System.Collections.Generic.List[string]]::new()
     foreach ($upn in $Upns) {
-        $hit = $byUpn[$upn.ToLower()]
-        if ($hit) { $matched.Add($hit) } else { $missing.Add($upn) }
+        $hits = if ($upn -like '*@*') { @($byUpn[$upn.ToLower()] | Where-Object { $_ }) } else { @($byName[(& $nameKey $upn)] | Where-Object { $_ }) }
+        if ($hits.Count -eq 1) {
+            # A user pasted twice, by name and by username, is still added once.
+            if ($ids.Add([string]$hits[0].id)) { $matched.Add($hits[0]) }
+        } elseif ($hits.Count -gt 1) {
+            $missing.Add("$upn (matches $($hits.Count) users: $(@($hits.displayName) -join ', '))")
+        } else {
+            $missing.Add($upn)
+        }
     }
     [pscustomobject]@{ Matched = $matched.ToArray(); Missing = $missing.ToArray() }
+}
+
+# Shows the paste/import dialog and returns the matching users from $Users,
+# naming every entry that did not match exactly one of them in the log.
+function Read-EtbUserList {
+    param([object[]]$Users)
+    $entries = @(Show-EtbUpnImport)
+    if (-not $entries.Count) { return }
+    $selection = Select-EtbUsersByUpn -Users @($Users) -Upns $entries
+    foreach ($miss in $selection.Missing) { Write-AppLog "Not matched: $miss" 'Warning' }
+    Write-AppLog "$($selection.Matched.Count) of $($entries.Count) matched from the list." $(if ($selection.Missing.Count) { 'Warning' } else { 'Success' })
+    $selection.Matched
 }

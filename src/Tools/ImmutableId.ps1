@@ -101,6 +101,7 @@ $Script:IID_Xaml = @'
         <TextBlock Text="Office location" Foreground="#7878A0" Margin="0,0,0,6"/>
         <ComboBox x:Name="IidOffices" Style="{StaticResource EtbPopulationCombo}" AutomationProperties.Name="Office location"/>
         <Button x:Name="IidBtnAddOffice" Content="Add office location" Style="{StaticResource EtbAction}" Margin="0,8,0,16"/>
+        <Button x:Name="IidBtnImport" Content="Paste users / import CSV…" Style="{StaticResource EtbAction}" Margin="0,0,0,16"/>
         <Button x:Name="IidBtnClear" Content="Clear list" Style="{StaticResource EtbAction}"/>
       </StackPanel>
     </ScrollViewer>
@@ -641,6 +642,7 @@ function Initialize-ImmutableIdTool {
         BtnAddDept    = $panel.FindName('IidBtnAddDept')
         Offices       = $panel.FindName('IidOffices')
         BtnAddOffice  = $panel.FindName('IidBtnAddOffice')
+        BtnImport     = $panel.FindName('IidBtnImport')
         BtnClear      = $panel.FindName('IidBtnClear')
         Search        = $panel.FindName('IidSearch')
         LblCount      = $panel.FindName('IidLblCount')
@@ -698,6 +700,12 @@ function Initialize-ImmutableIdTool {
     })
     $Script:IID_UI.BtnAddOffice.Add_Click({
         try { Add-IidUsers @($Script:IID_UI.Offices.SelectedItem.DataContext.Users) } catch { Write-Log "IID add office error: $_" 'ERROR' }
+    })
+    $Script:IID_UI.BtnImport.Add_Click({
+        try {
+            $users = @(Read-EtbUserList $Script:IID_AllUsers)
+            if ($users.Count) { Add-IidUsers $users }
+        } catch { Write-Log "IID import error: $_" 'ERROR' }
     })
     $Script:IID_UI.BtnClear.Add_Click({
         try { $Script:IID_Rows.Clear(); Update-IidView } catch { Write-Log "IID clear error: $_" 'ERROR' }

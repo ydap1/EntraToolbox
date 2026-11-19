@@ -64,6 +64,31 @@ function Update-TpSearchFilter {
     }
 }
 
+# Adds users to the member list, skipping anyone already on it.
+function Add-TpUsers {
+    param([object[]]$Users)
+    $existingIds = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($r in $Script:TP_Rows) { [void]$existingIds.Add($r.Id) }
+    foreach ($u in $Users) {
+        if (-not $existingIds.Add($u.id)) { continue }
+        $Script:TP_Rows.Add([PSCustomObject]@{
+            Id          = $u.id
+            DisplayName = $u.displayName
+            UPN         = $u.userPrincipalName
+            Department  = $u.department
+            IsOwner     = $false
+        })
+        Write-TpLog "Added: $($u.displayName)  ($($u.userPrincipalName))" 'TextDim'
+    }
+    if ($Script:TP_Rows.Count -gt 0) {
+        $Script:TP_UI.BtnSelectAll.IsEnabled  = $true
+        $Script:TP_UI.BtnSelectNone.IsEnabled = $true
+    }
+    Update-TpSelectionLabel
+    Update-TpCreateButton
+    Update-TpSearchFilter
+}
+
 $Script:TpXaml = @'
 <Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -383,6 +408,10 @@ $Script:TpXaml = @'
               </ListBox.ItemContainerStyle>
             </ListBox>
           </Border>
+          <Button x:Name="TpBtnImport" Content="Paste users / import CSV…"
+                  Style="{StaticResource PrimaryBtn}" Background="#242436"
+                  Foreground="#7878A0" Padding="0,8" Margin="0,8,0,0" FontSize="12"
+                  ToolTip="Add users by pasting usernames or display names, or importing a CSV"/>
         </StackPanel>
 
         <Border Background="#3C3C5A" Height="1" Margin="0,14"/>
@@ -765,6 +794,7 @@ function Initialize-TeamsProvisioningTool {
         BtnLoadDept   = $content.FindName('TpBtnLoadDept')
         Search        = $content.FindName('TpSearch')
         SearchList    = $content.FindName('TpSearchList')
+        BtnImport     = $content.FindName('TpBtnImport')
         LblSelection  = $content.FindName('TpLblSelection')
         BtnSelectAll  = $content.FindName('TpBtnSelectAll')
         BtnSelectNone = $content.FindName('TpBtnSelectNone')
@@ -821,27 +851,13 @@ function Initialize-TeamsProvisioningTool {
     $Script:TP_UI.SearchList.Add_MouseDoubleClick({
         try {
             $sel = $Script:TP_UI.SearchList.SelectedItem
-            if (-not $sel) { return }
-            $u = $sel.Tag
-
-            $existingIds = [System.Collections.Generic.HashSet[string]]::new()
-            foreach ($r in $Script:TP_Rows) { [void]$existingIds.Add($r.Id) }
-            if ($existingIds.Contains($u.id)) { return }
-
-            $Script:TP_Rows.Add([PSCustomObject]@{
-                Id          = $u.id
-                DisplayName = $u.displayName
-                UPN         = $u.userPrincipalName
-                Department  = $u.department
-                IsOwner     = $false
-            })
-            $Script:TP_UI.BtnSelectAll.IsEnabled  = $true
-            $Script:TP_UI.BtnSelectNone.IsEnabled = $true
-            Update-TpSelectionLabel
-            Update-TpCreateButton
-            Update-TpSearchFilter
-            Write-TpLog "Added: $($u.displayName)  ($($u.userPrincipalName))" 'TextDim'
+            if ($sel) { Add-TpUsers @($sel.Tag) }
         } catch { Write-Log "TP SearchList DoubleClick error: $_" 'ERROR' }
+    })
+
+    $Script:TP_UI.BtnImport.Add_Click({
+        try { Add-TpUsers @(Read-EtbUserList $Script:TP_AllUsers) }
+        catch { Write-Log "TP import error: $_" 'ERROR' }
     })
 
     # Create Team button

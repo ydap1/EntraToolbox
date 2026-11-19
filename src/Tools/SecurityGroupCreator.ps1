@@ -345,8 +345,8 @@ function Initialize-SecurityGroupCreatorTool {
         if (-not $upns.Count) { return }
         $selection = Select-EtbUsersByUpn -Users $Script:SG_Users -Upns $upns
         Add-SgUsers $selection.Matched
-        $Script:SG_UI.Status.Text = "$($selection.Matched.Count) matched; $($selection.Missing.Count) not found."
-        foreach ($upn in $selection.Missing) { Write-AppLog "User not found: $upn" 'Warning' }
+        $Script:SG_UI.Status.Text = "$($selection.Matched.Count) matched; $($selection.Missing.Count) not matched."
+        foreach ($upn in $selection.Missing) { Write-AppLog "Not matched: $upn" 'Warning' }
     })
     $Script:SG_UI.Remove.Add_Click({
         foreach ($row in @($Script:SG_UI.Grid.SelectedItems)) { [void]$Script:SG_Rows.Remove($row) }
