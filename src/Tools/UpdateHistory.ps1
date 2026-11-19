@@ -10,6 +10,16 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.45.0'
+        Date    = '2026-11-19'
+        Changes = @(
+            'Every tool that picks several users has a Form box: type 3 for all of Year 3, R for all of Reception, or one form such as 3B, RA or NPM. Year Group Passwords and Teams Provisioning load the form like a year group; the other tools add it to their list'
+            'Paste users / import CSV accepts student display names as well as usernames, with or without the form: Jane Doe finds Jane Doe (3B). A name shared by several users is listed in the log instead of guessed'
+            'Teams Provisioning (Direct Users), Team Editor and Immutable ID gain the Paste users / import CSV button'
+            'Year Group Passwords'' Select From List also matches display names and names each entry it could not find'
+        )
+    }
+    @{
         Version = '0.44.0'
         Date    = '2026-11-05'
         Changes = @(
