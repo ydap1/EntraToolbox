@@ -365,11 +365,21 @@ $Script:TpXaml = @'
         <Border Background="#3C3C5A" Height="1" Margin="0,14"/>
 
         <TextBlock Text="POPULATION" Style="{StaticResource SectionLbl}"/>
-        <RadioButton x:Name="TpRbYearGroup" Content="Year group / department" GroupName="tppop" IsChecked="True"/>
+        <RadioButton x:Name="TpRbYearGroup" Content="Form / year group / department" GroupName="tppop" IsChecked="True"/>
         <RadioButton x:Name="TpRbDirect"    Content="Direct Users" GroupName="tppop" Margin="0,4,0,8"/>
 
         <StackPanel x:Name="TpPnlYearGroup">
-          <TextBlock Text="YEAR GROUP" Style="{StaticResource SectionLbl}" Margin="0,6,0,6"/>
+          <TextBlock Text="FORM" Style="{StaticResource SectionLbl}" Margin="0,6,0,6"/>
+          <TextBox x:Name="TpTxtForm" Background="#242436" Foreground="#E2E2F0"
+                   BorderBrush="#3C3C5A" BorderThickness="1" Height="32"
+                   Padding="8,0" VerticalContentAlignment="Center" CaretBrush="#E2E2F0"
+                   IsEnabled="{Binding IsEnabled, ElementName=TpBtnLoad}"
+                   AutomationProperties.Name="Form" ToolTip="3 for all of Year 3, R for all of Reception, or one form like 3B, RA or NPM"/>
+          <Button x:Name="TpBtnLoadForm" Content="Load form"
+                  IsEnabled="{Binding IsEnabled, ElementName=TpBtnLoad}"
+                  Style="{StaticResource PrimaryBtn}" Background="#242436"
+                  Foreground="#7878A0" Padding="0,10" Margin="0,8,0,0"/>
+          <TextBlock Text="YEAR GROUP" Style="{StaticResource SectionLbl}" Margin="0,14,0,6"/>
           <ComboBox x:Name="TpCboYear" Style="{StaticResource EtbPopulationCombo}" IsEnabled="False"/>
           <Button x:Name="TpBtnLoad" Content="Load year group" IsEnabled="False"
                   Style="{StaticResource PrimaryBtn}" Background="#242436"
@@ -792,6 +802,8 @@ function Initialize-TeamsProvisioningTool {
         BtnLoad       = $content.FindName('TpBtnLoad')
         CboDept       = $content.FindName('TpCboDept')
         BtnLoadDept   = $content.FindName('TpBtnLoadDept')
+        TxtForm       = $content.FindName('TpTxtForm')
+        BtnLoadForm   = $content.FindName('TpBtnLoadForm')
         Search        = $content.FindName('TpSearch')
         SearchList    = $content.FindName('TpSearchList')
         BtnImport     = $content.FindName('TpBtnImport')
@@ -835,6 +847,12 @@ function Initialize-TeamsProvisioningTool {
     $Script:TP_UI.BtnLoad.Add_Click({
         try { Set-TpPopulation -Choice $Script:TP_UI.CboYear.SelectedItem.DataContext }
         catch { Write-Log "Tp: year group load failed: $_" 'ERROR' }
+    })
+    $Script:TP_UI.BtnLoadForm.Add_Click({
+        try {
+            $users = @(Get-EtbFormUsers $Script:TP_AllUsers $Script:TP_UI.TxtForm.Text)
+            if ($users.Count) { Set-TpPopulation -Choice ([pscustomobject]@{ Value = "form $($Script:TP_UI.TxtForm.Text.Trim())"; Users = $users }) }
+        } catch { Write-Log "Tp: form load failed: $_" 'ERROR' }
     })
     $Script:TP_UI.BtnLoadDept.Add_Click({
         try { Set-TpPopulation -Choice $Script:TP_UI.CboDept.SelectedItem.DataContext }

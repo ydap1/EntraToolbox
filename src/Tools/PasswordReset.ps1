@@ -409,7 +409,17 @@ $Script:PwResetXaml = @'
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
       <StackPanel Margin="16,20,16,16">
 
-        <TextBlock Text="YEAR GROUP" Style="{StaticResource SectionLbl}"/>
+        <TextBlock Text="FORM" Style="{StaticResource SectionLbl}"/>
+        <TextBox x:Name="PwTxtForm" Background="#242436" Foreground="#E2E2F0"
+                 BorderBrush="#3C3C5A" BorderThickness="1" Height="32"
+                 Padding="8,0" VerticalContentAlignment="Center" CaretBrush="#E2E2F0"
+                 IsEnabled="{Binding IsEnabled, ElementName=PwBtnLoad}"
+                 AutomationProperties.Name="Form" ToolTip="3 for all of Year 3, R for all of Reception, or one form like 3B, RA or NPM"/>
+        <Button x:Name="PwBtnLoadForm" Content="Load form"
+                IsEnabled="{Binding IsEnabled, ElementName=PwBtnLoad}"
+                Style="{StaticResource PrimaryBtn}" Background="#242436"
+                Foreground="#7878A0" Padding="0,10" Margin="0,8,0,0"/>
+        <TextBlock Text="YEAR GROUP" Style="{StaticResource SectionLbl}" Margin="0,14,0,6"/>
         <ComboBox x:Name="PwCboYear" Style="{StaticResource EtbPopulationCombo}" IsEnabled="False"/>
         <Button x:Name="PwBtnLoad" Content="Load year group" IsEnabled="False"
                 Style="{StaticResource PrimaryBtn}" Background="#242436"
@@ -672,6 +682,8 @@ function Initialize-PasswordResetTool {
         BtnLoad        = $content.FindName('PwBtnLoad')
         CboDept        = $content.FindName('PwCboDept')
         CboOffice      = $content.FindName('PwCboOffice')
+        TxtForm        = $content.FindName('PwTxtForm')
+        BtnLoadForm    = $content.FindName('PwBtnLoadForm')
         BtnLoadDept    = $content.FindName('PwBtnLoadDept')
         BtnLoadOffice  = $content.FindName('PwBtnLoadOffice')
         LblSelection   = $content.FindName('PwLblSelection')
@@ -753,6 +765,12 @@ function Initialize-PasswordResetTool {
     $Script:PwReset_UI.BtnLoadDept.Add_Click({
         try { Set-PwPopulation -Choice $Script:PwReset_UI.CboDept.SelectedItem.DataContext }
         catch { Write-Log "Pw: department load failed: $_" 'ERROR' }
+    })
+    $Script:PwReset_UI.BtnLoadForm.Add_Click({
+        try {
+            $users = @(Get-EtbFormUsers $Script:PwReset_GraphUsers $Script:PwReset_UI.TxtForm.Text)
+            if ($users.Count) { Set-PwPopulation -Choice ([pscustomobject]@{ Value = "form $($Script:PwReset_UI.TxtForm.Text.Trim())"; Users = $users }) }
+        } catch { Write-Log "BtnLoadForm click error: $_" 'ERROR' }
     })
     $Script:PwReset_UI.BtnLoadOffice.Add_Click({
         try { Set-PwPopulation -Choice $Script:PwReset_UI.CboOffice.SelectedItem.DataContext }

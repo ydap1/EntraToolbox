@@ -50,6 +50,9 @@ $Script:SgXaml = @'
         <TextBox x:Name="SgName" MaxLength="256" AutomationProperties.Name="Group name"/>
         <TextBlock Text="Description (optional)" Style="{StaticResource SgLabel}"/>
         <TextBox x:Name="SgDescription" MaxLength="1024" Height="60" AcceptsReturn="True" TextWrapping="Wrap" AutomationProperties.Name="Group description"/>
+        <TextBlock Text="Add a form" Style="{StaticResource SgLabel}"/>
+        <TextBox x:Name="SgForm" AutomationProperties.Name="Form" ToolTip="3 for all of Year 3, R for all of Reception, or one form like 3B, RA or NPM"/>
+        <Button x:Name="SgAddForm" Content="Add form" Style="{StaticResource SgButton}"/>
         <TextBlock Text="Add a year group" Style="{StaticResource SgLabel}"/>
         <ComboBox x:Name="SgYears" Style="{StaticResource EtbPopulationCombo}" DisplayMemberPath="Label" AutomationProperties.Name="Year groups"/>
         <Button x:Name="SgAddYear" Content="Add year group" Style="{StaticResource SgButton}" IsEnabled="False"/>
@@ -320,7 +323,7 @@ function Initialize-SecurityGroupCreatorTool {
     $reader = [Xml.XmlReader]::Create([IO.StringReader]::new((Invoke-ThemeXaml $Script:SgXaml)))
     try { $content = [Windows.Markup.XamlReader]::Load($reader) } finally { $reader.Close() }
     $Script:SG_UI = @{}
-    foreach ($key in 'Editor','Name','Description','Years','AddYear','Departments','AddDepartment','Search','Matches','AddUsers','Import','DeviceSearch','DeviceMatches','DeviceStatus','AddDevices','ReloadDevices','Create','Count','Grid','Remove','Clear','New','Status') {
+    foreach ($key in 'Editor','Name','Description','Form','AddForm','Years','AddYear','Departments','AddDepartment','Search','Matches','AddUsers','Import','DeviceSearch','DeviceMatches','DeviceStatus','AddDevices','ReloadDevices','Create','Count','Grid','Remove','Clear','New','Status') {
         $Script:SG_UI[$key] = $content.FindName("Sg$key")
     }
     $Script:SG_UI.Grid.ItemsSource = $Script:SG_Rows
@@ -331,6 +334,7 @@ function Initialize-SecurityGroupCreatorTool {
     $Script:SG_UI.ReloadDevices.Add_Click({ Start-SgDeviceLoad })
     $Script:SG_UI.Years.Add_SelectionChanged({ $Script:SG_UI.AddYear.IsEnabled = $null -ne $Script:SG_UI.Years.SelectedItem })
     $Script:SG_UI.Departments.Add_SelectionChanged({ $Script:SG_UI.AddDepartment.IsEnabled = $null -ne $Script:SG_UI.Departments.SelectedItem })
+    $Script:SG_UI.AddForm.Add_Click({ Add-SgUsers @(Get-EtbFormUsers $Script:SG_Users $Script:SG_UI.Form.Text) })
     $Script:SG_UI.AddYear.Add_Click({
         $choice = $Script:SG_UI.Years.SelectedItem
         if ($choice) { Add-SgUsers $choice.Users }

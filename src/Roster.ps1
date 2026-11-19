@@ -3,6 +3,7 @@ $Script:RosterXaml = @'
 <Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Background="#1C1C2A">
   <Grid.Resources></Grid.Resources>
   <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
+    <TextBlock Text="Form" Foreground="#7878A0" Margin="0,0,0,6"/><TextBox x:Name="RForm" AutomationProperties.Name="Form" ToolTip="3 for all of Year 3, R for all of Reception, or one form like 3B, RA or NPM"/><Button x:Name="RAddForm" Content="Add form" Style="{StaticResource EtbAction}" Margin="0,8,0,12"/>
     <TextBlock Text="Year group" Foreground="#7878A0" Margin="0,0,0,6"/><ComboBox x:Name="RYears" DisplayMemberPath="Label" Style="{StaticResource EtbPopulationCombo}" AutomationProperties.Name="Year group"/><Button x:Name="RYear" Content="Add year group" Style="{StaticResource EtbAction}" Margin="0,8,0,12"/>
     <TextBlock Text="Department" Foreground="#7878A0" Margin="0,0,0,6"/><ComboBox x:Name="RDepartments" DisplayMemberPath="Label" Style="{StaticResource EtbPopulationCombo}" AutomationProperties.Name="Department"/><Button x:Name="RDepartment" Content="Add department" Style="{StaticResource EtbAction}" Margin="0,8,0,12"/>
     <TextBlock Text="Find users" Foreground="#7878A0" Margin="0,0,0,6"/><TextBox x:Name="RSearch" AutomationProperties.Name="Find users"/><ListBox x:Name="RMatches" Height="100" DisplayMemberPath="userPrincipalName" SelectionMode="Extended" Margin="0,6,0,8"/><Button x:Name="RAdd" Content="Add selected users" Style="{StaticResource EtbAction}"/>
@@ -43,10 +44,11 @@ function Initialize-EtbRoster {
     $reader = [Xml.XmlReader]::Create([IO.StringReader]::new((Invoke-ThemeXaml $Script:RosterXaml)))
     try { $panel = [Windows.Markup.XamlReader]::Load($reader) } finally { $reader.Close() }
     $roster = @{ Panel=$panel; UI=@{}; Users=@(); Rows=[Collections.ObjectModel.ObservableCollection[PSObject]]::new(); OnChange=$OnChange; ImportError=$false }
-    foreach ($key in 'Years','Year','Departments','Department','Search','Matches','Add','Import','Count','Selected','Remove','Clear','Status') {
+    foreach ($key in 'Form','AddForm','Years','Year','Departments','Department','Search','Matches','Add','Import','Count','Selected','Remove','Clear','Status') {
         $roster.UI[$key] = $panel.FindName("R$key"); $roster.UI[$key].Tag = $roster
     }
     $roster.UI.Selected.ItemsSource = $roster.Rows
+    $roster.UI.AddForm.Add_Click({ $r = $this.Tag; Add-EtbRosterUsers $r @(Get-EtbFormUsers $r.Users $r.UI.Form.Text) })
     $roster.UI.Year.Add_Click({ $r = $this.Tag; if ($r.UI.Years.SelectedItem) { Add-EtbRosterUsers $r $r.UI.Years.SelectedItem.Users } })
     $roster.UI.Department.Add_Click({ $r = $this.Tag; if ($r.UI.Departments.SelectedItem) { Add-EtbRosterUsers $r $r.UI.Departments.SelectedItem.Users } })
     $roster.UI.Search.Add_TextChanged({

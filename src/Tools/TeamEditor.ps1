@@ -143,7 +143,7 @@ function Complete-TeMembersLoad {
         return
     }
     $Script:TE_MemberIds = $Ref.MemberIds
-    $Script:TE_UI.Status.Text = "$($team.displayName) has $($Script:TE_MemberIds.Count) members. Add a year group, department, office or individual users; only people not already in the team are listed."
+    $Script:TE_UI.Status.Text = "$($team.displayName) has $($Script:TE_MemberIds.Count) members. Add a form, year group, department, office or individual users; only people not already in the team are listed."
     Update-TeState
 }
 
@@ -298,6 +298,9 @@ $Script:TeXaml = @'
           <ListBox x:Name="TeTeams" Height="160" DisplayMemberPath="displayName" Margin="0,8,0,16" AutomationProperties.Name="Matching teams"/>
         </StackPanel>
         <StackPanel x:Name="TePicker" IsEnabled="False">
+          <TextBlock Text="Form" Foreground="#7878A0" Margin="0,0,0,6"/>
+          <TextBox x:Name="TeForm" AutomationProperties.Name="Form" ToolTip="3 for all of Year 3, R for all of Reception, or one form like 3B, RA or NPM"/>
+          <Button x:Name="TeAddForm" Content="Add missing from form" Style="{StaticResource EtbAction}" Margin="0,8,0,12"/>
           <TextBlock Text="Year group" Foreground="#7878A0" Margin="0,0,0,6"/>
           <ComboBox x:Name="TeYears" Style="{StaticResource EtbPopulationCombo}" AutomationProperties.Name="Year group"/>
           <Button x:Name="TeAddYear" Content="Add missing from year group" Style="{StaticResource EtbAction}" Margin="0,8,0,12"/>
@@ -368,7 +371,7 @@ function Initialize-TeamEditorTool {
     $reader = [Xml.XmlReader]::Create([IO.StringReader]::new((Invoke-ThemeXaml $Script:TeXaml)))
     try { $panel = [Windows.Markup.XamlReader]::Load($reader) } finally { $reader.Close() }
     $Script:TE_UI = @{}
-    foreach ($key in 'TeamPicker','Search','Find','Teams','Picker','Years','AddYear','Departments','AddDepartment','Offices','AddOffice','UserSearch','Matches','AddUsers','Import','Status','Grid','Count','Apply','Remove','Clear','Banner','BannerBar','BannerName','BannerInfo','BannerBadge','BannerCount') {
+    foreach ($key in 'TeamPicker','Search','Find','Teams','Picker','Form','AddForm','Years','AddYear','Departments','AddDepartment','Offices','AddOffice','UserSearch','Matches','AddUsers','Import','Status','Grid','Count','Apply','Remove','Clear','Banner','BannerBar','BannerName','BannerInfo','BannerBadge','BannerCount') {
         $Script:TE_UI[$key] = $panel.FindName("Te$key")
     }
     $Script:TE_UI.Grid.ItemsSource = $Script:TE_Rows
@@ -385,6 +388,7 @@ function Initialize-TeamEditorTool {
     $Script:TE_UI.Teams.Add_SelectionChanged({
         try { Start-TeMembersLoad } catch { Write-Log "TE team selection error: $_" 'ERROR' }
     })
+    $Script:TE_UI.AddForm.Add_Click({ Add-TeUsers @(Get-EtbFormUsers $Script:TE_Users $Script:TE_UI.Form.Text) })
     $Script:TE_UI.AddYear.Add_Click({ Add-TeUsers @($Script:TE_UI.Years.SelectedItem.DataContext.Users) })
     $Script:TE_UI.AddDepartment.Add_Click({ Add-TeUsers @($Script:TE_UI.Departments.SelectedItem.DataContext.Users) })
     $Script:TE_UI.AddOffice.Add_Click({ Add-TeUsers @($Script:TE_UI.Offices.SelectedItem.DataContext.Users) })

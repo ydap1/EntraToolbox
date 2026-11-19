@@ -95,6 +95,9 @@ $Script:IID_Xaml = @'
         <TextBlock Text="The list starts empty. Add the users you want to check or change."
                    Foreground="#7878A0" TextWrapping="Wrap" Margin="0,0,0,12"/>
         <Button x:Name="IidBtnAddAll" Content="Add all users" Style="{StaticResource EtbAction}" Margin="0,0,0,16"/>
+        <TextBlock Text="Form" Foreground="#7878A0" Margin="0,0,0,6"/>
+        <TextBox x:Name="IidForm" AutomationProperties.Name="Form" ToolTip="3 for all of Year 3, R for all of Reception, or one form like 3B, RA or NPM"/>
+        <Button x:Name="IidBtnAddForm" Content="Add form" Style="{StaticResource EtbAction}" Margin="0,8,0,16"/>
         <TextBlock Text="Department" Foreground="#7878A0" Margin="0,0,0,6"/>
         <ComboBox x:Name="IidDepartments" Style="{StaticResource EtbPopulationCombo}" AutomationProperties.Name="Department"/>
         <Button x:Name="IidBtnAddDept" Content="Add department" Style="{StaticResource EtbAction}" Margin="0,8,0,16"/>
@@ -638,6 +641,8 @@ function Initialize-ImmutableIdTool {
         Grid          = $panel.FindName('IidGrid')
         Picker        = $panel.FindName('IidPicker')
         BtnAddAll     = $panel.FindName('IidBtnAddAll')
+        Form          = $panel.FindName('IidForm')
+        BtnAddForm    = $panel.FindName('IidBtnAddForm')
         Departments   = $panel.FindName('IidDepartments')
         BtnAddDept    = $panel.FindName('IidBtnAddDept')
         Offices       = $panel.FindName('IidOffices')
@@ -694,6 +699,12 @@ function Initialize-ImmutableIdTool {
     $Script:IID_UI.Search.Add_TextChanged({ Invoke-EtbDebounced -Key 'IID_Search' -Command 'Update-IidView' })
     $Script:IID_UI.BtnAddAll.Add_Click({
         try { Add-IidUsers $Script:IID_AllUsers } catch { Write-Log "IID add all error: $_" 'ERROR' }
+    })
+    $Script:IID_UI.BtnAddForm.Add_Click({
+        try {
+            $users = @(Get-EtbFormUsers $Script:IID_AllUsers $Script:IID_UI.Form.Text)
+            if ($users.Count) { Add-IidUsers $users }
+        } catch { Write-Log "IID add form error: $_" 'ERROR' }
     })
     $Script:IID_UI.BtnAddDept.Add_Click({
         try { Add-IidUsers @($Script:IID_UI.Departments.SelectedItem.DataContext.Users) } catch { Write-Log "IID add department error: $_" 'ERROR' }

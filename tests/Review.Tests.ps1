@@ -154,7 +154,7 @@ try {
         Add-BucByField -Field YearGroup -ComboBox ([pscustomobject]@{ SelectedItem = [pscustomobject]@{ Tag = 7 } })
         Add-BucByField -Field department -ComboBox ([pscustomobject]@{ SelectedItem = [pscustomobject]@{ Tag = '7A' } })
         Assert ($Script:BUC_Rows.Count -eq 2 -and $Script:BUC_Rows[0].NewUpn -eq 'ann@new.school.test') 'bulk UPN year selection sets the target domain and deduplicates an overlapping department'
-        $inForm = { param($name, $form) Test-BucFormMatch $name $form }
+        $inForm = { param($name, $form) Test-EtbFormMatch $name $form }
         Assert ((& $inForm 'Jane Doe (3B)' '3') -and (& $inForm 'Jane Doe (3SM)' '3') -and (& $inForm 'Jane Doe (RC)' 'r') -and (& $inForm 'Jane (Janey) Doe (NPM)' 'NPM') -and (& $inForm 'Jane Doe (3B) ' '3b')) 'form search matches the year or form in brackets at the end of a display name'
         Assert (-not (& $inForm 'Jane Doe (4B)' '3') -and -not (& $inForm 'Jane Doe (RA)' 'RB') -and -not (& $inForm 'Jane (3B) Doe' '3') -and -not (& $inForm 'Mr Smith' '3')) 'form search ignores other years, other forms and names without a form'
         foreach ($tool in 'TP', 'PwReset', 'BUC') {
@@ -462,6 +462,7 @@ try {
     $lookup = Select-EtbUsersByUpn -Users $pupils -Upns @('jane doe (3b)', 'Ann  Lee', 'ann@school.test', 'Jane Doe', 'Nobody')
     Assert ((@($lookup.Matched.id) -join ',') -eq '1,3') 'display names match with or without the form, and a user listed twice is added once'
     Assert ($lookup.Missing.Count -eq 2 -and $lookup.Missing[0] -like 'Jane Doe (matches 2 users: *' -and $lookup.Missing[1] -eq 'Nobody') 'a name shared by several users is reported instead of guessed'
+    Assert ((@(Get-EtbFormUsers $pupils ' (r) ').id -join ',') -eq '3' -and @(Get-EtbFormUsers $pupils '4').Count -eq 0 -and @(Get-EtbFormUsers $pupils '').Count -eq 0) 'a typed form gives its users, and nothing for an unknown or empty form'
 
     # ── Change record ─────────────────────────────────────────────────────────
     $Script:CurrentTenantId   = 'tenant-under-test'

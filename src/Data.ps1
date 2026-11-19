@@ -20,6 +20,23 @@ function Get-EtbPopulationChoices {
     $choices | Sort-Object @{ Expression = { if ($_.Value -is [int]) { 0 } else { 1 } } }, Value
 }
 
+# Students' display names end with their form in brackets, e.g. Jane Doe (3B).
+# '3' matches every Year 3 form and 'R' all of Reception; '3B', 'RA' or 'NPM' match one form.
+function Test-EtbFormMatch {
+    param([string]$DisplayName, [string]$Form)
+    $DisplayName -match '\(([^()]+)\)\s*$' -and $Matches[1].Trim().StartsWith($Form, [StringComparison]::OrdinalIgnoreCase)
+}
+
+# The users in a typed form; logs when there are none so the click isn't silent.
+function Get-EtbFormUsers {
+    param([object[]]$Users, [string]$Form)
+    $Form = "$Form".Trim(' ', '(', ')')
+    if (-not $Form) { return }
+    $found = @($Users | Where-Object { Test-EtbFormMatch $_.displayName $Form })
+    if (-not $found.Count) { Write-AppLog "No users found in form $Form." 'Warning' }
+    $found
+}
+
 function Set-EtbPopulationCombo {
     param($ComboBox, [object[]]$Users, [ValidateSet('YearGroup', 'Department', 'OfficeLocation')][string]$Mode)
     $ComboBox.Items.Clear()

@@ -128,13 +128,6 @@ function Add-BucByField {
     }
 }
 
-# Students' display names end with their form in brackets, e.g. Jane Doe (3B).
-# '3' matches every Year 3 form and 'R' all of Reception; '3B', 'RA' or 'NPM' match one form.
-function Test-BucFormMatch {
-    param([string]$DisplayName, [string]$Form)
-    $DisplayName -match '\(([^()]+)\)\s*$' -and $Matches[1].Trim().StartsWith($Form, [StringComparison]::OrdinalIgnoreCase)
-}
-
 function Update-BucUserFilter {
     $q    = $Script:BUC_UI.Search.Text.Trim()
     $form = $Script:BUC_UI.FormSearch.Text.Trim(' ', '(', ')')
@@ -148,7 +141,7 @@ function Update-BucUserFilter {
             $_.displayName -like "*$q*" -or $_.userPrincipalName -like "*$q*"
         }
     }
-    if ($form) { $list = $list | Where-Object { Test-BucFormMatch $_.displayName $form } }
+    if ($form) { $list = $list | Where-Object { Test-EtbFormMatch $_.displayName $form } }
     foreach ($u in $list) {
         if ($added.Contains($u.id)) { continue }
         $lbi         = [System.Windows.Controls.ListBoxItem]::new()

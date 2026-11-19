@@ -75,6 +75,8 @@ $Script:Demo_Users = @(
 )
 
 foreach ($user in $Script:Demo_Users) {
+    # Real student display names end with their form, which the form boxes search.
+    if ($user.department -ne 'Staff') { $user.displayName += " ($($user.department))" }
     $office = if ($user.department -eq 'Staff') { 'Admin Block' }
               elseif ($user.department -like '12*') { 'Sixth Form Centre' }
               else { 'Main Building' }
