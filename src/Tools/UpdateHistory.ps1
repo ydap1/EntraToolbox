@@ -10,6 +10,13 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.49.0'
+        Date    = '2026-11-20'
+        Changes = @(
+            'Check for updates (top right) restarts the app through the launcher, which lists what changed and asks before updating. It waits for a running bulk operation, and saved sign-ins are kept'
+        )
+    }
+    @{
         Version = '0.48.0'
         Date    = '2026-11-20'
         Changes = @(

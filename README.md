@@ -32,7 +32,7 @@ Multiple tenants, CSV imports and exports, and theme customisation are supported
 
 Choose a tool from the sidebar; click its star (or press **Ctrl+D**) to pin it to the top. **Ctrl+K** searches users; **F1** opens the shortcut guide. Use **Dry Run** to preview supported changes, and **Bulk Results** to track runs or export failures. Tenant profiles and audit records are saved locally in `config`.
 
-The app checks for updates at launch. Accept the prompt to update a clean clone on `main`.
+The app checks for updates at launch, or when you click **Check for updates** (top right), which restarts it. Accept the prompt to update a clean clone on `main`.
 
 If Git history has diverged, the updater stops without changing app files. Back up local work before realigning your checkout, or clone into a new folder and copy your `config` folder across.
 
