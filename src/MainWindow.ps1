@@ -555,14 +555,19 @@ $Script:MainXaml = @'
             <TextBlock Text="Tenant management toolkit" Foreground="#50507A" FontSize="11"/>
           </StackPanel>
         </StackPanel>
-        <Border Grid.Column="1" x:Name="TenantBadge" CornerRadius="4"
-                Background="#242436" Padding="10,5" VerticalAlignment="Center" Visibility="Collapsed">
-          <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-            <Ellipse Width="7" Height="7" Fill="#22C55E" Margin="0,0,6,0" VerticalAlignment="Center"/>
-            <TextBlock x:Name="LblTenantName" Foreground="#6366F1" FontSize="11" FontWeight="SemiBold"
-                       VerticalAlignment="Center"/>
-          </StackPanel>
-        </Border>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+          <Border x:Name="TenantBadge" CornerRadius="4"
+                  Background="#242436" Padding="10,5" VerticalAlignment="Center" Visibility="Collapsed">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+              <Ellipse Width="7" Height="7" Fill="#22C55E" Margin="0,0,6,0" VerticalAlignment="Center"/>
+              <TextBlock x:Name="LblTenantName" Foreground="#6366F1" FontSize="11" FontWeight="SemiBold"
+                         VerticalAlignment="Center"/>
+            </StackPanel>
+          </Border>
+          <Button x:Name="BtnUpdateRestart" Content="Check for updates" Style="{StaticResource FlatBtn}"
+                  Background="#3C3C5A" Padding="10,6" Margin="12,0,0,0"
+                  ToolTip="Restart the app and check GitHub for a newer version"/>
+        </StackPanel>
       </Grid>
     </Border>
 
@@ -1211,6 +1216,20 @@ function Start-UpdateCheck {
     }
 }
 
+# Relaunches through Update.ps1, the same path as Launch.cmd, so the new console
+# lists what changed and asks before updating. Saved sign-ins are kept.
+function Restart-EtbForUpdate {
+    if (@($Script:BulkRuns | Where-Object State -eq 'Running').Count) {
+        Write-AppLog 'A bulk run is still in progress. Let it finish, or stop it in Bulk Results, before restarting.' 'Warning'
+        return
+    }
+    if (-not (Confirm-EtbAction 'Restart Entra Toolbox and check for updates? Unsaved work in open tools will be lost; saved sign-ins are kept.' 'Check for updates')) { return }
+    Start-Process 'pwsh.exe' `
+        -ArgumentList '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', "`"$Global:AppRoot\Update.ps1`"" `
+        -WorkingDirectory $Global:AppRoot
+    $Script:MainUI.Window.Close()
+}
+
 function Invoke-LogPaneToggle {
     if ($Script:MainUI.LogPaneGrid.Visibility -eq 'Visible') {
         $Script:MainUI.LogPaneGrid.Visibility = 'Collapsed'
@@ -1275,6 +1294,7 @@ function Show-MainWindow {
         TenantBarBorder = $window.FindName('MainTenantBar')
         StatusBarBorder = $window.FindName('MainStatusBar')
         UpdateLabel     = $window.FindName('MainUpdate')
+        BtnUpdateRestart = $window.FindName('BtnUpdateRestart')
         CmdOverlay      = $window.FindName('CmdOverlay')
         CmdBackdrop     = $window.FindName('CmdBackdrop')
         CmdSearch       = $window.FindName('CmdSearch')
@@ -1521,6 +1541,11 @@ function Show-MainWindow {
     $Script:MainUI.UpdateLabel.Add_MouseLeftButtonDown({
         try { Start-Process 'https://github.com/ydap1/EntraToolbox' }
         catch { Write-Log "UpdateLabel click error: $_" 'ERROR' }
+    })
+
+    $Script:MainUI.BtnUpdateRestart.Add_Click({
+        try { Restart-EtbForUpdate }
+        catch { Write-Log "BtnUpdateRestart click error: $_" 'ERROR' }
     })
 
     # ── Search button + shortcut guide ───────────────────────────────────────

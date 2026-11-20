@@ -338,4 +338,29 @@ try {
         Switch-NavPin 'Overview'
         Assert (@(Get-NavPinned).Count -eq 0) 'the last pin can be removed'
     }
+    & {
+        . "$root/src/MainWindow.ps1"
+        $started = [Collections.Generic.List[string]]::new()
+        $closed = @{ Count = 0 }
+        $answer = @{ Yes = $false }
+        function Start-Process { param($FilePath, $ArgumentList, $WorkingDirectory) $started.Add("$FilePath $ArgumentList") }
+        function Confirm-EtbAction { param($Message, $Title) $answer.Yes }
+        function Write-AppLog { param($Message, $Color) }
+        $Script:MainUI = @{ Window = [pscustomobject]@{} }
+        $Script:MainUI.Window | Add-Member ScriptMethod Close { $closed.Count++ }
+        $savedRuns = $Script:BulkRuns
+        try {
+            $Script:BulkRuns = @([pscustomobject]@{ State = 'Running' })
+            $answer.Yes = $true
+            Restart-EtbForUpdate
+            Assert ($started.Count -eq 0 -and $closed.Count -eq 0) 'the update restart waits for a running bulk operation'
+            $Script:BulkRuns = @([pscustomobject]@{ State = 'Finished' })
+            $answer.Yes = $false
+            Restart-EtbForUpdate
+            Assert ($started.Count -eq 0 -and $closed.Count -eq 0) 'declining the update restart leaves the app open'
+            $answer.Yes = $true
+            Restart-EtbForUpdate
+            Assert ($started.Count -eq 1 -and $started[0] -like 'pwsh.exe*Update.ps1*' -and $closed.Count -eq 1) 'the update restart relaunches through the updater and closes this window'
+        } finally { $Script:BulkRuns = $savedRuns }
+    }
 } finally { Remove-Item $Global:AppRoot -Recurse -Force }
