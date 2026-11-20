@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.47.0'
+        Date    = '2026-11-20'
+        Changes = @(
+            'Teams Provisioning shows Paste users / import CSV in both population modes, not only under Direct Users. Pasted users are added to the member list'
+            'Year Group Passwords has Load from list, which loads the users in a pasted list of usernames or display names, or a CSV'
+        )
+    }
+    @{
         Version = '0.46.0'
         Date    = '2026-11-20'
         Changes = @(
