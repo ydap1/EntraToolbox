@@ -10,6 +10,14 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.46.0'
+        Date    = '2026-11-20'
+        Changes = @(
+            'Every tool that picks several users has a Job title dropdown, for picking staff such as all Teachers or Teaching Assistants. Year Group Passwords and Teams Provisioning load the job title like a department; the other tools add it to their list'
+            'Year Group Passwords includes enabled users who have only a job title'
+        )
+    }
+    @{
         Version = '0.45.0'
         Date    = '2026-11-19'
         Changes = @(

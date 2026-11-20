@@ -24,7 +24,7 @@ There’s no separate app installer or Azure app registration. Use **Demo** to e
 - **Devices:** Intune device lookup, stale devices, sign-in time reports and compliance details.
 - **Reports:** sign-in logs, local change history, bulk results and Microsoft Secure Score.
 
-Every tool that works on several users can pick them by the form at the end of their display name (type 3 for all of Year 3, or 3B for one form), or from a pasted list of usernames or display names.
+Every tool that works on several users can pick them by the form at the end of their display name (type 3 for all of Year 3, or 3B for one form), by job title, or from a pasted list of usernames or display names.
 
 Multiple tenants, CSV imports and exports, and theme customisation are supported.
 
