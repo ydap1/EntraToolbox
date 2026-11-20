@@ -59,7 +59,7 @@ $Script:ImportXaml = @'
     </Grid.RowDefinitions>
 
     <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,8"
-               Text="Paste usernames or display names, one per line, or import a CSV of usernames. A name can leave out the form: Jane Doe finds Jane Doe (3B)."/>
+               Text="Paste usernames or display names, one per line, or import a CSV of usernames. A name can leave out the form or put the surname first: Jane Doe or Doe, Jane finds Jane Doe (3B)."/>
 
     <TextBox x:Name="ImpText" Grid.Row="1"
              AcceptsReturn="True" AcceptsTab="False"
@@ -192,6 +192,8 @@ function Show-EtbUpnImport {
 # misses matters as much as the hits: a leaver already removed, or a typo in the
 # spreadsheet, should be named rather than quietly dropped from the batch. A name
 # shared by several users is a miss too, so the wrong student is never picked.
+# A name with no match is retried in each word order, for spreadsheets that list
+# Doe Jane or Doe, Jane; rotating rather than swapping keeps De Souza Maria whole.
 function Select-EtbUsersByUpn {
     param(
         [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Users,
@@ -215,6 +217,14 @@ function Select-EtbUsersByUpn {
     $missing = [System.Collections.Generic.List[string]]::new()
     foreach ($upn in $Upns) {
         $hits = if ($upn -like '*@*') { @($byUpn[$upn.ToLower()] | Where-Object { $_ }) } else { @($byName[(& $nameKey $upn)] | Where-Object { $_ }) }
+        if (-not $hits.Count -and $upn -notlike '*@*') {
+            $key   = & $nameKey ($upn -replace ',', ' ')
+            $form  = if ($key -match '\s*(\([^()]*\))$') { ' ' + $Matches[1] } else { '' }
+            $words = @(($key -replace '\s*\([^()]*\)$', '') -split ' ')
+            $hits  = @($(for ($k = 1; $k -lt $words.Count; $k++) {
+                $byName[(@($words[$k..($words.Count - 1)]) + @($words[0..($k - 1)]) -join ' ') + $form]
+            }) | Where-Object { $_ } | Sort-Object id -Unique)
+        }
         if ($hits.Count -eq 1) {
             # A user pasted twice, by name and by username, is still added once.
             if ($ids.Add([string]$hits[0].id)) { $matched.Add($hits[0]) }

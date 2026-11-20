@@ -473,6 +473,9 @@ try {
     $lookup = Select-EtbUsersByUpn -Users $pupils -Upns @('jane doe (3b)', 'Ann  Lee', 'ann@school.test', 'Jane Doe', 'Nobody')
     Assert ((@($lookup.Matched.id) -join ',') -eq '1,3') 'display names match with or without the form, and a user listed twice is added once'
     Assert ($lookup.Missing.Count -eq 2 -and $lookup.Missing[0] -like 'Jane Doe (matches 2 users: *' -and $lookup.Missing[1] -eq 'Nobody') 'a name shared by several users is reported instead of guessed'
+    $lookup = Select-EtbUsersByUpn -Users ($pupils + [pscustomobject]@{ id = '4'; displayName = 'Maria De Souza (5A)'; userPrincipalName = 'mds@school.test' }) -Upns @('Lee Ann', 'Lee, Ann (RA)', "De Souza`tMaria", 'Doe Jane', 'Souza Maria')
+    Assert ((@($lookup.Matched.id) -join ',') -eq '3,4') 'an unmatched name is retried as surname first, with or without a comma, a form or a two-word surname'
+    Assert ($lookup.Missing.Count -eq 2 -and $lookup.Missing[0] -like 'Doe Jane (matches 2 users: *' -and $lookup.Missing[1] -eq 'Souza Maria') 'a reordered name shared by several users is still reported instead of guessed'
     Assert ((@(Get-EtbFormUsers $pupils ' (r) ').id -join ',') -eq '3' -and @(Get-EtbFormUsers $pupils '4').Count -eq 0 -and @(Get-EtbFormUsers $pupils '').Count -eq 0) 'a typed form gives its users, and nothing for an unknown or empty form'
 
     # ── Change record ─────────────────────────────────────────────────────────
