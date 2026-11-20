@@ -442,6 +442,12 @@ $Script:PwResetXaml = @'
         <Button x:Name="PwBtnLoadJob" Content="Load job title" IsEnabled="False"
                 Style="{StaticResource PrimaryBtn}" Background="#242436"
                 Foreground="#7878A0" Padding="0,10" Margin="0,8,0,0"/>
+        <TextBlock Text="LIST" Style="{StaticResource SectionLbl}" Margin="0,14,0,6"/>
+        <Button x:Name="PwBtnLoadList" Content="Load from list…"
+                IsEnabled="{Binding IsEnabled, ElementName=PwBtnLoad}"
+                Style="{StaticResource PrimaryBtn}" Background="#242436"
+                Foreground="#7878A0" Padding="0,10"
+                ToolTip="Load the users in a pasted list of usernames or display names, or a CSV"/>
         <TextBlock Text="Loading replaces the current user list." Foreground="#7878A0" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"/>
         <Button x:Name="PwBtnImport" Content="Select From List…" IsEnabled="False"
                 Style="{StaticResource PrimaryBtn}" Background="#242436"
@@ -698,6 +704,7 @@ function Initialize-PasswordResetTool {
         BtnLoadDept    = $content.FindName('PwBtnLoadDept')
         BtnLoadOffice  = $content.FindName('PwBtnLoadOffice')
         BtnLoadJob     = $content.FindName('PwBtnLoadJob')
+        BtnLoadList    = $content.FindName('PwBtnLoadList')
         LblSelection   = $content.FindName('PwLblSelection')
         BtnSelectAll   = $content.FindName('PwBtnSelectAll')
         BtnSelectNone  = $content.FindName('PwBtnSelectNone')
@@ -791,6 +798,12 @@ function Initialize-PasswordResetTool {
     $Script:PwReset_UI.BtnLoadJob.Add_Click({
         try { Set-PwPopulation -Choice $Script:PwReset_UI.CboJob.SelectedItem.DataContext }
         catch { Write-Log "Pw: job title load failed: $_" 'ERROR' }
+    })
+    $Script:PwReset_UI.BtnLoadList.Add_Click({
+        try {
+            $users = @(Read-EtbUserList $Script:PwReset_GraphUsers)
+            if ($users.Count) { Set-PwPopulation -Choice ([pscustomobject]@{ Value = 'pasted list'; Users = $users }) }
+        } catch { Write-Log "Pw: list load failed: $_" 'ERROR' }
     })
 
     # Generate / Reset

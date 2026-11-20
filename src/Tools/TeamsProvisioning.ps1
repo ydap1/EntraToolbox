@@ -67,6 +67,7 @@ function Update-TpSearchFilter {
 # Adds users to the member list, skipping anyone already on it.
 function Add-TpUsers {
     param([object[]]$Users)
+    if ($Script:TP_Creating) { return }
     $existingIds = [System.Collections.Generic.HashSet[string]]::new()
     foreach ($r in $Script:TP_Rows) { [void]$existingIds.Add($r.Id) }
     foreach ($u in $Users) {
@@ -425,11 +426,11 @@ $Script:TpXaml = @'
               </ListBox.ItemContainerStyle>
             </ListBox>
           </Border>
-          <Button x:Name="TpBtnImport" Content="Paste users / import CSV…"
-                  Style="{StaticResource PrimaryBtn}" Background="#242436"
-                  Foreground="#7878A0" Padding="0,8" Margin="0,8,0,0" FontSize="12"
-                  ToolTip="Add users by pasting usernames or display names, or importing a CSV"/>
         </StackPanel>
+        <Button x:Name="TpBtnImport" Content="Paste users / import CSV…"
+                Style="{StaticResource PrimaryBtn}" Background="#242436"
+                Foreground="#7878A0" Padding="0,8" Margin="0,8,0,0" FontSize="12"
+                ToolTip="Add users to the member list by pasting usernames or display names, or importing a CSV"/>
 
         <Border Background="#3C3C5A" Height="1" Margin="0,14"/>
 

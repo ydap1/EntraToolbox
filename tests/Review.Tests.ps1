@@ -103,6 +103,8 @@ try {
         $Script:TP_Creating = $true
         Set-TpPopulation -Choice $year
         Assert ($Script:TP_Rows.Count -eq 1) 'Teams population cannot change during creation'
+        Add-TpUsers @($users[1])
+        Assert ($Script:TP_Rows.Count -eq 1) 'a pasted list cannot add Teams members during creation'
         $Script:TP_Creating = $false
         $Script:GdapMode = $true
         Update-TpCreateButton
