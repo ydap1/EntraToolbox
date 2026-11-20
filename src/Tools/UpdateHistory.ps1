@@ -10,6 +10,13 @@
 # ── Version history ────────────────────────────────────────────────────────────
 $Script:IH_History = @(
     @{
+        Version = '0.48.0'
+        Date    = '2026-11-20'
+        Changes = @(
+            'A pasted name with no match is tried surname first, so Doe Jane, Doe, Jane and De Souza Maria find Jane Doe and Maria De Souza. A reordered name shared by several users is still listed in the log instead of guessed'
+        )
+    }
+    @{
         Version = '0.47.0'
         Date    = '2026-11-20'
         Changes = @(
