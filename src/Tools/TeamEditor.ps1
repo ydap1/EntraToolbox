@@ -4,7 +4,7 @@
     Exposes Initialize-TeamEditorTool.
 
     Adds missing students or staff to an existing Team, chosen by year group,
-    department, office or name as in Teams Provisioning. Never removes anyone.
+    department, office, job title or name as in Teams Provisioning. Never removes anyone.
 #>
 
 $Script:TE_UI         = $null
@@ -112,6 +112,7 @@ function Complete-TeUsers {
     Set-EtbPopulationCombo -ComboBox $Script:TE_UI.Years -Users $Script:TE_Users -Mode YearGroup
     Set-EtbPopulationCombo -ComboBox $Script:TE_UI.Departments -Users $Script:TE_Users -Mode Department
     Set-EtbPopulationCombo -ComboBox $Script:TE_UI.Offices -Users $Script:TE_Users -Mode OfficeLocation
+    Set-EtbPopulationCombo -ComboBox $Script:TE_UI.JobTitles -Users $Script:TE_Users -Mode JobTitle
 }
 
 function Start-TeMembersLoad {
@@ -143,7 +144,7 @@ function Complete-TeMembersLoad {
         return
     }
     $Script:TE_MemberIds = $Ref.MemberIds
-    $Script:TE_UI.Status.Text = "$($team.displayName) has $($Script:TE_MemberIds.Count) members. Add a form, year group, department, office or individual users; only people not already in the team are listed."
+    $Script:TE_UI.Status.Text = "$($team.displayName) has $($Script:TE_MemberIds.Count) members. Add a form, year group, department, office, job title or individual users; only people not already in the team are listed."
     Update-TeState
 }
 
@@ -310,6 +311,9 @@ $Script:TeXaml = @'
           <TextBlock Text="Office" Foreground="#7878A0" Margin="0,0,0,6"/>
           <ComboBox x:Name="TeOffices" Style="{StaticResource EtbPopulationCombo}" AutomationProperties.Name="Office location"/>
           <Button x:Name="TeAddOffice" Content="Add missing from office" Style="{StaticResource EtbAction}" Margin="0,8,0,12"/>
+          <TextBlock Text="Job title" Foreground="#7878A0" Margin="0,0,0,6"/>
+          <ComboBox x:Name="TeJobTitles" Style="{StaticResource EtbPopulationCombo}" AutomationProperties.Name="Job title"/>
+          <Button x:Name="TeAddJobTitle" Content="Add missing with job title" Style="{StaticResource EtbAction}" Margin="0,8,0,12"/>
           <TextBlock Text="Find users" Foreground="#7878A0" Margin="0,0,0,6"/>
           <TextBox x:Name="TeUserSearch" AutomationProperties.Name="Find users"/>
           <ListBox x:Name="TeMatches" Height="100" DisplayMemberPath="userPrincipalName" SelectionMode="Extended" Margin="0,6,0,8"/>
@@ -371,7 +375,7 @@ function Initialize-TeamEditorTool {
     $reader = [Xml.XmlReader]::Create([IO.StringReader]::new((Invoke-ThemeXaml $Script:TeXaml)))
     try { $panel = [Windows.Markup.XamlReader]::Load($reader) } finally { $reader.Close() }
     $Script:TE_UI = @{}
-    foreach ($key in 'TeamPicker','Search','Find','Teams','Picker','Form','AddForm','Years','AddYear','Departments','AddDepartment','Offices','AddOffice','UserSearch','Matches','AddUsers','Import','Status','Grid','Count','Apply','Remove','Clear','Banner','BannerBar','BannerName','BannerInfo','BannerBadge','BannerCount') {
+    foreach ($key in 'TeamPicker','Search','Find','Teams','Picker','Form','AddForm','Years','AddYear','Departments','AddDepartment','Offices','AddOffice','JobTitles','AddJobTitle','UserSearch','Matches','AddUsers','Import','Status','Grid','Count','Apply','Remove','Clear','Banner','BannerBar','BannerName','BannerInfo','BannerBadge','BannerCount') {
         $Script:TE_UI[$key] = $panel.FindName("Te$key")
     }
     $Script:TE_UI.Grid.ItemsSource = $Script:TE_Rows
@@ -392,6 +396,7 @@ function Initialize-TeamEditorTool {
     $Script:TE_UI.AddYear.Add_Click({ Add-TeUsers @($Script:TE_UI.Years.SelectedItem.DataContext.Users) })
     $Script:TE_UI.AddDepartment.Add_Click({ Add-TeUsers @($Script:TE_UI.Departments.SelectedItem.DataContext.Users) })
     $Script:TE_UI.AddOffice.Add_Click({ Add-TeUsers @($Script:TE_UI.Offices.SelectedItem.DataContext.Users) })
+    $Script:TE_UI.AddJobTitle.Add_Click({ Add-TeUsers @($Script:TE_UI.JobTitles.SelectedItem.DataContext.Users) })
     $Script:TE_UI.UserSearch.Add_TextChanged({ Invoke-EtbDebounced -Key 'TE_UserSearch' -Command 'Update-TeUserSearch' })
     $Script:TE_UI.AddUsers.Add_Click({ Add-TeUsers @($Script:TE_UI.Matches.SelectedItems) })
     $Script:TE_UI.Matches.Add_MouseDoubleClick({ Add-TeUsers @($Script:TE_UI.Matches.SelectedItems) })
@@ -414,7 +419,7 @@ function Initialize-TeamEditorTool {
         $Script:TE_Teams = @(); $Script:TE_Users = @(); $Script:TE_Rows.Clear()
         $Script:TE_UI.Search.Text = ''; $Script:TE_UI.UserSearch.Text = ''
         $Script:TE_UI.Teams.ItemsSource = @(); $Script:TE_UI.Matches.ItemsSource = @()
-        foreach ($combo in 'Years','Departments','Offices') { $Script:TE_UI[$combo].Items.Clear(); $Script:TE_UI[$combo].IsEnabled = $false }
+        foreach ($combo in 'Years','Departments','Offices','JobTitles') { $Script:TE_UI[$combo].Items.Clear(); $Script:TE_UI[$combo].IsEnabled = $false }
         $Script:TE_UI.Status.Text = 'Connect to a tenant, then search for a team.'
         Update-TeState
     })

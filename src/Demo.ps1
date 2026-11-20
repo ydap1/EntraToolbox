@@ -62,16 +62,16 @@ $Script:Demo_Users = @(
     [PSCustomObject]@{ id='u-y12-11'; displayName='Imogen Taylor';      userPrincipalName='imogen.taylor@contoso.sch.uk';      department='12A'; accountEnabled=$true },
     [PSCustomObject]@{ id='u-y12-12'; displayName='Ravi Krishnamurthy'; userPrincipalName='ravi.krishnamurthy@contoso.sch.uk'; department='12B'; accountEnabled=$true },
     # Staff
-    [PSCustomObject]@{ id='u-st-01'; displayName='Michael Graves';      userPrincipalName='m.graves@contoso.sch.uk';           department='Staff'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-st-02'; displayName='Sarah Nkosi';         userPrincipalName='s.nkosi@contoso.sch.uk';            department='Staff'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-st-03'; displayName='Tom Lawson';          userPrincipalName='t.lawson@contoso.sch.uk';           department='Staff'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-st-04'; displayName='Claire Atkins';       userPrincipalName='c.atkins@contoso.sch.uk';           department='Staff'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-st-05'; displayName='Paul Yeboah';         userPrincipalName='p.yeboah@contoso.sch.uk';           department='Staff'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-st-06'; displayName='Helen Marsh';         userPrincipalName='h.marsh@contoso.sch.uk';            department='Staff'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-st-07'; displayName='James Obrien';        userPrincipalName='j.obrien@contoso.sch.uk';           department='Staff'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-st-08'; displayName='Priya Mehta';         userPrincipalName='p.mehta@contoso.sch.uk';            department='Staff'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-st-09'; displayName='Dave Fowler';         userPrincipalName='d.fowler@contoso.sch.uk';           department='Staff'; accountEnabled=$true },
-    [PSCustomObject]@{ id='u-st-10'; displayName='Rachel Green';        userPrincipalName='r.green@contoso.sch.uk';            department='Staff'; accountEnabled=$true }
+    [PSCustomObject]@{ id='u-st-01'; displayName='Michael Graves';      userPrincipalName='m.graves@contoso.sch.uk';           department='Staff'; jobTitle='Headteacher'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-st-02'; displayName='Sarah Nkosi';         userPrincipalName='s.nkosi@contoso.sch.uk';            department='Staff'; jobTitle='Teacher'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-st-03'; displayName='Tom Lawson';          userPrincipalName='t.lawson@contoso.sch.uk';           department='Staff'; jobTitle='Teacher'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-st-04'; displayName='Claire Atkins';       userPrincipalName='c.atkins@contoso.sch.uk';           department='Staff'; jobTitle='Teaching Assistant'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-st-05'; displayName='Paul Yeboah';         userPrincipalName='p.yeboah@contoso.sch.uk';           department='Staff'; jobTitle='Teacher'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-st-06'; displayName='Helen Marsh';         userPrincipalName='h.marsh@contoso.sch.uk';            department='Staff'; jobTitle='Office Manager'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-st-07'; displayName='James Obrien';        userPrincipalName='j.obrien@contoso.sch.uk';           department='Staff'; jobTitle='Teaching Assistant'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-st-08'; displayName='Priya Mehta';         userPrincipalName='p.mehta@contoso.sch.uk';            department='Staff'; jobTitle='Teacher'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-st-09'; displayName='Dave Fowler';         userPrincipalName='d.fowler@contoso.sch.uk';           department='Staff'; jobTitle='Site Manager'; accountEnabled=$true },
+    [PSCustomObject]@{ id='u-st-10'; displayName='Rachel Green';        userPrincipalName='r.green@contoso.sch.uk';            department='Staff'; jobTitle='Teaching Assistant'; accountEnabled=$true }
 )
 
 foreach ($user in $Script:Demo_Users) {
@@ -215,7 +215,7 @@ function Get-DemoGroupsForUser {
 
 # ── Year Group Passwords demo loader ───────────────────────────────────────────
 function Start-PwUserLoadDemo {
-    $Script:PwReset_GraphUsers = @($Script:Demo_Users | Where-Object { $_.accountEnabled -and ($_.department -or $_.officeLocation) })
+    $Script:PwReset_GraphUsers = @($Script:Demo_Users | Where-Object { $_.accountEnabled -and ($_.department -or $_.officeLocation -or $_.jobTitle) })
 
     Update-PwPopulationCombos
 

@@ -365,7 +365,9 @@ $Script:TpXaml = @'
         <Border Background="#3C3C5A" Height="1" Margin="0,14"/>
 
         <TextBlock Text="POPULATION" Style="{StaticResource SectionLbl}"/>
-        <RadioButton x:Name="TpRbYearGroup" Content="Form / year group / department" GroupName="tppop" IsChecked="True"/>
+        <RadioButton x:Name="TpRbYearGroup" GroupName="tppop" IsChecked="True">
+          <TextBlock Text="Form / year group / department / job title" TextWrapping="Wrap"/>
+        </RadioButton>
         <RadioButton x:Name="TpRbDirect"    Content="Direct Users" GroupName="tppop" Margin="0,4,0,8"/>
 
         <StackPanel x:Name="TpPnlYearGroup">
@@ -387,6 +389,11 @@ $Script:TpXaml = @'
           <TextBlock Text="DEPARTMENT" Style="{StaticResource SectionLbl}" Margin="0,14,0,6"/>
           <ComboBox x:Name="TpCboDept" Style="{StaticResource EtbPopulationCombo}" IsEnabled="False"/>
           <Button x:Name="TpBtnLoadDept" Content="Load department" IsEnabled="False"
+                  Style="{StaticResource PrimaryBtn}" Background="#242436"
+                  Foreground="#7878A0" Padding="0,10" Margin="0,8,0,0"/>
+          <TextBlock Text="JOB TITLE" Style="{StaticResource SectionLbl}" Margin="0,14,0,6"/>
+          <ComboBox x:Name="TpCboJob" Style="{StaticResource EtbPopulationCombo}" IsEnabled="False"/>
+          <Button x:Name="TpBtnLoadJob" Content="Load job title" IsEnabled="False"
                   Style="{StaticResource PrimaryBtn}" Background="#242436"
                   Foreground="#7878A0" Padding="0,10" Margin="0,8,0,0"/>
           <TextBlock Text="Loading replaces the current member list." Foreground="#7878A0" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"/>
@@ -527,6 +534,9 @@ function Start-TpUserLoad {
     $Script:TP_UI.CboDept.Items.Clear()
     $Script:TP_UI.CboDept.IsEnabled = $false
     $Script:TP_UI.BtnLoadDept.IsEnabled = $false
+    $Script:TP_UI.CboJob.Items.Clear()
+    $Script:TP_UI.CboJob.IsEnabled = $false
+    $Script:TP_UI.BtnLoadJob.IsEnabled = $false
     $Script:TP_UI.BtnLoad.IsEnabled = $false
     Set-MainStatus 'Teams: loading users...' 'TextDim'
     Write-TpLog 'Fetching users from Entra ID...' 'TextDim'
@@ -594,6 +604,7 @@ function Start-TpCreateTeam {
     $Script:TP_UI.BtnClear.IsEnabled       = $false
     $Script:TP_UI.BtnLoad.IsEnabled        = $false
     $Script:TP_UI.BtnLoadDept.IsEnabled    = $false
+    $Script:TP_UI.BtnLoadJob.IsEnabled     = $false
     $Script:TP_UI.BtnSelectAll.IsEnabled   = $false
     $Script:TP_UI.BtnSelectNone.IsEnabled  = $false
     $Script:TP_UI.PnlStats.Visibility      = 'Collapsed'
@@ -743,6 +754,7 @@ function Start-TpCreateTeam {
                 $Script:TP_UI.PnlStats.Visibility     = 'Visible'
                 $Script:TP_UI.BtnLoad.IsEnabled       = $true
                 $Script:TP_UI.BtnLoadDept.IsEnabled   = $Script:TP_UI.CboDept.Items.Count -gt 0
+                $Script:TP_UI.BtnLoadJob.IsEnabled    = $Script:TP_UI.CboJob.Items.Count -gt 0
                 $Script:TP_UI.BtnSelectAll.IsEnabled  = $true
                 $Script:TP_UI.BtnSelectNone.IsEnabled = $true
                 Update-TpCreateButton
@@ -755,8 +767,10 @@ function Start-TpCreateTeam {
 function Update-TpPopulationCombos {
     Set-EtbPopulationCombo -ComboBox $Script:TP_UI.CboYear -Users $Script:TP_AllUsers -Mode YearGroup
     Set-EtbPopulationCombo -ComboBox $Script:TP_UI.CboDept -Users $Script:TP_AllUsers -Mode Department
+    Set-EtbPopulationCombo -ComboBox $Script:TP_UI.CboJob -Users $Script:TP_AllUsers -Mode JobTitle
     $Script:TP_UI.BtnLoad.IsEnabled = $Script:TP_UI.CboYear.Items.Count -gt 0
     $Script:TP_UI.BtnLoadDept.IsEnabled = $Script:TP_UI.CboDept.Items.Count -gt 0
+    $Script:TP_UI.BtnLoadJob.IsEnabled = $Script:TP_UI.CboJob.Items.Count -gt 0
 }
 
 function Set-TpPopulation {
@@ -802,6 +816,8 @@ function Initialize-TeamsProvisioningTool {
         BtnLoad       = $content.FindName('TpBtnLoad')
         CboDept       = $content.FindName('TpCboDept')
         BtnLoadDept   = $content.FindName('TpBtnLoadDept')
+        CboJob        = $content.FindName('TpCboJob')
+        BtnLoadJob    = $content.FindName('TpBtnLoadJob')
         TxtForm       = $content.FindName('TpTxtForm')
         BtnLoadForm   = $content.FindName('TpBtnLoadForm')
         Search        = $content.FindName('TpSearch')
@@ -857,6 +873,10 @@ function Initialize-TeamsProvisioningTool {
     $Script:TP_UI.BtnLoadDept.Add_Click({
         try { Set-TpPopulation -Choice $Script:TP_UI.CboDept.SelectedItem.DataContext }
         catch { Write-Log "Tp: department load failed: $_" 'ERROR' }
+    })
+    $Script:TP_UI.BtnLoadJob.Add_Click({
+        try { Set-TpPopulation -Choice $Script:TP_UI.CboJob.SelectedItem.DataContext }
+        catch { Write-Log "Tp: job title load failed: $_" 'ERROR' }
     })
 
     # Direct user search — filter as user types
@@ -922,6 +942,9 @@ function Initialize-TeamsProvisioningTool {
         $Script:TP_UI.CboDept.Items.Clear()
         $Script:TP_UI.CboDept.IsEnabled        = $false
         $Script:TP_UI.BtnLoadDept.IsEnabled    = $false
+        $Script:TP_UI.CboJob.Items.Clear()
+        $Script:TP_UI.CboJob.IsEnabled         = $false
+        $Script:TP_UI.BtnLoadJob.IsEnabled     = $false
         $Script:TP_UI.BtnLoad.IsEnabled        = $false
         $Script:TP_UI.BtnCreate.IsEnabled      = $false
         $Script:TP_UI.BtnClear.IsEnabled       = $false

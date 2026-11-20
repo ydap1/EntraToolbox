@@ -29,6 +29,8 @@ function Update-BucGroupCombos {
     Set-EtbPopulationCombo -ComboBox $Script:BUC_UI.DeptCombo -Users $Script:BUC_AllUsers -Mode Department
     $Script:BUC_UI.BtnAddYear.IsEnabled = $Script:BUC_UI.YearCombo.Items.Count -gt 0
     $Script:BUC_UI.BtnAddDept.IsEnabled = $Script:BUC_UI.DeptCombo.Items.Count -gt 0
+    Set-EtbPopulationCombo -ComboBox $Script:BUC_UI.JobCombo -Users $Script:BUC_AllUsers -Mode JobTitle
+    $Script:BUC_UI.BtnAddJob.IsEnabled = $Script:BUC_UI.JobCombo.Items.Count -gt 0
 
     $officeCounts = @{}
     foreach ($u in $Script:BUC_AllUsers) {
@@ -120,7 +122,7 @@ function Add-BucByField {
     }
     Update-BucUserFilter
     Update-BucButtons
-    $label = if ($Field -eq 'YearGroup') { 'year group' } elseif ($Field -eq 'department') { 'department' } else { 'office location' }
+    $label = if ($Field -eq 'YearGroup') { 'year group' } elseif ($Field -eq 'department') { 'department' } elseif ($Field -eq 'jobTitle') { 'job title' } else { 'office location' }
     if ($users.Count -gt 0) {
         Write-BucLog "Added $($users.Count) user(s) from ${label}: $value" 'Text'
     } else {
@@ -346,8 +348,8 @@ function Start-BucLoadDemo {
         [PSCustomObject]@{ id='d2'; displayName='Bob Jones (3B)';   userPrincipalName='bob@contoso.edu';    department='Year 10'; officeLocation='Main Building' }
         [PSCustomObject]@{ id='d3'; displayName='Carol White (RA)'; userPrincipalName='carol@contoso.edu';  department='Year 11'; officeLocation='Sixth Form Centre' }
         [PSCustomObject]@{ id='d4'; displayName='Dave Black (NPM)'; userPrincipalName='dave@contoso.edu';   department='Year 11'; officeLocation='Sixth Form Centre' }
-        [PSCustomObject]@{ id='d5'; displayName='Eve Green';    userPrincipalName='eve@contoso.edu';    department='Staff';   officeLocation='Admin Block' }
-        [PSCustomObject]@{ id='d6'; displayName='Frank Hall';   userPrincipalName='frank@contoso.edu';  department='Staff';   officeLocation='Admin Block' }
+        [PSCustomObject]@{ id='d5'; displayName='Eve Green';    userPrincipalName='eve@contoso.edu';    department='Staff';   jobTitle='Teacher';   officeLocation='Admin Block' }
+        [PSCustomObject]@{ id='d6'; displayName='Frank Hall';   userPrincipalName='frank@contoso.edu';  department='Staff';   jobTitle='Teaching Assistant';   officeLocation='Admin Block' }
     )
     $Script:BUC_Domains = @('contoso.edu', 'contoso.ac.uk', 'students.contoso.edu')
     $Script:BUC_UI.DomainCombo.Items.Clear()
@@ -567,6 +569,13 @@ $Script:BucXaml = @'
           <Button x:Name="BucBtnAddOffice" Content="Add All  →" IsEnabled="False"
                   Style="{StaticResource PrimaryBtn}" Background="#6366F1"
                   Padding="12,8" Margin="0,6,0,0" HorizontalAlignment="Stretch"/>
+
+          <TextBlock Text="BY JOB TITLE" Foreground="#50507A" FontSize="10"
+                     FontWeight="Bold" Margin="0,14,0,6"/>
+          <ComboBox x:Name="BucJobCombo" Style="{StaticResource EtbPopulationCombo}" IsEnabled="False"/>
+          <Button x:Name="BucBtnAddJob" Content="Add job title →" IsEnabled="False"
+                  Style="{StaticResource PrimaryBtn}" Background="#6366F1"
+                  Padding="12,8" Margin="0,6,0,0" HorizontalAlignment="Stretch"/>
         </StackPanel>
         </ScrollViewer>
       </Border>
@@ -675,6 +684,8 @@ function Initialize-BulkUpnChangeTool {
         BtnAddDept  = $content.FindName('BucBtnAddDept')
         OfficeCombo = $content.FindName('BucOfficeCombo')
         BtnAddOffice= $content.FindName('BucBtnAddOffice')
+        JobCombo    = $content.FindName('BucJobCombo')
+        BtnAddJob   = $content.FindName('BucBtnAddJob')
         Search      = $content.FindName('BucSearch')
         FormSearch  = $content.FindName('BucFormSearch')
         BtnAddForm  = $content.FindName('BucBtnAddForm')
@@ -751,6 +762,11 @@ function Initialize-BulkUpnChangeTool {
     $Script:BUC_UI.BtnAddOffice.Add_Click({
         try { Add-BucByField -Field 'officeLocation' -ComboBox $Script:BUC_UI.OfficeCombo }
         catch { Write-Log "BUC BtnAddOffice click error: $_" 'ERROR' }
+    })
+
+    $Script:BUC_UI.BtnAddJob.Add_Click({
+        try { Add-BucByField -Field 'jobTitle' -ComboBox $Script:BUC_UI.JobCombo }
+        catch { Write-Log "BUC BtnAddJob click error: $_" 'ERROR' }
     })
 
     $Script:BUC_UI.DomainCombo.Add_SelectionChanged({
@@ -830,6 +846,9 @@ function Initialize-BulkUpnChangeTool {
         $Script:BUC_UI.OfficeCombo.Items.Clear()
         $Script:BUC_UI.OfficeCombo.IsEnabled   = $false
         $Script:BUC_UI.BtnAddOffice.IsEnabled  = $false
+        $Script:BUC_UI.JobCombo.Items.Clear()
+        $Script:BUC_UI.JobCombo.IsEnabled      = $false
+        $Script:BUC_UI.BtnAddJob.IsEnabled     = $false
         $Script:BUC_UI.Search.Text             = ''
         $Script:BUC_UI.Search.IsEnabled        = $false
         $Script:BUC_UI.FormSearch.Text         = ''

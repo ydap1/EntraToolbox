@@ -171,7 +171,7 @@ function Initialize-GroupManagerTool {
         Stop-EtbAsyncWork $Script:GM_Timer; Stop-EtbAsyncWork $Script:GM_GroupTimer
         Set-GmBusy $false; $Script:GM_Roster.Rows.Clear(); $Script:GM_Roster.Users=@(); $Script:GM_Roster.ImportError=$false
         $Script:GM_Roster.UI.Count.Text='0 selected users'; $Script:GM_Roster.UI.Status.Text='Connect to load users.'; $Script:GM_Roster.UI.Search.Text=''
-        $Script:GM_Roster.UI.Matches.ItemsSource=@(); $Script:GM_Roster.UI.Years.ItemsSource=@(); $Script:GM_Roster.UI.Departments.ItemsSource=@(); $Script:GM_Roster.Panel.IsEnabled=$false
+        $Script:GM_Roster.UI.Matches.ItemsSource=@(); $Script:GM_Roster.UI.Years.ItemsSource=@(); $Script:GM_Roster.UI.Departments.ItemsSource=@(); $Script:GM_Roster.UI.JobTitles.ItemsSource=@(); $Script:GM_Roster.Panel.IsEnabled=$false
         $Script:GM_Groups=@(); $Script:GM_UI.Groups.ItemsSource=@(); Invalidate-GmPlan
     })
     Invalidate-GmPlan

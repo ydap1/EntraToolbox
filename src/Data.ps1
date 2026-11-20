@@ -5,12 +5,13 @@ function Get-DeptGroup([string]$d) {
 }
 
 function Get-EtbPopulationChoices {
-    param([object[]]$Users, [ValidateSet('YearGroup', 'Department', 'OfficeLocation')][string]$Mode)
+    param([object[]]$Users, [ValidateSet('YearGroup', 'Department', 'OfficeLocation', 'JobTitle')][string]$Mode)
     # Use Teams Provisioning's grouping: e.g. 7A and 7B become Year 7.
-    # Department and office modes retain the complete field value.
+    # Department, office and job title modes retain the complete field value.
     $choices = foreach ($group in @($Users | Group-Object -Property {
         if ($Mode -eq 'YearGroup') { Get-DeptGroup $_.department }
         elseif ($Mode -eq 'OfficeLocation') { $_.officeLocation }
+        elseif ($Mode -eq 'JobTitle') { $_.jobTitle }
         else { $_.department }
     } | Where-Object { $_.Name })) {
         $value = if ($Mode -eq 'YearGroup') { Get-DeptGroup $group.Group[0].department } else { $group.Name }
@@ -38,7 +39,7 @@ function Get-EtbFormUsers {
 }
 
 function Set-EtbPopulationCombo {
-    param($ComboBox, [object[]]$Users, [ValidateSet('YearGroup', 'Department', 'OfficeLocation')][string]$Mode)
+    param($ComboBox, [object[]]$Users, [ValidateSet('YearGroup', 'Department', 'OfficeLocation', 'JobTitle')][string]$Mode)
     $ComboBox.Items.Clear()
     foreach ($choice in @(Get-EtbPopulationChoices -Users $Users -Mode $Mode)) {
         $item = [System.Windows.Controls.ComboBoxItem]::new()

@@ -6,6 +6,7 @@ $Script:RosterXaml = @'
     <TextBlock Text="Form" Foreground="#7878A0" Margin="0,0,0,6"/><TextBox x:Name="RForm" AutomationProperties.Name="Form" ToolTip="3 for all of Year 3, R for all of Reception, or one form like 3B, RA or NPM"/><Button x:Name="RAddForm" Content="Add form" Style="{StaticResource EtbAction}" Margin="0,8,0,12"/>
     <TextBlock Text="Year group" Foreground="#7878A0" Margin="0,0,0,6"/><ComboBox x:Name="RYears" DisplayMemberPath="Label" Style="{StaticResource EtbPopulationCombo}" AutomationProperties.Name="Year group"/><Button x:Name="RYear" Content="Add year group" Style="{StaticResource EtbAction}" Margin="0,8,0,12"/>
     <TextBlock Text="Department" Foreground="#7878A0" Margin="0,0,0,6"/><ComboBox x:Name="RDepartments" DisplayMemberPath="Label" Style="{StaticResource EtbPopulationCombo}" AutomationProperties.Name="Department"/><Button x:Name="RDepartment" Content="Add department" Style="{StaticResource EtbAction}" Margin="0,8,0,12"/>
+    <TextBlock Text="Job title" Foreground="#7878A0" Margin="0,0,0,6"/><ComboBox x:Name="RJobTitles" DisplayMemberPath="Label" Style="{StaticResource EtbPopulationCombo}" AutomationProperties.Name="Job title"/><Button x:Name="RJobTitle" Content="Add job title" Style="{StaticResource EtbAction}" Margin="0,8,0,12"/>
     <TextBlock Text="Find users" Foreground="#7878A0" Margin="0,0,0,6"/><TextBox x:Name="RSearch" AutomationProperties.Name="Find users"/><ListBox x:Name="RMatches" Height="100" DisplayMemberPath="userPrincipalName" SelectionMode="Extended" Margin="0,6,0,8"/><Button x:Name="RAdd" Content="Add selected users" Style="{StaticResource EtbAction}"/>
     <Button x:Name="RImport" Content="Paste users / import CSV…" Style="{StaticResource EtbAction}"/>
     <TextBlock x:Name="RCount" Text="0 selected users" Foreground="#E2E2F0" Margin="0,8"/>
@@ -35,6 +36,7 @@ function Set-EtbRosterUsers {
     $Roster.Users = $Users
     $Roster.UI.Years.ItemsSource = @(Get-EtbPopulationChoices $Users YearGroup)
     $Roster.UI.Departments.ItemsSource = @(Get-EtbPopulationChoices $Users Department)
+    $Roster.UI.JobTitles.ItemsSource = @(Get-EtbPopulationChoices $Users JobTitle)
     $Roster.UI.Status.Text = "$($Users.Count) users available. Search shows up to 50 matches."
     $Roster.Panel.IsEnabled = $true
 }
@@ -44,13 +46,14 @@ function Initialize-EtbRoster {
     $reader = [Xml.XmlReader]::Create([IO.StringReader]::new((Invoke-ThemeXaml $Script:RosterXaml)))
     try { $panel = [Windows.Markup.XamlReader]::Load($reader) } finally { $reader.Close() }
     $roster = @{ Panel=$panel; UI=@{}; Users=@(); Rows=[Collections.ObjectModel.ObservableCollection[PSObject]]::new(); OnChange=$OnChange; ImportError=$false }
-    foreach ($key in 'Form','AddForm','Years','Year','Departments','Department','Search','Matches','Add','Import','Count','Selected','Remove','Clear','Status') {
+    foreach ($key in 'Form','AddForm','Years','Year','Departments','Department','JobTitles','JobTitle','Search','Matches','Add','Import','Count','Selected','Remove','Clear','Status') {
         $roster.UI[$key] = $panel.FindName("R$key"); $roster.UI[$key].Tag = $roster
     }
     $roster.UI.Selected.ItemsSource = $roster.Rows
     $roster.UI.AddForm.Add_Click({ $r = $this.Tag; Add-EtbRosterUsers $r @(Get-EtbFormUsers $r.Users $r.UI.Form.Text) })
     $roster.UI.Year.Add_Click({ $r = $this.Tag; if ($r.UI.Years.SelectedItem) { Add-EtbRosterUsers $r $r.UI.Years.SelectedItem.Users } })
     $roster.UI.Department.Add_Click({ $r = $this.Tag; if ($r.UI.Departments.SelectedItem) { Add-EtbRosterUsers $r $r.UI.Departments.SelectedItem.Users } })
+    $roster.UI.JobTitle.Add_Click({ $r = $this.Tag; if ($r.UI.JobTitles.SelectedItem) { Add-EtbRosterUsers $r $r.UI.JobTitles.SelectedItem.Users } })
     $roster.UI.Search.Add_TextChanged({
         $r = $this.Tag; $text = $r.UI.Search.Text.Trim()
         $r.UI.Matches.ItemsSource = @(if ($text) { $r.Users | Where-Object { $_.displayName.IndexOf($text, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.userPrincipalName.IndexOf($text, [StringComparison]::OrdinalIgnoreCase) -ge 0 } | Select-Object -First 50 })

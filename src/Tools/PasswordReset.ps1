@@ -53,7 +53,7 @@ function Clear-PwUsers {
     }
     $Script:PwReset_UI.PnlStats.Visibility = 'Collapsed'
     Update-PwSelectionLabel
-    Set-MainStatus 'User list cleared. Load a year group, department or office location to start again.' 'TextDim'
+    Set-MainStatus 'User list cleared. Load a year group, department, office location or job title to start again.' 'TextDim'
 }
 
 function Write-PwLog {
@@ -83,7 +83,7 @@ function Complete-PwResetRow {
 # year group is reported rather than silently ignored.
 function Select-PwRowsFromList {
     if ($Script:PwReset_Rows.Count -eq 0) {
-        Write-PwLog 'Load a year group, department or office location first, then select from a list.' 'Warning'
+        Write-PwLog 'Load a year group, department, office location or job title first, then select from a list.' 'Warning'
         return
     }
     $entries = @(Show-EtbUpnImport)
@@ -174,8 +174,11 @@ function Start-PwUserLoad {
     $Script:PwReset_UI.CboOffice.Items.Clear()
     $Script:PwReset_UI.CboDept.IsEnabled   = $false
     $Script:PwReset_UI.CboOffice.IsEnabled = $false
+    $Script:PwReset_UI.CboJob.Items.Clear()
+    $Script:PwReset_UI.CboJob.IsEnabled = $false
     $Script:PwReset_UI.BtnLoadDept.IsEnabled = $false
     $Script:PwReset_UI.BtnLoadOffice.IsEnabled = $false
+    $Script:PwReset_UI.BtnLoadJob.IsEnabled = $false
     $Script:PwReset_UI.BtnLoad.IsEnabled   = $false
     $Script:PwReset_UI.BtnRun.IsEnabled    = $false
     $Script:PwReset_UI.BtnExport.IsEnabled = $false
@@ -196,9 +199,9 @@ function Complete-PwUserLoad {
             }
 
             $Script:PwReset_GraphUsers = @($Script:UserCache.Users |
-                Where-Object { $_.accountEnabled -eq $true -and ($_.department -or $_.officeLocation) })
+                Where-Object { $_.accountEnabled -eq $true -and ($_.department -or $_.officeLocation -or $_.jobTitle) })
             Write-Log "PwReset: loaded $($Script:PwReset_GraphUsers.Count) users" 'INFO'
-            Write-PwLog "Loaded $($Script:PwReset_GraphUsers.Count) enabled users with departments or office locations." 'Success'
+            Write-PwLog "Loaded $($Script:PwReset_GraphUsers.Count) enabled users with a department, office location or job title." 'Success'
 
             Update-PwPopulationCombos
             # Reopen on the group last worked on in this tenant — a year group
@@ -434,6 +437,11 @@ $Script:PwResetXaml = @'
         <Button x:Name="PwBtnLoadOffice" Content="Load office location" IsEnabled="False"
                 Style="{StaticResource PrimaryBtn}" Background="#242436"
                 Foreground="#7878A0" Padding="0,10" Margin="0,8,0,0"/>
+        <TextBlock Text="JOB TITLE" Style="{StaticResource SectionLbl}" Margin="0,14,0,6"/>
+        <ComboBox x:Name="PwCboJob" Style="{StaticResource EtbPopulationCombo}" IsEnabled="False"/>
+        <Button x:Name="PwBtnLoadJob" Content="Load job title" IsEnabled="False"
+                Style="{StaticResource PrimaryBtn}" Background="#242436"
+                Foreground="#7878A0" Padding="0,10" Margin="0,8,0,0"/>
         <TextBlock Text="Loading replaces the current user list." Foreground="#7878A0" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"/>
         <Button x:Name="PwBtnImport" Content="Select From List…" IsEnabled="False"
                 Style="{StaticResource PrimaryBtn}" Background="#242436"
@@ -623,9 +631,11 @@ function Update-PwPopulationCombos {
     Set-EtbPopulationCombo -ComboBox $Script:PwReset_UI.CboYear -Users $Script:PwReset_GraphUsers -Mode YearGroup
     Set-EtbPopulationCombo -ComboBox $Script:PwReset_UI.CboDept -Users $Script:PwReset_GraphUsers -Mode Department
     Set-EtbPopulationCombo -ComboBox $Script:PwReset_UI.CboOffice -Users $Script:PwReset_GraphUsers -Mode OfficeLocation
+    Set-EtbPopulationCombo -ComboBox $Script:PwReset_UI.CboJob -Users $Script:PwReset_GraphUsers -Mode JobTitle
     $Script:PwReset_UI.BtnLoad.IsEnabled = $Script:PwReset_UI.CboYear.Items.Count -gt 0
     $Script:PwReset_UI.BtnLoadDept.IsEnabled = $Script:PwReset_UI.CboDept.Items.Count -gt 0
     $Script:PwReset_UI.BtnLoadOffice.IsEnabled = $Script:PwReset_UI.CboOffice.Items.Count -gt 0
+    $Script:PwReset_UI.BtnLoadJob.IsEnabled = $Script:PwReset_UI.CboJob.Items.Count -gt 0
 }
 
 function Set-PwPopulation {
@@ -682,10 +692,12 @@ function Initialize-PasswordResetTool {
         BtnLoad        = $content.FindName('PwBtnLoad')
         CboDept        = $content.FindName('PwCboDept')
         CboOffice      = $content.FindName('PwCboOffice')
+        CboJob         = $content.FindName('PwCboJob')
         TxtForm        = $content.FindName('PwTxtForm')
         BtnLoadForm    = $content.FindName('PwBtnLoadForm')
         BtnLoadDept    = $content.FindName('PwBtnLoadDept')
         BtnLoadOffice  = $content.FindName('PwBtnLoadOffice')
+        BtnLoadJob     = $content.FindName('PwBtnLoadJob')
         LblSelection   = $content.FindName('PwLblSelection')
         BtnSelectAll   = $content.FindName('PwBtnSelectAll')
         BtnSelectNone  = $content.FindName('PwBtnSelectNone')
@@ -776,6 +788,10 @@ function Initialize-PasswordResetTool {
         try { Set-PwPopulation -Choice $Script:PwReset_UI.CboOffice.SelectedItem.DataContext }
         catch { Write-Log "Pw: office location load failed: $_" 'ERROR' }
     })
+    $Script:PwReset_UI.BtnLoadJob.Add_Click({
+        try { Set-PwPopulation -Choice $Script:PwReset_UI.CboJob.SelectedItem.DataContext }
+        catch { Write-Log "Pw: job title load failed: $_" 'ERROR' }
+    })
 
     # Generate / Reset
     $Script:PwReset_UI.BtnRun.Add_Click({
@@ -829,6 +845,7 @@ function Initialize-PasswordResetTool {
             $Script:PwReset_UI.BtnLoad.IsEnabled       = $false
             $Script:PwReset_UI.BtnLoadDept.IsEnabled   = $false
             $Script:PwReset_UI.BtnLoadOffice.IsEnabled = $false
+            $Script:PwReset_UI.BtnLoadJob.IsEnabled    = $false
             $Script:PwReset_UI.BtnExport.IsEnabled     = $false
             $Script:PwReset_UI.BtnPrint.IsEnabled      = $false
             $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $false
@@ -854,6 +871,7 @@ function Initialize-PasswordResetTool {
                 $Script:PwReset_UI.BtnLoad.IsEnabled       = $Script:PwReset_UI.CboYear.Items.Count -gt 0
                 $Script:PwReset_UI.BtnLoadDept.IsEnabled   = $Script:PwReset_UI.CboDept.Items.Count -gt 0
                 $Script:PwReset_UI.BtnLoadOffice.IsEnabled = $Script:PwReset_UI.CboOffice.Items.Count -gt 0
+                $Script:PwReset_UI.BtnLoadJob.IsEnabled    = $Script:PwReset_UI.CboJob.Items.Count -gt 0
                 $Script:PwReset_UI.BtnExport.IsEnabled     = $true
                 $Script:PwReset_UI.BtnPrint.IsEnabled      = $true
                 $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $true
@@ -923,6 +941,7 @@ function Initialize-PasswordResetTool {
                         $Script:PwReset_UI.BtnLoad.IsEnabled       = $Script:PwReset_UI.CboYear.Items.Count -gt 0
                         $Script:PwReset_UI.BtnLoadDept.IsEnabled   = $Script:PwReset_UI.CboDept.Items.Count -gt 0
                         $Script:PwReset_UI.BtnLoadOffice.IsEnabled = $Script:PwReset_UI.CboOffice.Items.Count -gt 0
+                        $Script:PwReset_UI.BtnLoadJob.IsEnabled    = $Script:PwReset_UI.CboJob.Items.Count -gt 0
                         $Script:PwReset_UI.BtnExport.IsEnabled     = $true
                         $Script:PwReset_UI.BtnPrint.IsEnabled      = $true
                         $Script:PwReset_UI.BtnSelectAll.IsEnabled  = $true
@@ -1000,8 +1019,11 @@ function Initialize-PasswordResetTool {
         $Script:PwReset_UI.CboOffice.Items.Clear()
         $Script:PwReset_UI.CboDept.IsEnabled        = $false
         $Script:PwReset_UI.CboOffice.IsEnabled      = $false
+        $Script:PwReset_UI.CboJob.Items.Clear()
+        $Script:PwReset_UI.CboJob.IsEnabled         = $false
         $Script:PwReset_UI.BtnLoadDept.IsEnabled    = $false
         $Script:PwReset_UI.BtnLoadOffice.IsEnabled  = $false
+        $Script:PwReset_UI.BtnLoadJob.IsEnabled     = $false
         $Script:PwReset_UI.BtnLoad.IsEnabled        = $false
         $Script:PwReset_UI.BtnRun.IsEnabled         = $false
         $Script:PwReset_UI.BtnClear.IsEnabled       = $false

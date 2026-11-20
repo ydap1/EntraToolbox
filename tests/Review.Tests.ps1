@@ -91,7 +91,7 @@ try {
             $grid = [pscustomobject]@{ ItemsSource = $rows; SelectedItems = @() }
             $grid | Add-Member ScriptMethod SelectAll { $this.SelectedItems = @($this.ItemsSource) }
             $ui = @{ Grid = $grid; RbLive = [pscustomobject]@{ IsChecked = $false }; TeamName = [pscustomobject]@{ Text = 'Test' } }
-            foreach ($name in 'BtnSelectAll','BtnSelectNone','BtnImport','BtnExport','BtnPrint','PnlStats','BtnRun','BtnCreate','BtnClear','LblSelection','LblOwnerHint','BtnLoad','BtnLoadDept') {
+            foreach ($name in 'BtnSelectAll','BtnSelectNone','BtnImport','BtnExport','BtnPrint','PnlStats','BtnRun','BtnCreate','BtnClear','LblSelection','LblOwnerHint','BtnLoad','BtnLoadDept','BtnLoadJob') {
                 $ui[$name] = [pscustomobject]@{ IsEnabled = $false; Visibility = ''; Content = ''; Background = ''; Text = '' }
             }
             Set-Variable "${tool}_UI" -Scope Script -Value $ui
@@ -131,6 +131,7 @@ try {
             [pscustomobject]@{ id = 'c'; displayName = 'Cal'; userPrincipalName = 'cal@school.test'; department = ''; officeLocation = 'Main Building'; accountEnabled = $true }
             [pscustomobject]@{ id = 'd'; officeLocation = 'Main Building'; accountEnabled = $false }
             [pscustomobject]@{ id = 'e'; department = '7A'; officeLocation = ''; accountEnabled = $true }
+            [pscustomobject]@{ id = 'f'; jobTitle = 'Teacher'; accountEnabled = $true }
         )
         function Update-PwPopulationCombos { }
         function Get-TenantSetting { }
@@ -138,6 +139,14 @@ try {
         $offices = @(Get-EtbPopulationChoices -Users $Script:PwReset_GraphUsers -Mode OfficeLocation)
         Assert ($offices.Count -eq 2 -and $offices[0].Value -eq 'Annex' -and $offices[1].Label -eq 'Main Building - 2 users') 'office choices are sorted, count enabled users and omit blank locations'
         Assert (@(Get-EtbPopulationChoices -Users @([pscustomobject]@{ officeLocation = $null }) -Mode OfficeLocation).Count -eq 0) 'users without offices leave the office dropdown empty'
+        Assert ($Script:PwReset_GraphUsers.id -contains 'f') 'staff with only a job title can still be loaded for password resets'
+        $jobs = @(Get-EtbPopulationChoices -Users @(
+            [pscustomobject]@{ id = 'j1'; jobTitle = 'Teacher' }
+            [pscustomobject]@{ id = 'j2'; jobTitle = 'teacher' }
+            [pscustomobject]@{ id = 'j3'; jobTitle = 'Teaching Assistant' }
+            [pscustomobject]@{ id = 'j4'; jobTitle = $null }
+        ) -Mode JobTitle)
+        Assert ($jobs.Count -eq 2 -and $jobs[0].Label -eq 'Teacher - 2 users' -and ($jobs[0].Users.id -join ',') -eq 'j1,j2' -and $jobs[1].Users.id -eq 'j3') 'job title choices group titles regardless of case and omit blanks'
         Set-PwPopulation -Choice $offices[1]
         Assert (($Script:PwReset_Rows.Id -join ',') -eq 'a,c' -and $Script:PwReset_UI.Grid.SelectedItems.Count -eq 2 -and $savedGroups.Count -eq 1) 'office loading replaces and selects users, includes blank departments and preserves the remembered year'
         $Script:PwReset_Running = $true

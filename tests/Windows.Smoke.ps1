@@ -146,7 +146,7 @@ try {
         @{ Nav = 'YearGroup'; UI = $Script:PwReset_UI; Rows = $Script:PwReset_Rows }
     )) {
         Set-NavSelection $tool.Nav
-        $sources = @(@('CboYear', 'BtnLoad'), @('CboDept', 'BtnLoadDept'))
+        $sources = @(@('CboYear', 'BtnLoad'), @('CboDept', 'BtnLoadDept'), @('CboJob', 'BtnLoadJob'))
         if ($tool.Nav -eq 'YearGroup') { $sources += ,@('CboOffice', 'BtnLoadOffice') }
         foreach ($source in $sources) {
             $combo = $tool.UI[$source[0]]

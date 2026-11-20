@@ -1,7 +1,7 @@
 <#
     ImmutableId.ps1 — assign onPremisesImmutableId to cloud-only Entra users.
 
-    The list starts empty: add all users, a department or an office location,
+    The list starts empty: add all users, a department, an office location or a job title,
     then search the list to see who already has an ImmutableId.
 
     Uses a per-row checkbox column so you can pick exactly which accounts get an
@@ -104,6 +104,9 @@ $Script:IID_Xaml = @'
         <TextBlock Text="Office location" Foreground="#7878A0" Margin="0,0,0,6"/>
         <ComboBox x:Name="IidOffices" Style="{StaticResource EtbPopulationCombo}" AutomationProperties.Name="Office location"/>
         <Button x:Name="IidBtnAddOffice" Content="Add office location" Style="{StaticResource EtbAction}" Margin="0,8,0,16"/>
+        <TextBlock Text="Job title" Foreground="#7878A0" Margin="0,0,0,6"/>
+        <ComboBox x:Name="IidJobTitles" Style="{StaticResource EtbPopulationCombo}" AutomationProperties.Name="Job title"/>
+        <Button x:Name="IidBtnAddJob" Content="Add job title" Style="{StaticResource EtbAction}" Margin="0,8,0,16"/>
         <Button x:Name="IidBtnImport" Content="Paste users / import CSV…" Style="{StaticResource EtbAction}" Margin="0,0,0,16"/>
         <Button x:Name="IidBtnClear" Content="Clear list" Style="{StaticResource EtbAction}"/>
       </StackPanel>
@@ -586,6 +589,7 @@ function Set-IidUsers {
     $Script:IID_AllUsers = $Users
     Set-EtbPopulationCombo -ComboBox $Script:IID_UI.Departments -Users $Users -Mode Department
     Set-EtbPopulationCombo -ComboBox $Script:IID_UI.Offices -Users $Users -Mode OfficeLocation
+    Set-EtbPopulationCombo -ComboBox $Script:IID_UI.JobTitles -Users $Users -Mode JobTitle
     $Script:IID_UI.Picker.IsEnabled = $true
     Update-IidCounts
     Write-Log "ImmutableId: $($Users.Count) cloud-only members available" 'INFO'
@@ -647,6 +651,8 @@ function Initialize-ImmutableIdTool {
         BtnAddDept    = $panel.FindName('IidBtnAddDept')
         Offices       = $panel.FindName('IidOffices')
         BtnAddOffice  = $panel.FindName('IidBtnAddOffice')
+        JobTitles     = $panel.FindName('IidJobTitles')
+        BtnAddJob     = $panel.FindName('IidBtnAddJob')
         BtnImport     = $panel.FindName('IidBtnImport')
         BtnClear      = $panel.FindName('IidBtnClear')
         Search        = $panel.FindName('IidSearch')
@@ -712,6 +718,9 @@ function Initialize-ImmutableIdTool {
     $Script:IID_UI.BtnAddOffice.Add_Click({
         try { Add-IidUsers @($Script:IID_UI.Offices.SelectedItem.DataContext.Users) } catch { Write-Log "IID add office error: $_" 'ERROR' }
     })
+    $Script:IID_UI.BtnAddJob.Add_Click({
+        try { Add-IidUsers @($Script:IID_UI.JobTitles.SelectedItem.DataContext.Users) } catch { Write-Log "IID add job title error: $_" 'ERROR' }
+    })
     $Script:IID_UI.BtnImport.Add_Click({
         try {
             $users = @(Read-EtbUserList $Script:IID_AllUsers)
@@ -756,7 +765,7 @@ function Initialize-ImmutableIdTool {
             $Script:IID_UI.Grid.ItemsSource = $null
             $Script:IID_UI.Search.Text = ''
             $Script:IID_UI.Picker.IsEnabled = $false
-            foreach ($combo in 'Departments','Offices') { $Script:IID_UI[$combo].Items.Clear(); $Script:IID_UI[$combo].IsEnabled = $false }
+            foreach ($combo in 'Departments','Offices','JobTitles') { $Script:IID_UI[$combo].Items.Clear(); $Script:IID_UI[$combo].IsEnabled = $false }
             $Script:IID_UI.LblCount.Text             = ''
             $Script:IID_UI.BtnGenerate.IsEnabled     = $false
             $Script:IID_UI.BtnApply.IsEnabled        = $false
